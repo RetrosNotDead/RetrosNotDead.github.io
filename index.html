@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Share+Tech+Mono&display=swap">
+
+  <style>
+    :root {
+      --bg: #05070d;
+      --card-bg: #0b1120;
+      --border: #1e293b;
+      --accent: #38bdf8;
+      --text: #94a3b8;
+      --ad-bg: #020408;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
+
+    /* Top Navigation Bar */
+    header {
+      background: #080d1a;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    .logo { font-size: 1.15rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
+    .logo span { color: var(--accent); }
+    .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.75rem; padding: 4px 10px; border-radius: 4px; font-weight: bold; }
+
+    /* Ad Units */
+    .ad-slot {
+      background: var(--ad-bg);
+      border: 1px dashed #334155;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 0.72rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin: 10px auto;
+      width: 100%;
+      max-width: 1200px;
+    }
+    .ad-leaderboard { min-height: 90px; }
+
+    /* Game Theater Container */
+    .theater-wrapper {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 15px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .game-theater {
+      position: relative;
+      width: 100%;
+      height: 72vh;
+      min-height: 520px;
+      background: #000;
+      border: 2px solid #1e3a8a;
+      border-radius: 8px;
+      box-shadow: 0 0 35px rgba(2, 132, 199, 0.25);
+      overflow: hidden;
+    }
+
+    /* Embedded Game Frame */
+    iframe#game-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* 10-Minute Countdown Clock Banner */
+    #demo-timer-badge {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(4, 9, 24, 0.92);
+      border: 1px solid #38bdf8;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      padding: 5px 14px;
+      font-size: 11px;
+      font-family: 'Share Tech Mono', monospace;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      z-index: 100;
+      pointer-events: none;
+      border-radius: 4px;
+    }
+
+    /* Demo Expired Debriefing Overlay */
+    #demo-expired-modal {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(11, 23, 56, 0.98) 0%, rgba(2, 5, 15, 0.99) 90%);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .demo-frame {
+      background: #080e1e;
+      border: 2px solid #facc15;
+      box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
+      padding: 24px;
+      max-width: 460px;
+      width: 90%;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-action {
+      background: #22c55e;
+      border: 2px solid #fff;
+      color: #000;
+      font-weight: 900;
+      font-size: 11px;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+      transition: 0.2s;
+    }
+    .btn-action:hover { background: #16a34a; color: #fff; }
+
+    /* Footer for Ad Network Compliance */
+    footer {
+      max-width: 1200px;
+      margin: 30px auto 15px;
+      padding: 15px;
+      text-align: center;
+      font-size: 0.78rem;
+      color: #64748b;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); text-decoration: none; margin: 0 8px; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header>
+    <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
+    <div class="dev-badge">DEV: RetrosNotDeadStudio</div>
+  </header>
+
+  <!-- TOP BANNER AD (728x90) -->
+  <div class="ad-slot ad-leaderboard">
+    <span>[ ADVERTISEMENT: 728x90 LEADERBOARD ]</span>
+    <!-- PASTE YOUR MONETAG / ADSTERRA AD SCRIPT HERE -->
+  </div>
+
+  <div class="theater-wrapper">
+    <div class="game-theater">
+
+      <!-- 10-Minute Mission Clock -->
+      <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
+
+      <!-- Demo Expired Modal -->
+      <div id="demo-expired-modal">
+        <div class="demo-frame">
+          <h2 style="color:#facc15; font-size:18px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
+          <p style="font-size:11px; color:#cbd5e1; line-height:1.4;">
+            Your 10-minute trial sortie has concluded. Flight systems have safe-parked.
+          </p>
+
+          <p style="font-size:9.5px; color:#94a3b8; line-height:1.4;">
+            Enjoyed the flight? You can launch a brand new 10-minute run immediately below!
+          </p>
+
+          <button id="restart-demo-btn" class="btn-action">
+            🚀 LAUNCH NEW 10-MIN MISSION
+          </button>
+        </div>
+      </div>
+
+      <!-- Embedded Game -->
+      <iframe id="game-frame" src="game.html" allow="fullscreen; gamepad; autoplay"></iframe>
+    </div>
+  </div>
+
+  <!-- BOTTOM BANNER AD (728x90) -->
+  <div class="ad-slot ad-leaderboard">
+    <span>[ ADVERTISEMENT: 728x90 BOTTOM BANNER ]</span>
+    <!-- PASTE YOUR BOTTOM BANNER AD SCRIPT HERE -->
+  </div>
+
+  <!-- Legal Footer (Required for Ad Approvals) -->
+  <footer>
+    <p>© 2026 Void Pilot 3D: Rogue Galaxy &bull; Developed by Matthew MacLaine</p>
+    <p style="margin-top:6px;">
+      <a href="#privacy">Privacy Policy</a> • 
+      <a href="#terms">Terms of Service</a> • 
+      <a href="#contact">Contact Developer</a>
+    </p>
+  </footer>
+
+  <script>
+    // ==========================================
+    // 10-MINUTE DEMO CONTROLLER
+    // ==========================================
+    const DEMO_SECONDS = 600; // 10 Minutes = 600 Seconds
+    let timeLeft = DEMO_SECONDS;
+    let timerActive = false;
+    const timerBadge = document.getElementById("demo-timer-badge");
+    const expiredModal = document.getElementById("demo-expired-modal");
+    const gameFrame = document.getElementById("game-frame");
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // Start timer upon first interaction with the game
+    window.addEventListener("blur", () => { timerActive = true; }, { once: true });
+    document.addEventListener("pointerdown", () => { timerActive = true; }, { once: true });
+
+    setInterval(() => {
+      if (!timerActive || timeLeft <= 0) return;
+
+      timeLeft--;
+      timerBadge.innerText = `⏱️ DEMO TIME: ${formatTime(timeLeft)}`;
+
+      // Warning color shifts
+      if (timeLeft <= 30) {
+        timerBadge.style.color = "#ef4444";
+        timerBadge.style.borderColor = "#ef4444";
+        timerBadge.style.boxShadow = "0 0 14px rgba(239, 68, 68, 0.7)";
+      } else if (timeLeft <= 120) {
+        timerBadge.style.color = "#facc15";
+        timerBadge.style.borderColor = "#facc15";
+      }
+
+      // Demo Expired
+      if (timeLeft <= 0) {
+        expiredModal.style.display = "flex";
+        timerBadge.style.display = "none";
+        
+        // Trigger high-paying ad network interstitial hook here if desired
+        console.log("Demo ended: Show Interstitial Ad");
+      }
+    }, 1000);
+
+    // Restart Button
+    document.getElementById("restart-demo-btn").addEventListener("click", () => {
+      timeLeft = DEMO_SECONDS;
+      expiredModal.style.display = "none";
+      timerBadge.style.display = "block";
+      timerBadge.style.color = "#38bdf8";
+      timerBadge.style.borderColor = "#38bdf8";
+      timerBadge.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.4)";
+      
+      // Reload the game cleanly
+      gameFrame.src = gameFrame.src;
+    });
+  </script>
+</body>
+</html>
