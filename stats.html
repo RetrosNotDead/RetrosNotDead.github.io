@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Void Pilot 3D - Mission Control Stats</title>
+  <title>Void Pilot 3D - Mission Control (Read-Only)</title>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;700;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap">
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Share Tech Mono', monospace; }
@@ -17,8 +17,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 20px;
+      padding: 15px;
       text-align: center;
     }
 
@@ -27,48 +26,43 @@
       border: 2px solid #0284c7;
       box-shadow: 0 0 25px rgba(2, 132, 199, 0.35);
       border-radius: 8px;
-      padding: 25px;
-      max-width: 420px;
+      padding: 16px;
+      max-width: 500px;
       width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 12px;
       align-items: center;
     }
 
     h1 {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       color: #38bdf8;
       letter-spacing: 2px;
-      text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
     }
 
-    .badge-display {
-      background: #030712;
-      border: 1px solid #1e3a8a;
-      padding: 15px;
-      border-radius: 6px;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .badge-display img {
-      height: 32px;
-      border-radius: 4px;
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
-    }
-
-    .status-text {
-      font-size: 0.8rem;
+    .read-only-badge {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid #166534;
       color: #4ade80;
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 4px;
     }
 
-    .refresh-bar {
-      font-size: 0.75rem;
-      color: #facc15;
+    .frame-container {
+      width: 100%;
+      height: 380px;
+      border: 1px solid #1e3a8a;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
     }
 
     .btn-row {
@@ -99,19 +93,15 @@
 
   <div class="dashboard-card">
     <h1>🛰️ MISSION CONTROL</h1>
-    <div style="font-size:0.75rem; color:#64748b;">VOID PILOT 3D LIVE TRAFFIC MONITOR</div>
+    <div class="read-only-badge">🔒 100% READ-ONLY (DOES NOT COUNT YOUR REFRESHES)</div>
 
-    <!-- Live Badge Container -->
-    <div class="badge-display">
-      <span style="font-size:0.75rem; color:#94a3b8;">TOTAL SORTIES LOGGED:</span>
-      <img id="counter-img" src="" alt="Live Visitors Count" />
-      <div class="status-text">● RADAR LINK ACTIVE</div>
+    <!-- Live Read-Only Status Frame -->
+    <div class="frame-container">
+      <iframe id="status-frame" src="https://visitorbadge.io/status?path=retrosnotdead.github.io"></iframe>
     </div>
 
-    <div class="refresh-bar" id="refresh-timer">AUTO-REFRESH IN: 20s</div>
-
     <div class="btn-row">
-      <button class="btn" id="manual-refresh-btn">🔄 REFRESH NOW</button>
+      <button class="btn" id="refresh-btn">🔄 REFRESH VIEW</button>
       <a class="btn btn-green" href="https://publishers.monetag.com/statistics" target="_blank">💰 MONETAG $$</a>
     </div>
 
@@ -121,35 +111,13 @@
   </div>
 
   <script>
-    const img = document.getElementById("counter-img");
-    const timerText = document.getElementById("refresh-timer");
-    const manualBtn = document.getElementById("manual-refresh-btn");
+    const frame = document.getElementById("status-frame");
+    const refreshBtn = document.getElementById("refresh-btn");
 
-    let countdown = 20;
-
-    function reloadBadge() {
-      // Appends random timestamp so browser never caches the old image
-      const timestamp = new Date().getTime();
-      img.src = `https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=TOTAL%20VISITS&countColor=%2338bdf8&labelColor=%23080d1a&style=for-the-badge&_t=${timestamp}`;
-      countdown = 20;
-    }
-
-    // Initial load
-    reloadBadge();
-
-    // Auto-refresh countdown every second
-    setInterval(() => {
-      countdown--;
-      timerText.innerText = `AUTO-REFRESH IN: ${countdown}s`;
-      if (countdown <= 0) {
-        reloadBadge();
-      }
-    }, 1000);
-
-    manualBtn.addEventListener("click", () => {
-      reloadBadge();
-      manualBtn.innerText = "UPDATED!";
-      setTimeout(() => { manualBtn.innerText = "🔄 REFRESH NOW"; }, 1000);
+    refreshBtn.addEventListener("click", () => {
+      frame.src = frame.src;
+      refreshBtn.innerText = "UPDATED!";
+      setTimeout(() => { refreshBtn.innerText = "🔄 REFRESH VIEW"; }, 1000);
     });
   </script>
 </body>
