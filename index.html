@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
 
-  <!-- Monetag Verification (Kept for site ownership) -->
+  <!-- Monetag Verification -->
   <meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,11 +49,11 @@
       -webkit-touch-callout: none !important;
     }
 
-    /* TOP BAR */
+    /* CLEAN MINIMAL TOP BAR */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
-      padding: 4px 10px;
+      padding: 4px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -62,46 +62,19 @@
       z-index: 1000;
     }
     .logo { 
-      font-size: 0.85rem; 
+      font-size: 0.88rem; 
       font-weight: 900; 
       color: #fff; 
-      letter-spacing: 1px; 
+      letter-spacing: 1.5px; 
       text-decoration: none; 
       white-space: nowrap;
     }
     .logo span { color: var(--accent); }
 
-    .top-actions-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
+    .visits-badge { 
+      display: flex; 
+      align-items: center; 
     }
-    .btn-nav {
-      font-size: 0.68rem;
-      font-weight: 900;
-      padding: 4px 8px;
-      border-radius: 3px;
-      text-decoration: none;
-      white-space: nowrap;
-      letter-spacing: 0.5px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .btn-manual { background: #0284c7; border: 1px solid #38bdf8; color: #fff; }
-    .btn-pcfund {
-      background: linear-gradient(180deg, #b45309 0%, #78350f 100%);
-      border: 1px solid #facc15;
-      color: #fef08a;
-      box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);
-      animation: pulseGold 2s infinite alternate ease-in-out;
-    }
-    @keyframes pulseGold {
-      0% { box-shadow: 0 0 4px rgba(250, 204, 21, 0.3); }
-      100% { box-shadow: 0 0 12px rgba(250, 204, 21, 0.65); }
-    }
-
-    .visits-badge { display: flex; align-items: center; }
 
     /* THEATER WRAPPER */
     .theater-wrapper {
@@ -381,21 +354,16 @@
 </head>
 <body>
 
-  <!-- TOP BAR -->
+  <!-- CLEAN TOP BAR (NO DUPLICATE BUTTONS) -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
 
-    <div class="top-actions-bar">
-      <a href="guide.html" class="btn-nav btn-manual">📖 MANUAL</a>
-      <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="btn-nav btn-pcfund">☕ PC FUND</a>
-
-      <div class="visits-badge">
-        <img 
-          src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
-          alt="Visits" 
-          style="vertical-align: middle; height: 18px; border-radius: 2px;"
-        />
-      </div>
+    <div class="visits-badge">
+      <img 
+        src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
+        alt="Visits" 
+        style="vertical-align: middle; height: 18px; border-radius: 2px;"
+      />
     </div>
   </header>
 
@@ -481,9 +449,7 @@
   </div>
 
   <script>
-    // =========================================================================
-    // DYNAMIC MONETAG AD LOADER (ACTIVATES ONLY WHEN GAME LAUNCHES)
-    // =========================================================================
+    // DYNAMIC MONETAG AD LOADER (ACTIVATES ONLY WHEN FLIGHT LAUNCHES)
     let adsInitialized = false;
     function loadMonetagAds() {
       if (adsInitialized) return;
@@ -544,9 +510,7 @@
       toggleFullscreen();
     });
 
-    // =========================================================================
-    // DOS SPLASH SCREEN & MISSION LAUNCH CONTROLLER
-    // =========================================================================
+    // DOS Splash & Mission Launch
     const dosSplash = document.getElementById("dos-splash-modal");
     const dosLaunchBtn = document.getElementById("dos-launch-btn");
     const timerBadge = document.getElementById("demo-timer-badge");
@@ -563,7 +527,6 @@
     }
 
     function startFlightMission() {
-      // INJECTS ADS ONLY WHEN FLIGHT ACTUALLY BEGINS:
       loadMonetagAds();
 
       if (dosSplash) dosSplash.style.display = "none";
@@ -577,7 +540,6 @@
 
     dosLaunchBtn.addEventListener("click", startFlightMission);
 
-    // Keyboard Shortcuts: 1, 2, 3, or Enter
     window.addEventListener("keydown", (e) => {
       if (dosSplash && dosSplash.style.display !== "none") {
         if (e.key === "1" || e.code === "Enter" || e.code === "Space") {
