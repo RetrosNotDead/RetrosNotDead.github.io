@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
 
   <!-- Monetag Verification -->
@@ -23,44 +23,43 @@
       --text: #94a3b8;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-    body { background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100vw; height: 100vh; height: 100dvh; background-color: var(--bg); color: var(--text); overflow: hidden; }
 
+    /* Top Navigation Bar */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
-      padding: 10px 20px;
+      padding: 8px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      z-index: 10;
+      height: 42px;
     }
-    .logo { font-size: 1.15rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
+    .logo { font-size: 1rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
     .logo span { color: var(--accent); }
-    .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.75rem; padding: 4px 10px; border-radius: 4px; font-weight: bold; }
+    .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.72rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
 
+    /* Main Theater Wrapper */
     .theater-wrapper {
-      max-width: 1200px;
-      width: 100%;
-      margin: 15px auto;
-      padding: 0 15px;
-      flex: 1;
+      position: relative;
+      width: 100vw;
+      height: calc(100dvh - 42px);
       display: flex;
       flex-direction: column;
+      background: #000;
+      overflow: hidden;
     }
 
     .game-theater {
       position: relative;
       width: 100%;
-      height: 75vh;
-      min-height: 520px;
+      height: 100%;
       background: #000;
-      border: 2px solid #1e3a8a;
-      border-radius: 8px;
-      box-shadow: 0 0 35px rgba(2, 132, 199, 0.25);
       overflow: hidden;
     }
 
+    /* Embedded Game Frame */
     iframe#game-frame {
       width: 100%;
       height: 100%;
@@ -68,25 +67,47 @@
       display: block;
     }
 
+    /* Dedicated Fullscreen Button */
+    #fs-toggle-btn {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      background: rgba(11, 19, 41, 0.88);
+      border: 1.5px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 9.5px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 150;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
+    }
+    #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
+
+    /* 10-Minute Mission Countdown Clock */
     #demo-timer-badge {
       position: absolute;
-      top: 10px;
+      top: 8px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(4, 9, 24, 0.92);
       border: 1px solid #38bdf8;
       box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
       color: #38bdf8;
-      padding: 5px 14px;
-      font-size: 11px;
+      padding: 4px 12px;
+      font-size: 10.5px;
       font-family: 'Share Tech Mono', monospace;
       font-weight: 900;
-      letter-spacing: 1.5px;
+      letter-spacing: 1.2px;
       z-index: 100;
       pointer-events: none;
       border-radius: 4px;
+      white-space: nowrap;
     }
 
+    /* Demo Expired Modal */
     #demo-expired-modal {
       position: absolute;
       inset: 0;
@@ -105,13 +126,13 @@
       background: #080e1e;
       border: 2px solid #facc15;
       box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
-      padding: 24px;
-      max-width: 460px;
+      padding: 20px;
+      max-width: 440px;
       width: 90%;
       border-radius: 8px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
     }
 
@@ -121,7 +142,7 @@
       color: #000;
       font-weight: 900;
       font-size: 11px;
-      padding: 10px 20px;
+      padding: 10px 18px;
       border-radius: 4px;
       cursor: pointer;
       width: 100%;
@@ -129,27 +150,26 @@
     }
     .btn-action:hover { background: #16a34a; color: #fff; }
 
-    footer {
-      max-width: 1200px;
-      margin: 20px auto 15px;
-      padding: 15px;
-      text-align: center;
-      font-size: 0.78rem;
-      color: #64748b;
-      border-top: 1px solid var(--border);
+    /* Mobile Edge-to-Edge Optimization */
+    @media (max-width: 768px), (orientation: landscape) and (max-height: 520px) {
+      header { display: none; } /* Hide header on mobile so game gets 100% screen */
+      .theater-wrapper { height: 100vh; height: 100dvh; }
     }
-    footer a { color: var(--accent); text-decoration: none; margin: 0 8px; }
   </style>
 </head>
 <body>
 
+  <!-- Minimal Header (Hidden automatically on phones in landscape) -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
     <div class="dev-badge">DEV: RetrosNotDeadStudio</div>
   </header>
 
-  <div class="theater-wrapper">
+  <div class="theater-wrapper" id="theater-root">
     <div class="game-theater">
+
+      <!-- Fullscreen Button -->
+      <button id="fs-toggle-btn">⛶ FULL</button>
 
       <!-- 10-Minute Mission Clock -->
       <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
@@ -157,36 +177,69 @@
       <!-- Demo Expired Modal -->
       <div id="demo-expired-modal">
         <div class="demo-frame">
-          <h2 style="color:#facc15; font-size:18px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
+          <h2 style="color:#facc15; font-size:16px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
           <p style="font-size:11px; color:#cbd5e1; line-height:1.4;">
             Your 10-minute trial sortie has concluded. Flight systems have safe-parked.
           </p>
-
           <p style="font-size:9.5px; color:#94a3b8; line-height:1.4;">
-            Enjoyed the flight? You can launch a brand new 10-minute run immediately below!
+            Launch a brand new 10-minute mission immediately below!
           </p>
-
           <button id="restart-demo-btn" class="btn-action">
             🚀 LAUNCH NEW 10-MIN MISSION
           </button>
         </div>
       </div>
 
-      <!-- Embedded Game -->
-      <iframe id="game-frame" src="game.html" allow="fullscreen; gamepad; autoplay"></iframe>
+      <!-- Embedded Game with Full Permission Attributes -->
+      <iframe 
+        id="game-frame" 
+        src="game.html" 
+        allow="fullscreen; gamepad; autoplay; screen-wake-lock" 
+        allowfullscreen="true" 
+        webkitallowfullscreen="true" 
+        mozallowfullscreen="true">
+      </iframe>
     </div>
   </div>
 
-  <footer>
-    <p>© 2026 Void Pilot 3D: Rogue Galaxy &bull; Developed by Matthew MacLaine</p>
-    <p style="margin-top:6px;">
-      <a href="#privacy">Privacy Policy</a> • 
-      <a href="#terms">Terms of Service</a> • 
-      <a href="#contact">Contact Developer</a>
-    </p>
-  </footer>
-
   <script>
+    // ==========================================
+    // FULLSCREEN HANDLER (WORKS ON MOBILE)
+    // ==========================================
+    const fsBtn = document.getElementById("fs-toggle-btn");
+    const theaterRoot = document.getElementById("theater-root");
+
+    function toggleFullscreen() {
+      const doc = window.document;
+      const docEl = theaterRoot;
+
+      const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+      const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+      if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+        if (requestFullScreen) {
+          requestFullScreen.call(docEl).catch(() => {});
+        }
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
+        fsBtn.innerText = "✕ EXIT";
+      } else {
+        if (cancelFullScreen) {
+          cancelFullScreen.call(doc).catch(() => {});
+        }
+        fsBtn.innerText = "⛶ FULL";
+      }
+    }
+
+    fsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+
+    // ==========================================
+    // 10-MINUTE DEMO CONTROLLER
+    // ==========================================
     const DEMO_SECONDS = 600;
     let timeLeft = DEMO_SECONDS;
     let timerActive = false;
