@@ -1,11 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
-  
+
+  <!-- Monetag Verification -->
+  <meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
+
+  <!-- Monetag MultiTag Ad Script -->
+  <script src="https://quge5.com/88/tag.min.js" data-zone="283710" async data-cfasync="false"></script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Share+Tech+Mono&display=swap">
 
@@ -16,13 +21,11 @@
       --border: #1e293b;
       --accent: #38bdf8;
       --text: #94a3b8;
-      --ad-bg: #020408;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
     body { background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
 
-    /* Top Navigation Bar */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
@@ -36,30 +39,10 @@
     .logo span { color: var(--accent); }
     .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.75rem; padding: 4px 10px; border-radius: 4px; font-weight: bold; }
 
-    /* Ad Units */
-    .ad-slot {
-      background: var(--ad-bg);
-      border: 1px dashed #334155;
-      border-radius: 6px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #64748b;
-      font-size: 0.72rem;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      margin: 10px auto;
-      width: 100%;
-      max-width: 1200px;
-    }
-    .ad-leaderboard { min-height: 90px; }
-
-    /* Game Theater Container */
     .theater-wrapper {
       max-width: 1200px;
       width: 100%;
-      margin: 0 auto;
+      margin: 15px auto;
       padding: 0 15px;
       flex: 1;
       display: flex;
@@ -69,7 +52,7 @@
     .game-theater {
       position: relative;
       width: 100%;
-      height: 72vh;
+      height: 75vh;
       min-height: 520px;
       background: #000;
       border: 2px solid #1e3a8a;
@@ -78,7 +61,6 @@
       overflow: hidden;
     }
 
-    /* Embedded Game Frame */
     iframe#game-frame {
       width: 100%;
       height: 100%;
@@ -86,7 +68,6 @@
       display: block;
     }
 
-    /* 10-Minute Countdown Clock Banner */
     #demo-timer-badge {
       position: absolute;
       top: 10px;
@@ -106,7 +87,6 @@
       border-radius: 4px;
     }
 
-    /* Demo Expired Debriefing Overlay */
     #demo-expired-modal {
       position: absolute;
       inset: 0;
@@ -149,10 +129,9 @@
     }
     .btn-action:hover { background: #16a34a; color: #fff; }
 
-    /* Footer for Ad Network Compliance */
     footer {
       max-width: 1200px;
-      margin: 30px auto 15px;
+      margin: 20px auto 15px;
       padding: 15px;
       text-align: center;
       font-size: 0.78rem;
@@ -164,17 +143,10 @@
 </head>
 <body>
 
-  <!-- Navigation Bar -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
     <div class="dev-badge">DEV: RetrosNotDeadStudio</div>
   </header>
-
-  <!-- TOP BANNER AD (728x90) -->
-  <div class="ad-slot ad-leaderboard">
-    <span>[ ADVERTISEMENT: 728x90 LEADERBOARD ]</span>
-    <!-- PASTE YOUR MONETAG / ADSTERRA AD SCRIPT HERE -->
-  </div>
 
   <div class="theater-wrapper">
     <div class="game-theater">
@@ -205,13 +177,6 @@
     </div>
   </div>
 
-  <!-- BOTTOM BANNER AD (728x90) -->
-  <div class="ad-slot ad-leaderboard">
-    <span>[ ADVERTISEMENT: 728x90 BOTTOM BANNER ]</span>
-    <!-- PASTE YOUR BOTTOM BANNER AD SCRIPT HERE -->
-  </div>
-
-  <!-- Legal Footer (Required for Ad Approvals) -->
   <footer>
     <p>© 2026 Void Pilot 3D: Rogue Galaxy &bull; Developed by Matthew MacLaine</p>
     <p style="margin-top:6px;">
@@ -222,10 +187,7 @@
   </footer>
 
   <script>
-    // ==========================================
-    // 10-MINUTE DEMO CONTROLLER
-    // ==========================================
-    const DEMO_SECONDS = 600; // 10 Minutes = 600 Seconds
+    const DEMO_SECONDS = 600;
     let timeLeft = DEMO_SECONDS;
     let timerActive = false;
     const timerBadge = document.getElementById("demo-timer-badge");
@@ -238,7 +200,6 @@
       return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
 
-    // Start timer upon first interaction with the game
     window.addEventListener("blur", () => { timerActive = true; }, { once: true });
     document.addEventListener("pointerdown", () => { timerActive = true; }, { once: true });
 
@@ -248,7 +209,6 @@
       timeLeft--;
       timerBadge.innerText = `⏱️ DEMO TIME: ${formatTime(timeLeft)}`;
 
-      // Warning color shifts
       if (timeLeft <= 30) {
         timerBadge.style.color = "#ef4444";
         timerBadge.style.borderColor = "#ef4444";
@@ -258,17 +218,12 @@
         timerBadge.style.borderColor = "#facc15";
       }
 
-      // Demo Expired
       if (timeLeft <= 0) {
         expiredModal.style.display = "flex";
         timerBadge.style.display = "none";
-        
-        // Trigger high-paying ad network interstitial hook here if desired
-        console.log("Demo ended: Show Interstitial Ad");
       }
     }, 1000);
 
-    // Restart Button
     document.getElementById("restart-demo-btn").addEventListener("click", () => {
       timeLeft = DEMO_SECONDS;
       expiredModal.style.display = "none";
@@ -276,8 +231,6 @@
       timerBadge.style.color = "#38bdf8";
       timerBadge.style.borderColor = "#38bdf8";
       timerBadge.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.4)";
-      
-      // Reload the game cleanly
       gameFrame.src = gameFrame.src;
     });
   </script>
