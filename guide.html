@@ -1,0 +1,2292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
+
+  <!-- Monetag Verification -->
+  <meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
+
+  <!-- Monetag MultiTag Ad Script -->
+  <script src="https://quge5.com/88/tag.min.js" data-zone="283710" async data-cfasync="false"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Share+Tech+Mono&display=swap">
+
+  <style>
+    :root {
+      --bg: #05070d;
+      --card-bg: #0b1120;
+      --border: #1e293b;
+      --accent: #38bdf8;
+      --text: #94a3b8;
+    }
+
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: 'Inter', sans-serif; 
+      user-select: none !important; 
+      -webkit-user-select: none !important; 
+      -webkit-touch-callout: none !important; 
+    }
+
+    html, body { 
+      width: 100vw; 
+      height: 100vh; 
+      height: 100dvh; 
+      background-color: var(--bg); 
+      color: var(--text); 
+      overflow: hidden; 
+      -webkit-touch-callout: none !important;
+    }
+
+    header {
+      background: #080d1a;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 42px;
+    }
+    .logo { font-size: 0.95rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
+    .logo span { color: var(--accent); }
+
+    .telemetry-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-manual-link {
+      font-size: 0.72rem;
+      color: #fff;
+      background: #0284c7;
+      border: 1px solid #38bdf8;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 900;
+      text-decoration: none;
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 0.5px;
+    }
+    .dev-tag {
+      font-size: 0.7rem;
+      color: #facc15;
+      font-family: 'Share Tech Mono', monospace;
+      background: #111e38;
+      border: 1px solid #1e3a8a;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .visits-badge {
+      display: flex;
+      align-items: center;
+    }
+
+    .theater-wrapper {
+      position: relative;
+      width: 100vw;
+      height: calc(100dvh - 42px);
+      display: flex;
+      flex-direction: column;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .game-theater {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    iframe#game-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      -webkit-touch-callout: none !important;
+    }
+
+    #fs-toggle-btn {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      background: rgba(11, 19, 41, 0.88);
+      border: 1.5px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 9.5px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 150;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
+      -webkit-touch-callout: none !important;
+    }
+    #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
+
+    #demo-timer-badge {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(4, 9, 24, 0.92);
+      border: 1px solid #38bdf8;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      padding: 4px 12px;
+      font-size: 10.5px;
+      font-family: 'Share Tech Mono', monospace;
+      font-weight: 900;
+      letter-spacing: 1.2px;
+      z-index: 100;
+      pointer-events: none;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    #demo-expired-modal {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(11, 23, 56, 0.98) 0%, rgba(2, 5, 15, 0.99) 90%);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .demo-frame {
+      background: #080e1e;
+      border: 2px solid #facc15;
+      box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
+      padding: 20px;
+      max-width: 440px;
+      width: 90%;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn-action {
+      background: #22c55e;
+      border: 2px solid #fff;
+      color: #000;
+      font-weight: 900;
+      font-size: 11px;
+      padding: 10px 18px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+      transition: 0.2s;
+    }
+    .btn-action:hover { background: #16a34a; color: #fff; }
+
+    @media (max-width: 768px), (orientation: landscape) and (max-height: 520px) {
+      header { display: none; }
+      .theater-wrapper { height: 100vh; height: 100dvh; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
+
+    <div class="telemetry-bar">
+      <!-- 📖 Direct Flight Manual Link -->
+      <a href="guide.html" class="btn-manual-link">📖 MANUAL</a>
+      <div class="dev-tag">RETROS NOT DEAD</div>
+
+      <div class="visits-badge">
+        <img 
+          src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
+          alt="Total Visits" 
+          style="vertical-align: middle; height: 20px; border-radius: 3px;"
+        />
+      </div>
+    </div>
+  </header>
+
+  <div class="theater-wrapper" id="theater-root">
+    <div class="game-theater">
+
+      <button id="fs-toggle-btn">⛶ FULL</button>
+      <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
+
+      <div id="demo-expired-modal">
+        <div class="demo-frame">
+          <h2 style="color:#facc15; font-size:16px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
+          <p style="font-size:11px; color:#cbd5e1; line-height:1.4;">
+            Your 10-minute trial sortie has concluded. Flight systems have safe-parked.
+          </p>
+          <p style="font-size:9.5px; color:#94a3b8; line-height:1.4;">
+            Launch a brand new 10-minute mission immediately below!
+          </p>
+          <button id="restart-demo-btn" class="btn-action">
+            🚀 LAUNCH NEW 10-MIN MISSION
+          </button>
+        </div>
+      </div>
+
+      <iframe 
+        id="game-frame" 
+        src="game.html" 
+        allow="fullscreen; gamepad; autoplay; screen-wake-lock" 
+        allowfullscreen="true" 
+        webkitallowfullscreen="true" 
+        mozallowfullscreen="true">
+      </iframe>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+    document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+
+    const gameFrame = document.getElementById("game-frame");
+    gameFrame.addEventListener("load", () => {
+      try {
+        const frameWin = gameFrame.contentWindow;
+        const frameDoc = gameFrame.contentDocument || frameWin.document;
+
+        frameWin.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+        frameDoc.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+
+        const killStyle = frameDoc.createElement("style");
+        killStyle.textContent = "* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }";
+        frameDoc.head.appendChild(killStyle);
+      } catch (err) {}
+    });
+
+    const fsBtn = document.getElementById("fs-toggle-btn");
+    const theaterRoot = document.getElementById("theater-root");
+
+    function toggleFullscreen() {
+      const doc = window.document;
+      const docEl = theaterRoot;
+
+      const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+      const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+      if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+        if (requestFullScreen) requestFullScreen.call(docEl).catch(() => {});
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        fsBtn.innerText = "✕ EXIT";
+      } else {
+        if (cancelFullScreen) cancelFullScreen.call(doc).catch(() => {});
+        fsBtn.innerText = "⛶ FULL";
+      }
+    }
+
+    fsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+
+    const DEMO_SECONDS = 600;
+    let timeLeft = DEMO_SECONDS;
+    let timerActive = false;
+    const timerBadge = document.getElementById("demo-timer-badge");
+    const expiredModal = document.getElementById("demo-expired-modal");
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    window.addEventListener("blur", () => { timerActive = true; }, { once: true });
+    document.addEventListener("pointerdown", () => { timerActive = true; }, { once: true });
+
+    setInterval(() => {
+      if (!timerActive || timeLeft <= 0) return;
+
+      timeLeft--;
+      timerBadge.innerText = `⏱️ DEMO TIME: ${formatTime(timeLeft)}`;
+
+      if (timeLeft <= 30) {
+        timerBadge.style.color = "#ef4444";
+        timerBadge.style.borderColor = "#ef4444";
+        timerBadge.style.boxShadow = "0 0 14px rgba(239, 68, 68, 0.7)";
+      } else if (timeLeft <= 120) {
+        timerBadge.style.color = "#facc15";
+        timerBadge.style.borderColor = "#facc15";
+      }
+
+      if (timeLeft <= 0) {
+        expiredModal.style.display = "flex";
+        timerBadge.style.display = "none";
+      }
+    }, 1000);
+
+    document.getElementById("restart-demo-btn").addEventListener("click", () => {
+      timeLeft = DEMO_SECONDS;
+      expiredModal.style.display = "none";
+      timerBadge.style.display = "block";
+      timerBadge.style.color = "#38bdf8";
+      timerBadge.style.borderColor = "#38bdf8";
+      timerBadge.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.4)";
+      gameFrame.src = gameFrame.src;
+    });
+  </script>
+</body>
+</html>
+
+(Tap Commit changes... at the bottom).
+
+File 2: Create guide.html (The Full 16-Chapter Flight Manual)
+
+1.  Tap this direct link to create the new file on GitHub:
+    👉 Create guide.html on GitHub
+
+2.  In the "Name your file..." box, type:
+
+    guide.html
+
+3.  Paste this complete, ad-monetized guide code into the big text box:
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CONFED FLIGHT MANUAL // VOID PILOT 3D: ROGUE GALAXY</title>
+
+<!-- Monetag Verification & Ad Script -->
+<meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
+<script src="https://quge5.com/88/tag.min.js" data-zone="283710" async data-cfasync="false"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@700;900&family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-page: #0a0d14;
+    --binder-leather: #1c150e;
+    --binder-border: #3d2c1d;
+    --paper-bg: #f4eee1;
+    --paper-card: #ebe4d2;
+    --paper-border: #3b3226;
+    --ink: #110e08;
+    --ink-faded: #4a3e2c;
+    --blueprint-blue: #0f3057;
+    --blueprint-line: #0088cc;
+    --blueprint-bg: #001829;
+    --stamp-red: #b91c1c;
+    --stamp-green: #15803d;
+    --stamp-amber: #b45309;
+
+    /* CRT Phosphor Theme */
+    --crt-bg: #020704;
+    --crt-panel: #05140a;
+    --crt-green: #33ff66;
+    --crt-bright: #86efac;
+    --crt-dim: #1a883a;
+    --crt-alert: #f87171;
+    --crt-amber: #facc15;
+    --crt-cyan: #38bdf8;
+    --crt-orange: #fb923c;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--ink);
+    font-family: 'Share Tech Mono', monospace;
+    line-height: 1.34;
+    min-height: 100vh;
+    padding: 50px 14px 12px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s ease;
+    overflow-x: hidden;
+  }
+
+  /* TOP STICKY BAR */
+  #top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 42px;
+    background: rgba(10, 13, 20, 0.96);
+    border-bottom: 2px solid #0284c7;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+  }
+  .nav-brand {
+    font-family: 'Orbitron', sans-serif;
+    color: #38bdf8;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .nav-btn {
+    background: #111e38;
+    border: 1px solid #38bdf8;
+    color: #38bdf8;
+    padding: 3px 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    border-radius: 2px;
+  }
+  .nav-btn:hover { background: #0284c7; color: #fff; }
+  .nav-btn.active { background: #facc15; color: #000; border-color: #facc15; }
+
+  /* CHAPTER TABS */
+  #chapter-tabs {
+    width: 100%;
+    max-width: 1220px;
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    padding: 0 2px 3px 2px;
+    scrollbar-width: thin;
+    margin-bottom: -1px;
+    z-index: 20;
+  }
+  .tab-leaf {
+    flex: 1;
+    min-width: 68px;
+    background: #18110b;
+    border: 1px solid #42301f;
+    border-bottom: none;
+    color: #b09e8b;
+    padding: 4px 3px;
+    font-size: 8px;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 3px 3px 0 0;
+    transition: all 0.12s;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .tab-leaf:hover { background: #2e1f13; color: #fff; }
+  .tab-leaf.active {
+    background: var(--paper-bg);
+    color: #000;
+    border-color: var(--paper-border);
+    font-weight: 900;
+    transform: translateY(1px);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.3);
+  }
+
+  /* 3D BOOK & BINDER */
+  #book-viewport {
+    width: 100%;
+    max-width: 1220px;
+    perspective: 2600px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+  }
+
+  #manual-binder {
+    width: 100%;
+    height: clamp(560px, 80vh, 720px);
+    background: var(--binder-leather);
+    border: 4px solid var(--binder-border);
+    border-radius: 6px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.92), inset 0 0 45px rgba(0,0,0,0.85);
+    position: relative;
+    padding: 10px 12px 10px 42px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Rings */
+  .ring {
+    position: absolute;
+    left: 8px;
+    width: 24px;
+    height: 10px;
+    background: linear-gradient(180deg, #cbd5e1 0%, #64748b 50%, #1e293b 100%);
+    border-radius: 5px;
+    box-shadow: 2px 2px 4px rgba(0,0,0,0.8), inset 0 1px 2px #fff;
+    z-index: 50;
+  }
+  .ring-1 { top: 55px; }
+  .ring-2 { top: 180px; }
+  .ring-3 { top: 50%; transform: translateY(-50%); }
+  .ring-4 { bottom: 180px; }
+  .ring-5 { bottom: 55px; }
+
+  /* PAGE DECK */
+  .pages-deck {
+    width: 100%;
+    height: calc(100% - 36px);
+    position: relative;
+    transform-style: preserve-3d;
+    flex: 1;
+  }
+
+  .manual-page {
+    position: absolute;
+    inset: 0;
+    background: var(--paper-bg);
+    border: 2px solid var(--paper-border);
+    border-radius: 3px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    padding: 14px 20px 12px 20px;
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    height: 100%;
+    backface-visibility: hidden;
+    transform-origin: left bottom;
+    background-image: 
+      radial-gradient(circle at 10% 20%, rgba(0,0,0,0.02) 0%, transparent 40%),
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.015) 2px, rgba(0,0,0,0.015) 4px);
+  }
+
+  .manual-page.active-page {
+    display: flex;
+    animation: flipInNext 0.38s ease-out forwards;
+    z-index: 10;
+  }
+  .manual-page.flipping-out-left {
+    display: flex;
+    z-index: 20;
+    animation: flipTurnLeft 0.40s ease-in forwards;
+  }
+  .manual-page.flipping-in-left {
+    display: flex;
+    z-index: 20;
+    animation: flipTurnRight 0.40s ease-out forwards;
+  }
+
+  @keyframes flipTurnLeft {
+    0% { transform: rotate3d(0, 1, 0, 0deg); opacity: 1; filter: brightness(1); }
+    100% { transform: rotate3d(0.1, 1, 0, -90deg); opacity: 0.15; filter: brightness(0.65); }
+  }
+  @keyframes flipTurnRight {
+    0% { transform: rotate3d(0.1, 1, 0, -90deg); opacity: 0.15; filter: brightness(0.65); }
+    100% { transform: rotate3d(0.1, 1, 0, 0deg); opacity: 1; filter: brightness(1); }
+  }
+  @keyframes flipInNext {
+    0% { opacity: 0.75; }
+    100% { opacity: 1; }
+  }
+
+  .page-dogear {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 0 26px 26px;
+    border-color: transparent transparent #c7b9a5 transparent;
+    cursor: pointer;
+    box-shadow: -2px -2px 4px rgba(0,0,0,0.25);
+    transition: all 0.15s;
+    z-index: 25;
+  }
+  .page-dogear:hover {
+    border-width: 0 0 36px 36px;
+    border-color: transparent transparent #facc15 transparent;
+  }
+
+  #binder-footer-controls {
+    width: 100%;
+    height: 36px;
+    background: rgba(8, 6, 4, 0.75);
+    border-top: 1px solid #4a3826;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-radius: 0 0 3px 3px;
+    box-sizing: border-box;
+    z-index: 60;
+  }
+  .dock-btn {
+    background: #0284c7;
+    border: 1px solid #38bdf8;
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8.5px;
+    font-weight: 900;
+    padding: 4px 11px;
+    cursor: pointer;
+    box-shadow: 1px 1px 0 #000;
+    border-radius: 2px;
+    transition: all 0.12s;
+  }
+  .dock-btn:disabled { background: #241d16; border-color: #4a3b2c; color: #6b5845; cursor: default; }
+  .dock-btn:not(:disabled):active { transform: translate(1px, 1px); }
+  .page-indicator {
+    font-family: 'Orbitron', sans-serif;
+    color: #facc15;
+    font-size: 9.5px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+  }
+
+  .page-header {
+    border-bottom: 2px solid var(--paper-border);
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .page-footer-meta {
+    border-top: 1px dashed #7a705c;
+    margin-top: 4px;
+    padding-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5px;
+    color: var(--ink-faded);
+    font-weight: 700;
+  }
+
+  .stamp-container { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 3px; }
+  .stamp {
+    display: inline-block;
+    border: 2px solid;
+    padding: 1px 5px;
+    font-family: 'Special Elite', cursive;
+    font-size: 8.5px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    font-weight: bold;
+  }
+  .stamp-red { color: var(--stamp-red); border-color: var(--stamp-red); transform: rotate(-1.5deg); }
+  .stamp-green { color: var(--stamp-green); border-color: var(--stamp-green); transform: rotate(1.5deg); }
+  .stamp-amber { color: var(--stamp-amber); border-color: var(--stamp-amber); transform: rotate(-1deg); }
+
+  .confed-sub { font-size: 8.5px; color: var(--ink-faded); letter-spacing: 1.5px; font-weight: 900; }
+  h1.manual-title { font-family: 'Orbitron', sans-serif; font-size: 16px; color: #0b0f19; margin: 1px 0; font-weight: 900; }
+  .section-tag {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8.5px;
+    color: #fff;
+    background: var(--paper-border);
+    display: inline-block;
+    padding: 1px 5px;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+    font-weight: 700;
+  }
+  h2.section-heading {
+    font-size: 13.5px;
+    font-family: 'Orbitron', sans-serif;
+    margin-bottom: 3px;
+    color: #0f172a;
+    border-left: 3px solid #0284c7;
+    padding-left: 6px;
+    font-weight: 900;
+  }
+  p { margin-bottom: 5px; font-size: 10.5px; color: var(--ink); font-weight: 600; }
+
+  .desktop-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .blueprint-box {
+    background: var(--blueprint-bg);
+    border: 2px solid var(--blueprint-line);
+    border-radius: 3px;
+    box-shadow: inset 0 0 20px rgba(0, 136, 204, 0.25);
+    margin: 3px 0;
+    color: #fff !important;
+    background-image: linear-gradient(var(--blueprint-blue) 1px, transparent 1px), linear-gradient(90deg, var(--blueprint-blue) 1px, transparent 1px);
+    background-size: 14px 14px;
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+  }
+  .blueprint-header-bar {
+    background: #001220;
+    border-bottom: 2px solid var(--blueprint-line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .blueprint-title {
+    background: var(--blueprint-line);
+    color: #000;
+    font-size: 7.5px;
+    font-weight: 900;
+    padding: 2px 5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .blueprint-tag { color: #38bdf8; font-size: 7.5px; font-weight: bold; padding-right: 6px; }
+  .blueprint-canvas-wrap { padding: 4px 2px; width: 100%; }
+  svg.schematic { width: 100%; height: auto; display: block; }
+  .schematic-hull { fill: rgba(14, 165, 233, 0.15); stroke: #38bdf8; stroke-width: 1.8; }
+  .schematic-txt { fill: #fef08a !important; font-family: 'Share Tech Mono', monospace; font-size: 7.5px; font-weight: bold; }
+  .schematic-callout { stroke: #fef08a; stroke-width: 1.2; fill: none; }
+
+  .cockpit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gauge-card {
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+    padding: 6px 8px;
+    color: var(--ink);
+    font-size: 9.5px;
+    border-radius: 2px;
+  }
+  .gauge-card h4 {
+    font-family: 'Orbitron', sans-serif;
+    color: #0369a1;
+    font-size: 9px;
+    border-bottom: 1px solid #7c6f58;
+    padding-bottom: 2px;
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+    font-weight: 900;
+  }
+  .gauge-card p { color: #2b2318; font-size: 9.5px; margin: 0; font-weight: 600; line-height: 1.32; }
+
+  .status-tag-green { color: #15803d; }
+  .status-tag-blue { color: #0284c7; }
+  .status-tag-orange { color: #c2410c; }
+  .status-tag-alert { color: #b91c1c; }
+  .status-tag-amber { color: #b45309; }
+  .status-tag-dice { color: #db2777; }
+
+  .radar-legend-box {
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+    padding: 5px 7px;
+    color: var(--ink);
+    border-radius: 2px;
+  }
+  .radar-legend-box h4 { font-family: 'Orbitron', sans-serif; color: #854d0e; margin-bottom: 2px; font-size: 9px; font-weight: 900; }
+
+  .control-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    margin-bottom: 4px;
+  }
+  .ctrl-card {
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+    padding: 4px 7px;
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ctrl-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 900;
+    color: #0369a1;
+    border-bottom: 1px solid rgba(124, 111, 88, 0.35);
+    padding-bottom: 1px;
+  }
+  .ctrl-binds {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin: 2px 0;
+  }
+  .ctrl-desc {
+    font-size: 8.5px;
+    color: #2b2318;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .keycap {
+    display: inline-block;
+    background: #1e293b;
+    color: #facc15;
+    border: 1px solid #0f172a;
+    border-bottom: 2px solid #000;
+    padding: 0 4px;
+    font-size: 8px;
+    font-weight: bold;
+    border-radius: 2px;
+    font-family: monospace;
+    white-space: nowrap;
+  }
+  .keycap-gp { background: #064e3b; color: #a7f3d0; border-color: #022c22; }
+  .keycap-msl { background: #7c2d12; color: #ffedd5; border-color: #431407; }
+  .keycap-nav { background: #1e3a8a; color: #93c5fd; border-color: #172554; }
+  .keycap-dice { background: #831843; color: #fbcfe8; border-color: #500724; }
+
+  .pixel-art-vignette {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #030712;
+    border: 1px solid var(--paper-border);
+    padding: 4px;
+    border-radius: 2px;
+    image-rendering: pixelated;
+    margin: 4px 0;
+  }
+
+  .ore-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0; }
+  .ore-card { background: var(--paper-card); border: 1px solid var(--paper-border); padding: 5px 6px; color: var(--ink); border-radius: 2px; font-size: 9px; }
+  .weather-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 4px 0; }
+  .weather-card { background: var(--paper-card); border: 1px solid var(--paper-border); padding: 5px 7px; font-size: 9px; border-radius: 2px; }
+  .weather-card b { font-family: 'Orbitron', sans-serif; font-size: 8.5px; display: block; margin-bottom: 2px; }
+
+  .bestiary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .bestiary-card {
+    display: grid;
+    grid-template-columns: 82px 1fr;
+    gap: 8px;
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+    padding: 6px 7px;
+    align-items: center;
+    border-radius: 2px;
+  }
+  .bestiary-card.boss-highlight { border: 2px solid #b91c1c; background: #fff1f2; }
+  .bestiary-card.berzerk-highlight { border: 2px solid #9f1239; background: #fff5f7; }
+  .pixel-box {
+    background: #030712;
+    border: 1px solid #1e293b;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    image-rendering: pixelated;
+  }
+  .pixel-box svg { width: 100%; height: auto; max-height: 52px; }
+
+  .threat-badge { display: inline-block; padding: 1px 4px; font-size: 7px; font-weight: 900; border-radius: 2px; letter-spacing: 0.8px; margin-bottom: 2px; }
+  .threat-red { background: #991b1b; color: #fee2e2; }
+  .threat-green { background: #14532d; color: #dcfce7; }
+  .threat-purple { background: #581c87; color: #f3e8ff; }
+  .threat-berzerk, .threat-boss { background: #881337; color: #ffe4e6; border: 1px solid #f43f5e; }
+  .bestiary-desc { font-size: 9px; margin: 0; color: var(--ink); font-weight: 600; line-height: 1.32; }
+
+  .toc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 5px 0; }
+  .toc-item {
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+    padding: 5px 7px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9.5px;
+    font-weight: bold;
+    transition: all 0.12s;
+  }
+  .toc-item:hover { background: #0284c7; color: #fff; border-color: #38bdf8; }
+
+  .table-desktop-wrap { margin: 3px 0; }
+  .manual-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+    background: var(--paper-card);
+    border: 1px solid var(--paper-border);
+  }
+  .manual-table th {
+    background: #1e293b;
+    color: #38bdf8;
+    font-size: 7.5px;
+    font-family: 'Orbitron', sans-serif;
+    padding: 3px 6px;
+    text-align: left;
+    letter-spacing: 0.8px;
+  }
+  .manual-table td {
+    padding: 3px 6px;
+    border-bottom: 1px solid rgba(124, 111, 88, 0.3);
+    color: var(--ink);
+  }
+
+  body.theme-crt { background: #000; }
+  body.theme-crt #manual-binder { background: #031006; border-color: var(--crt-dim); box-shadow: 0 0 35px rgba(51, 255, 102, 0.25); }
+  body.theme-crt .manual-page { background: var(--crt-bg) !important; border-color: var(--crt-dim) !important; color: var(--crt-bright) !important; }
+  body.theme-crt h1.manual-title, body.theme-crt h2.section-heading, body.theme-crt .section-tag, body.theme-crt .tab-leaf.active { color: var(--crt-green) !important; text-shadow: 0 0 6px rgba(51, 255, 102, 0.65); }
+  body.theme-crt .tab-leaf.active { background: var(--crt-bg) !important; border-color: var(--crt-dim) !important; }
+  body.theme-crt p, body.theme-crt .bestiary-desc, body.theme-crt .gauge-card p, body.theme-crt .ctrl-desc, body.theme-crt .manual-table td { color: var(--crt-bright) !important; text-shadow: 0 0 3px rgba(134, 239, 172, 0.3); }
+  body.theme-crt .gauge-card, body.theme-crt .radar-legend-box, body.theme-crt .ore-card, body.theme-crt .weather-card, body.theme-crt .toc-item, body.theme-crt .bestiary-card, body.theme-crt .ctrl-card, body.theme-crt .manual-table { background: var(--crt-panel) !important; border-color: var(--crt-dim) !important; color: var(--crt-bright) !important; }
+  body.theme-crt .bestiary-card.boss-highlight, body.theme-crt .bestiary-card.berzerk-highlight { background: #1a050b !important; border-color: #f43f5e !important; }
+  body.theme-crt .page-dogear { border-color: transparent transparent var(--crt-dim) transparent; }
+
+  @media (max-width: 920px) {
+    body { padding: 46px 4px 8px 4px; }
+    #manual-binder { padding: 8px 6px 8px 30px; height: 88vh; }
+    .ring { left: 4px; width: 18px; }
+    .manual-page { padding: 10px 12px 8px 12px; }
+    .desktop-columns, .cockpit-grid, .bestiary-grid, .toc-grid, .ore-grid, .weather-grid, .control-grid { grid-template-columns: 1fr; }
+    .pixel-box { height: 48px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="top-nav">
+  <div style="display:flex; align-items:center; gap:8px;">
+    <a href="./" class="nav-btn" style="background:#0284c7; color:#fff; text-decoration:none; font-weight:900;">🚀 PLAY GAME</a>
+    <div class="nav-brand">TERRAN CONFED // #904-VP-PE</div>
+  </div>
+  <div class="nav-controls">
+    <button class="nav-btn active" id="btn-theme-paper" onclick="setManualTheme('paper')">📜 VINTAGE</button>
+    <button class="nav-btn" id="btn-theme-crt" onclick="setManualTheme('crt')">📺 CRT</button>
+  </div>
+</div>
+
+<!-- CHAPTER TABS -->
+<div id="chapter-tabs">
+  <button class="tab-leaf active" onclick="flipToPage(0)">01 // COVER</button>
+  <button class="tab-leaf" onclick="flipToPage(1)">02 // DIRECTORY</button>
+  <button class="tab-leaf" onclick="flipToPage(2)">03 // RAPIER</button>
+  <button class="tab-leaf" onclick="flipToPage(3)">04 // ORDNANCE</button>
+  <button class="tab-leaf" onclick="flipToPage(4)">05 // AVIONICS</button>
+  <button class="tab-leaf" onclick="flipToPage(5)">06 // FLIGHT DECK</button>
+  <button class="tab-leaf" onclick="flipToPage(6)">07 // FLIGHT CTRL</button>
+  <button class="tab-leaf" onclick="flipToPage(7)">08 // NAV MATRIX</button>
+  <button class="tab-leaf" onclick="flipToPage(8)">09 // NAV-GRID</button>
+  <button class="tab-leaf" onclick="flipToPage(9)">10 // WAYPOINTS</button>
+  <button class="tab-leaf" onclick="flipToPage(10)">11 // WORKSHOP</button>
+  <button class="tab-leaf" onclick="flipToPage(11)">12 // COMMERCE</button>
+  <button class="tab-leaf" onclick="flipToPage(12)">13 // GEOLOGY</button>
+  <button class="tab-leaf" onclick="flipToPage(13)">14 // SUPERNOVA</button>
+  <button class="tab-leaf" onclick="flipToPage(14)">15 // BESTIARY</button>
+  <button class="tab-leaf" onclick="flipToPage(15)">16 // APEX &amp; SOL</button>
+</div>
+
+<!-- 3D BOOK & BINDER -->
+<div id="book-viewport">
+  <div id="manual-binder">
+    <div class="ring ring-1"></div>
+    <div class="ring ring-2"></div>
+    <div class="ring ring-3"></div>
+    <div class="ring ring-4"></div>
+    <div class="ring ring-5"></div>
+
+    <div class="pages-deck">
+
+      <!-- PAGE 1: COVER -->
+      <div class="manual-page active-page" id="page-0">
+        <div>
+          <div class="stamp-container">
+            <div class="stamp stamp-red">TOP SECRET // RESTRICTED</div>
+            <div class="stamp stamp-green">CONFED FLIGHT CERTIFIED</div>
+            <div class="stamp stamp-amber">PILOT EDITION // SOUND BLASTER 16</div>
+          </div>
+
+          <div class="page-header">
+            <div>
+              <div class="confed-sub">TACTICAL FLIGHT MANUAL // SYSTEM REF: VP-3D-2026-PE</div>
+              <h1 class="manual-title">VOID PILOT 3D: ROGUE GALAXY</h1>
+            </div>
+            <span style="font-size:9px; color:#64748b; font-weight:bold;">PILOT BRIEFING</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div>
+              <p style="font-size: 11px; line-height: 1.45;">
+                Welcome to the flight deck, Commander. This official manual covers flight physics, sub-space ordnance, 1993 Privateer acoustic telemetry, planetary mining operations, and combat tactics for the <b>Chimera Ironclad Heavy Interceptor (Wingless Armored Hull)</b>.
+              </p>
+              <div class="gauge-card" style="border-left: 3px solid #0284c7;">
+                <h4><span>PILOT REGISTRY &amp; CLEARANCE</span> <span class="status-tag-blue">[CONFED LOGISTICS]</span></h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 9.5px;">
+                  <div>CREATOR: <b style="color:#facc15;">MATTHEW MACLAINE</b></div>
+                  <div>STUDIO: <b style="color:#f43f5e;">RETROS NOT DEAD STUDIO</b></div>
+                  <div>RANK: <b>LEVEL-5 ACE</b></div>
+                  <div>GRID: <b>1500M SECTORS</b></div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="gauge-card" style="border-left: 3px solid #15803d; margin-bottom: 4px;">
+                <h4><span>MISSION OPERATIONAL DIRECTIVE</span> <span class="status-tag-green">[ACTIVE]</span></h4>
+                <p style="font-size: 9.5px;">
+                  Deploy through Sector 0,0,0 into uncharted deep space. Extract raw minerals, eliminate hostile pirate wings, cash in priority green bounty tickets, and reach MK-Max hardware specifications across all six ship modules.
+                </p>
+              </div>
+
+              <div class="pixel-art-vignette" style="height: 48px;">
+                <svg viewBox="0 0 48 10" style="width: 100%; height: 38px;" shape-rendering="crispEdges">
+                  <rect x="23" y="1" width="2" height="8" fill="#facc15" />
+                  <rect x="20" y="3" width="8" height="4" fill="#facc15" />
+                  <rect x="22" y="2" width="4" height="6" fill="#ffffff" />
+                  <rect x="14" y="4" width="5" height="2" fill="#38bdf8" />
+                  <rect x="7" y="5" width="6" height="2" fill="#0284c7" />
+                  <rect x="0" y="6" width="6" height="1" fill="#1e3a8a" />
+                  <rect x="29" y="4" width="5" height="2" fill="#38bdf8" />
+                  <rect x="35" y="5" width="6" height="2" fill="#0284c7" />
+                  <rect x="42" y="6" width="6" height="1" fill="#1e3a8a" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="radar-legend-box">
+            <h4>FLIGHT MANUAL NAVIGATION</h4>
+            <p style="font-size: 9px; margin: 0;">
+              Turn pages via the <b>bottom binder controls</b>, the <b>bottom-right dog-ear fold</b>, or pressing <b>Left/Right Arrow keys</b>. Every chapter is formatted to fit on screen without vertical scrolling.
+            </p>
+          </div>
+          <div class="page-footer-meta">
+            <span>PAGE 01 // CONFED BRIEFING DOSSIER</span>
+            <span>FLIP PAGE FOR DIRECTORY ➔</span>
+          </div>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 2: TABLE OF CONTENTS -->
+      <div class="manual-page" id="page-1">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">DIRECTORY 02</span>
+              <h2 class="section-heading">TABLE OF CONTENTS &amp; CHAPTER DIRECTORY</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">TACTICAL INDEX</span>
+          </div>
+
+          <p>Tap any tactical chapter below to flip immediately to that section:</p>
+
+          <div class="toc-grid">
+            <div class="toc-item" onclick="flipToPage(2)"><span>03 // CHIMERA SCHEMATIC</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(3)"><span>04 // ORDNANCE &amp; TRACTOR</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(4)"><span>05 // COCKPIT AVIONICS &amp; VDUS</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(5)"><span>06 // FLIGHT DECK &amp; FUZZY DICE</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(6)"><span>07 // FLIGHT &amp; COMBAT CONTROLS</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(7)"><span>08 // NAVIGATION &amp; CONTEXT MATRIX</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(8)"><span>09 // HOLOGRAPHIC GALAXY MAP</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(9)"><span>10 // 3D WAYPOINTS &amp; BEACONS</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(10)"><span>11 // WORKSHOP UPGRADES</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(11)"><span>12 // REFINERY COMMERCE &amp; TARIFFS</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(12)"><span>13 // GEOLOGY &amp; PLANETARY WEATHER</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(13)"><span>14 // CORE COLLAPSE SUPERNOVA</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(14)"><span>15 // THREAT BESTIARY (INVADERS)</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(15)"><span>16 // APEX &amp; SOL</span> ➔</div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 02 // TACTICAL DIRECTORY</span>
+          <span>FLIP FOR CHIMERA SCHEMATIC ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 3: CHIMERA IRONCLAD SCHEMATIC -->
+      <div class="manual-page" id="page-2">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">SCHEMATIC 03</span>
+              <h2 class="section-heading">CHIMERA IRONCLAD // WINGLESS HEAVY CHASSIS</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">CONFED HEAVY VESSEL</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div>
+              <div class="blueprint-box">
+                <div class="blueprint-header-bar">
+                  <span class="blueprint-title">FIG 1.0: WINGLESS SURFACE RECON BLUEPRINT</span>
+                  <span class="blueprint-tag">CHIMERA IRONCLAD</span>
+                </div>
+                <div class="blueprint-canvas-wrap">
+                  <svg class="schematic" viewBox="0 0 540 270">
+                    <defs>
+                      <pattern id="grid1" width="14" height="14" patternUnits="userSpaceOnUse">
+                        <path d="M 14 0 L 0 0 0 14" fill="none" stroke="#003554" stroke-width="0.75"/>
+                      </pattern>
+                    </defs>
+                    <rect width="540" height="270" fill="url(#grid1)" />
+
+                    <rect x="200" y="70" width="120" height="110" fill="rgba(14, 165, 233, 0.18)" stroke="#38bdf8" stroke-width="1.8" />
+                    <rect x="200" y="110" width="120" height="8" fill="#0284c7" />
+
+                    <rect x="245" y="50" width="30" height="20" fill="#0f172a" stroke="#64748b" stroke-width="1.2" />
+                    <rect x="250" y="24" width="6" height="26" fill="#94a3b8" stroke="#38bdf8" stroke-width="0.8" />
+                    <rect x="264" y="24" width="6" height="26" fill="#94a3b8" stroke="#38bdf8" stroke-width="0.8" />
+                    <rect x="257" y="56" width="6" height="8" fill="#38bdf8" />
+
+                    <rect x="90" y="80" width="95" height="100" fill="#0f172a" stroke="#475569" stroke-width="1.5" />
+                    <rect x="185" y="105" width="15" height="50" fill="#1e293b" stroke="#334155" stroke-width="1" />
+                    <rect x="68" y="98" width="22" height="24" fill="#1e293b" stroke="#38bdf8" stroke-width="1.2" />
+                    <rect x="64" y="104" width="4" height="12" fill="#38bdf8" />
+                    <rect x="68" y="138" width="22" height="24" fill="#1e293b" stroke="#38bdf8" stroke-width="1.2" />
+                    <rect x="64" y="144" width="4" height="12" fill="#38bdf8" />
+                    <rect x="110" y="95" width="4" height="70" fill="#ef4444" />
+                    <rect x="125" y="95" width="4" height="70" fill="#ef4444" />
+                    <rect x="140" y="95" width="4" height="70" fill="#ef4444" />
+                    <rect x="155" y="95" width="4" height="70" fill="#ef4444" />
+                    <rect x="88" y="78" width="8" height="8" fill="#ef4444" />
+
+                    <path d="M 320,70 L 410,70 L 440,105 L 440,170 L 320,170 Z" fill="#1e293b" stroke="#38bdf8" stroke-width="1.8" />
+                    <path d="M 345,85 L 400,85 L 425,110 L 345,110 Z" fill="#0369a1" stroke="#38bdf8" stroke-width="1.2" />
+                    <rect x="355" y="90" width="25" height="6" fill="#ffffff" />
+                    <line x1="370" y1="85" x2="370" y2="110" stroke="#0f172a" stroke-width="2" />
+                    <line x1="395" y1="85" x2="395" y2="110" stroke="#0f172a" stroke-width="2" />
+                    <rect x="440" y="115" width="18" height="6" fill="#64748b" />
+                    <rect x="458" y="113" width="8" height="10" fill="#22c55e" stroke="#86efac" stroke-width="1" />
+
+                    <polygon points="248,180 272,180 295,245 225,245" fill="#0f172a" stroke="#64748b" stroke-width="1.2" />
+                    <line x1="245" y1="195" x2="275" y2="195" stroke="#334155" stroke-width="2" />
+                    <line x1="240" y1="210" x2="280" y2="210" stroke="#334155" stroke-width="2" />
+                    <line x1="235" y1="225" x2="285" y2="225" stroke="#334155" stroke-width="2" />
+                    <line x1="230" y1="240" x2="290" y2="240" stroke="#334155" stroke-width="2" />
+                    <circle cx="238" cy="200" r="2" fill="#4ade80" /><circle cx="282" cy="200" r="2" fill="#4ade80" />
+                    <circle cx="232" cy="220" r="2" fill="#4ade80" /><circle cx="288" cy="220" r="2" fill="#4ade80" />
+                    <circle cx="226" cy="240" r="2" fill="#4ade80" /><circle cx="294" cy="240" r="2" fill="#4ade80" />
+
+                    <rect x="120" y="180" width="16" height="30" fill="#0f172a" stroke="#64748b" stroke-width="1" />
+                    <rect x="112" y="210" width="32" height="6" fill="#38bdf8" />
+                    <rect x="380" y="170" width="16" height="30" fill="#0f172a" stroke="#64748b" stroke-width="1" />
+                    <rect x="372" y="200" width="32" height="6" fill="#38bdf8" />
+
+                    <line class="schematic-callout" x1="120" y1="80" x2="60" y2="30" /><line class="schematic-callout" x1="60" y1="30" x2="20" y2="30" />
+                    <text class="schematic-txt" x="14" y="28">[PORT ENGINE NACELLE]</text>
+                    <text class="schematic-txt" x="14" y="38">Dual Nozzles &amp; Red Beacon</text>
+
+                    <line class="schematic-callout" x1="260" y1="30" x2="260" y2="10" />
+                    <text class="schematic-txt" x="260" y="8" text-anchor="middle">[DORSAL TWIN TURRET]</text>
+
+                    <line class="schematic-callout" x1="420" y1="80" x2="470" y2="35" /><line class="schematic-callout" x1="470" y1="35" x2="520" y2="35" />
+                    <text class="schematic-txt" x="526" y="32" text-anchor="end">[COMMAND BRIDGE]</text>
+                    <text class="schematic-txt" x="526" y="42" text-anchor="end">Recessed Visor &amp; Green Beacon</text>
+
+                    <line class="schematic-callout" x1="260" y1="245" x2="260" y2="262" />
+                    <text class="schematic-txt" x="260" y="258" text-anchor="middle">[FLARED BOARDING RAMP &amp; RUNWAY LEDS]</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="gauge-card">
+                <h4><span>CHIMERA IRONCLAD SPECIFICATIONS</span> <span class="status-tag-green">[MIL-SPEC]</span></h4>
+                <p style="font-size:9.5px;">
+                  • <b>Wingless Lifting Body:</b> Eliminates fragile wing spars in favor of reinforced hull plating and high-output vertical maneuvering thrusters.<br>
+                  • <b>Port Engine Nacelle:</b> Industrial turbine nacelle with dual vector nozzles, thermal radiator louvers, and port red navigation strobe.<br>
+                  • <b>Starboard Bridge:</b> Armored brow overhang, recessed angled visor, and starboard green navigation beacon.<br>
+                  • <b>Dorsal Turret Mount:</b> Centered dual-barrel plasma battery with cyan sensor optic.<br>
+                  • <b>Stern Boarding Ramp:</b> Flared hydraulic boarding ramp with stair rungs and chasing green LED runway approach lights.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 03 // AIRFRAME ARCHITECTURE</span>
+          <span>TERRAN CONFED FLIGHT CORPS</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 4: ORDNANCE & TRACTOR -->
+      <div class="manual-page" id="page-3">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">ORDNANCE 04</span>
+              <h2 class="section-heading">WEAPONS SYSTEMS &amp; 240M TRACTOR BEAM</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">OFFENSIVE SUITE</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>DUAL ALTERNATING LASER BATTERIES</span> <span class="status-tag-orange">[HULL SPONSONS]</span></h4>
+              <p style="font-size:9.5px;">
+                Heavy forward sponson cannons and dorsal turrets alternate fire. Delivers 18 base plasma damage per bolt at high cadence with muzzle flash illumination across the canopy visor.
+              </p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>6-CELL HOMING MICRO-MISSILE BAY</span> <span class="status-tag-orange">[50 DMG EACH]</span></h4>
+              <p style="font-size:9.5px;">
+                Chassis ordnance bays house a 6-cartridge self-guided micro-missile rack. Missiles lock onto target coordinates, accelerating at 460 m/s with smoke trails. Restocked upon Starbase docking.
+              </p>
+            </div>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 52px;">
+            <svg viewBox="0 0 64 12" style="width: 100%; height: 42px;" shape-rendering="crispEdges">
+              <rect x="4" y="5" width="16" height="2" fill="#f97316" />
+              <rect x="2" y="5" width="2" height="2" fill="#ffffff" />
+              <rect x="18" y="4" width="3" height="4" fill="#e2e8f0" />
+              <rect x="21" y="5" width="4" height="2" fill="#facc15" />
+              <circle cx="48" cy="6" r="3" fill="none" stroke="#38bdf8" stroke-width="0.8" />
+              <circle cx="48" cy="6" r="5" fill="none" stroke="#38bdf8" stroke-width="0.6" />
+              <circle cx="48" cy="6" r="8" fill="none" stroke="#38bdf8" stroke-width="0.4" />
+              <rect x="47" y="5" width="2" height="2" fill="#ffffff" />
+            </svg>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>4.5Hz MAGNETIC TRACTOR BEAM</span> <span class="status-tag-blue">[240M RANGE]</span></h4>
+              <p style="font-size:9.5px;">
+                The nose-mounted magnetic projector locks onto drifting salvage crates and mineral pods up to 240 meters away with a 4.5Hz hum, reeling them into the collection scoop.
+              </p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>AFTERBURNER COMPRESSOR ACOUSTICS</span> <span class="status-tag-green">[TURBINES]</span></h4>
+              <p style="font-size:9.5px;">
+                Features dynamic compressor whine and combustion rumble. Turbine pitch modulates upward during forward acceleration and transitions to a low rumble during retro-braking.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 04 // WEAPONS &amp; ORDNANCE</span>
+          <span>FLIP FOR COCKPIT AVIONICS ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 5: AVIONICS & VDUS -->
+      <div class="manual-page" id="page-4">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">AVIONICS 05</span>
+              <h2 class="section-heading">COCKPIT VDUS &amp; RADAR SYSTEMS</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">INSTRUMENTATION</span>
+          </div>
+
+          <div class="cockpit-grid">
+            <div class="gauge-card">
+              <h4><span>CENTER RADAR DOUBLE-TAP</span> <span class="status-tag-amber">[MAP SHORTCUT]</span></h4>
+              <p>Double-tapping the 360° radar screen opens the <b>Galaxy Star Map</b>. The radar filters out planetary clutter to focus strictly on high-value targets: Starbases, Salvage Pods, Derelicts, and Hostiles.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>VDU 1: TARGETING &amp; ITTS CHIRP</span> <span class="status-tag-green">[ONLINE]</span></h4>
+              <p>Auto-locks contacts in front of the starfighter with a 1993 Sound Blaster ITTS chirp. Displays wireframe projections, shield status, target range, and touchdown envelopes.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>VDU 2: DAMAGE &amp; MISSILE RACK</span> <span class="status-tag-orange">[ORDNANCE: 6/6]</span></h4>
+              <p>Monitors Shield Matrix (blue), armored Hull bulkheads (green/red), and the <b>6-cell micro-missile cartridge rack</b> with live warhead status indicators.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>FILTERED THREAT CHEVRONS</span> <span class="status-tag-alert">[HOSTILES ONLY]</span></h4>
+              <p>Edge-of-screen chevrons track hostiles only. Flashes strobe yellow when enemies actively fire laser bursts. Stronghold fortresses are flagged with lime markers.</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="radar-legend-box">
+            <h4>360-DEGREE RADAR BLIP IDENTIFIER CHART</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 9px; font-weight: bold;">
+              <div><span style="color:#ef4444;">●</span> RED: Hostiles / Alien Dreadnought</div>
+              <div><span style="color:#bef264;">●</span> LIME: Pirate Stronghold Fortress</div>
+              <div><span style="color:#22c55e;">●</span> GREEN: Bounties / Outposts</div>
+              <div><span style="color:#38bdf8;">●</span> CYAN: Starbases</div>
+              <div><span style="color:#facc15;">●</span> YELLOW: Salvage Cargo Pods / Nav Waypoint</div>
+              <div><span style="color:#c084fc;">●</span> PURPLE: Salvage Derelicts</div>
+            </div>
+          </div>
+          <div class="page-footer-meta">
+            <span>PAGE 05 // AVIONICS &amp; VDUS</span>
+            <span>FLIP FOR FLIGHT DECK ➔</span>
+          </div>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 6: FLIGHT DECK & FUZZY DICE -->
+      <div class="manual-page" id="page-5">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">FLIGHT DECK 06</span>
+              <h2 class="section-heading">COCKPIT DYNAMICS &amp; FUZZY DICE</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">CANOPY ENVIRONMENT</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div>
+              <div class="gauge-card" style="border-left: 3px solid #db2777; margin-bottom: 6px;">
+                <h4><span>TACTICAL FUZZY DICE DYNAMICS</span> <span class="status-tag-dice">[G-FORCE SPRING]</span></h4>
+                <p style="font-size: 9.5px;">
+                  Hanging from the canopy arch are Fluoro Pink (5-pip) &amp; Fluoro Green (3-pip) fuzzy dice. They respond dynamically to:
+                  <br>• <b>Yaw &amp; Pitch Inputs:</b> Swings under flight g-forces.
+                  <br>• <b>Afterburner Burn:</b> Pulls directly back toward the seat.
+                  <br>• <b>Hyperdrive Jumps:</b> Rapid resonant vibration and drag.
+                  <br>• <b>Direct Touch Squeeze:</b> Tapping them directly triggers a rubber squeak!
+                </p>
+              </div>
+              <div class="gauge-card">
+                <h4><span>CONSOLIDATED COCKPIT MENU</span> <span class="status-tag-blue">[☰ MENU / ESC]</span></h4>
+                <p style="font-size: 9.5px;">
+                  Collapses secondary options into a single <b>☰ MENU</b> modal:
+                  <br>• <b>[M] Galaxy Star Map:</b> Instant holographic cartography.
+                  <br>• <b>[MAP] Controller &amp; CRT:</b> Button binding and shader modes.
+                  <br>• <b>[ON/OFF] BGM Audio:</b> Background music toggle.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <div class="gauge-card" style="border-left: 3px solid #ef4444; margin-bottom: 6px;">
+                <h4><span>CANOPY STRUCTURAL DAMAGE STATES</span> <span class="status-tag-alert">[VISOR INTEGRITY]</span></h4>
+                <p style="font-size: 9.5px;">
+                  Ballistic hits breach the cockpit glass:
+                  <br>• <b>Above 55% Hull:</b> Flawless anti-glare canopy.
+                  <br>• <b>Below 55% Hull:</b> Hairline fracture splits across the port visor.
+                  <br>• <b>Below 25% Hull:</b> Spiderweb fracture shatters starboard glass with emergency red cabin strobe lighting.
+                </p>
+              </div>
+              <div class="gauge-card">
+                <h4><span>SURFACE LIFE SUPPORT HUD</span> <span class="status-tag-green">[EVA TELEMETRY]</span></h4>
+                <p style="font-size: 9.5px;">
+                  Upon planetary touchdown, telemetry swaps to spacesuit readouts:
+                  <br>• <b>HULL bar</b> swaps to <b>SUIT HP</b> life support.
+                  <br>• <b>FUEL gauge</b> swaps to distance to <b>SHIP airlock</b> and <b>OUTPOST beacon</b>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 06 // FLIGHT DECK DYNAMICS</span>
+          <span>FLIP FOR FLIGHT CONTROLS ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 7: CONTROLS (FLIGHT & COMBAT) -->
+      <div class="manual-page" id="page-6">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">CONTROL 07</span>
+              <h2 class="section-heading">FLIGHT MANEUVERING &amp; COMBAT INTERFACE</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">OPERATOR MATRIX (1/2)</span>
+          </div>
+
+          <p>Zero-scroll direct binding cards for all flight steering and primary ordnance:</p>
+
+          <div class="control-grid">
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>PITCH &amp; YAW FLIGHT STEERING</span><span>NOSE AIM</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Mouse Move (Lock)</span>
+                <span class="keycap">W A S D</span>
+                <span class="keycap keycap-gp">Left Stick / D-Pad</span>
+              </div>
+              <div class="ctrl-desc">Aims starfighter nose and directs gunsight reticle in 3D deep space.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>FORWARD AFTERBURNER THRUST</span><span>ACCELERATION</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Left Shift</span>
+                <span class="keycap keycap-gp">RT / R2 (Btn 7)</span>
+              </div>
+              <div class="ctrl-desc">Ion turbine acceleration up to top cruising speed (pitch scales with velocity).</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>RETRO BRAKE &amp; REVERSE THRUST</span><span>DECELERATION</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Z</span>
+                <span class="keycap keycap-gp">LT / L2 (Btn 6)</span>
+              </div>
+              <div class="ctrl-desc">Fires counter-thrusters to decelerate or reverse away from hostile fire.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>PRIMARY LASER BATTERIES</span><span>HULL PLASMA</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Left Click</span>
+                <span class="keycap">Space</span>
+                <span class="keycap keycap-gp">(X) / Square (Btn 2)</span>
+              </div>
+              <div class="ctrl-desc">Fires alternating heavy plasma bolts with dynamic canopy lighting.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>LAUNCH HOMING MICRO-MISSILE</span><span>SELF-GUIDED</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap keycap-msl">Right Click</span>
+                <span class="keycap keycap-msl">R</span>
+                <span class="keycap keycap-gp">(Y) / Triangle (Btn 3)</span>
+              </div>
+              <div class="ctrl-desc">Launches 460m/s self-guided missile tracking locked targets (50 DMG, 6 max).</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>POINTER LOCK CURSOR</span><span>DESKTOP AIM</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Canvas Left Click</span>
+                <span class="keycap keycap-gp">Auto-Engaged</span>
+              </div>
+              <div class="ctrl-desc">Locks cursor to viewport for fluid first-person flight controls.</div>
+            </div>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 38px;">
+            <svg viewBox="0 0 60 8" style="width: 100%; height: 30px;" shape-rendering="crispEdges">
+              <rect x="22" y="2" width="16" height="5" fill="#1e293b" />
+              <rect x="12" y="3" width="10" height="4" fill="#0f172a" />
+              <rect x="10" y="4" width="2" height="2" fill="#38bdf8" />
+              <rect x="38" y="2" width="12" height="4" fill="#334155" />
+              <rect x="44" y="3" width="4" height="2" fill="#0284c7" />
+              <rect x="50" y="2" width="2" height="2" fill="#22c55e" />
+              <rect x="28" y="0" width="4" height="2" fill="#94a3b8" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 07 // FLIGHT &amp; COMBAT CONTROLS</span>
+          <span>FLIP FOR NAVIGATION MATRIX ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 8: CONTROLS (NAV & CONTEXT) -->
+      <div class="manual-page" id="page-7">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">CONTROL 08</span>
+              <h2 class="section-heading">NAVIGATION &amp; INTERACTION MATRIX</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">OPERATOR MATRIX (2/2)</span>
+          </div>
+
+          <p>Context actions automatically adapt between flight, docking, and exploration modes:</p>
+
+          <div class="control-grid">
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>GALAXY STAR MAP</span><span>CARTOGRAPHY</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap keycap-nav">M</span>
+                <span class="keycap keycap-nav">Radar Dbl-Tap</span>
+                <span class="keycap">Cockpit Menu</span>
+              </div>
+              <div class="ctrl-desc">Projects the interactive 2D galactic nav-grid with sector inspector.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>COCKPIT MENU / RESUME</span><span>SYSTEM MODAL</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Esc</span>
+                <span class="keycap keycap-gp">Start / Options (Btn 9)</span>
+              </div>
+              <div class="ctrl-desc">Opens unified HUD menu or dismisses open terminals and dialogs.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>CONTEXT ACTION</span><span>DOCK / LAND</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">E</span>
+                <span class="keycap keycap-gp">(A) / Cross (Btn 0)</span>
+              </div>
+              <div class="ctrl-desc">Touchdown on planets, dock with Starbases, or salvage derelict hulls.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>SQUEEZE FUZZY DICE</span><span>INTERACTIVE</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap keycap-dice">Direct Click / Tap</span>
+                <span class="keycap keycap-dice">Touch Screen</span>
+              </div>
+              <div class="ctrl-desc">Tap hanging dice in canopy view for rubber squeak and spring motion.</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>HYPERDRIVE WARP JUMP</span><span>HYPERSPACE</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">F</span>
+                <span class="keycap keycap-gp">Select / Share (Btn 8)</span>
+              </div>
+              <div class="ctrl-desc">350% hyperjump across sector boundaries (15 Fuel; Doppler sonic exit boom).</div>
+            </div>
+
+            <div class="ctrl-card">
+              <div class="ctrl-header"><span>SURFACE EVA JETPACK</span><span>ATMOSPHERIC</span></div>
+              <div class="ctrl-binds">
+                <span class="keycap">Left Shift</span>
+                <span class="keycap keycap-gp">LB / L1 (Btn 4)</span>
+              </div>
+              <div class="ctrl-desc"><b>Unlimited</b> vertical hover thrust while exploring planet surfaces on foot.</div>
+            </div>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 38px;">
+            <svg viewBox="0 0 60 8" style="width: 100%; height: 30px;" shape-rendering="crispEdges">
+              <rect x="25" y="0" width="10" height="8" fill="none" stroke="#38bdf8" stroke-width="0.8" />
+              <rect x="27" y="2" width="6" height="4" fill="#38bdf8" />
+              <rect x="29" y="3" width="2" height="2" fill="#ffffff" />
+              <rect x="6" y="3" width="14" height="1" fill="#facc15" />
+              <rect x="40" y="4" width="14" height="1" fill="#facc15" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 08 // NAVIGATION &amp; INTERACTION MATRIX</span>
+          <span>FLIP FOR GALAXY STAR MAP ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 9: NAV-GRID (MAP & STRONGHOLDS) -->
+      <div class="manual-page" id="page-8">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">NAV-GRID 09</span>
+              <h2 class="section-heading">HOLOGRAPHIC GALAXY STAR MAP &amp; SECTORS</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">ASTRO-CARTOGRAPHY</span>
+          </div>
+
+          <p>Press <span class="keycap keycap-nav">M</span>, open the Cockpit Menu, or <b>double-tap the center radar screen</b> to project the 2D interactive Galaxy Astro-Cartography Grid.</p>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>PIRATE STRONGHOLDS (☠)</span> <span class="status-tag-alert">[12-SECTOR GRID]</span></h4>
+              <p>Hostile strongholds spawn on coordinate grid multiples of 12 (e.g. [12,12], [-12,12]). Active strongholds project a <b>red zone of control</b> across their territory. Destroying the fortress turns the entire zone into a permanent green <b>Safe Zone</b> (✓)!</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>DETERMINISTIC SECTOR SYSTEM</span> <span class="status-tag-green">[HASH3D]</span></h4>
+              <p>Every quadrant across the 1500-meter sector grid generates deterministically from the galaxy seed. Sectors remain charted once discovered, allowing pilots to plan trade routes.</p>
+            </div>
+          </div>
+
+          <div class="desktop-columns" style="margin-top: 6px;">
+            <div class="gauge-card">
+              <h4><span>SECTOR AUTOPILOT TELEMETRY</span> <span class="status-tag-orange">[WARP PLANNING]</span></h4>
+              <p>The sidebar computer calculates direct line-of-sight distance in meters and estimates the number of 350% hyperdrive warp bursts required to reach the selected sector.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>QUICK LOCATE JUMP BUTTONS</span> <span class="status-tag-amber">[SHIP &amp; SOL]</span></h4>
+              <p>Instantly center the holographic nav-grid onto your starfighter position or jump directly to the Sol-Prime Core coordinates [0, 0] with one touch.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 09 // HOLOGRAPHIC STAR MAP</span>
+          <span>FLIP FOR 3D WAYPOINTS ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 10: 3D WAYPOINTS -->
+      <div class="manual-page" id="page-9">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">NAV-GRID 10</span>
+              <h2 class="section-heading">IN-FLIGHT 3D WAYPOINT GUIDANCE</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">FLIGHT HUD</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>3D FLIGHT WAYPOINT RETICLE</span> <span class="status-tag-amber">[HUD GUIDANCE]</span></h4>
+              <p>Selecting <b>LOCK NAV WAYPOINT</b> on any sector sets an active target beacon. While flying in deep space, a yellow holographic HUD diamond displays target name, range, and estimated warp bursts.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>OFF-SCREEN HEADING CHEVRONS</span> <span class="status-tag-amber">[VECTOR POINTER]</span></h4>
+              <p>When the locked sector is outside your cockpit canopy view, directional edge chevrons guide your flight vector until the starfighter nose aligns with the target.</p>
+            </div>
+          </div>
+
+          <div class="desktop-columns" style="margin-top: 6px;">
+            <div class="gauge-card">
+              <h4><span>AUTOMATIC ARRIVAL DISENGAGE</span> <span class="status-tag-green">[&lt;280M BEACON]</span></h4>
+              <p>Once you arrive within 280 meters of the waypoint coordinates, the guidance computer chimes with a confirmation tone and clears the waypoint.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>WARP SPEED TRAJECTORY</span> <span class="status-tag-blue">[350% BOOST]</span></h4>
+              <p>Hyperdrive warp bursts accelerate the vessel directly along the nose heading vector, covering vast distances toward locked waypoints in seconds.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 10 // IN-FLIGHT WAYPOINTS</span>
+          <span>FLIP FOR WORKSHOP UPGRADES ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 11: WORKSHOP UPGRADES -->
+      <div class="manual-page" id="page-10">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">WORKSHOP 11</span>
+              <h2 class="section-heading">HARDWARE UPGRADES &amp; MODULE TIERS</h2>
+            </div>
+            <span style="font-size: 8.5px; color:#64748b; font-weight:bold;">MODULE SPECIFICATIONS</span>
+          </div>
+
+          <p>Starbases and Surface Outpost Terminals allow pilots to install military-grade upgrades across six core ship modules:</p>
+
+          <div class="table-desktop-wrap">
+            <table class="manual-table">
+              <thead>
+                <tr>
+                  <th>MODULE</th>
+                  <th>TIERS</th>
+                  <th>PROGRESSION SPECIFICATION</th>
+                  <th>COST PROGRESSION</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>Mining Laser Array</b></td>
+                  <td>MK 1–7</td>
+                  <td>Surface mining cut rate: 3.5 ➔ 16.7 chunks/s</td>
+                  <td>$250 ➔ $22,000</td>
+                </tr>
+                <tr>
+                  <td><b>Spacesuit Hold</b></td>
+                  <td>MK 1–7</td>
+                  <td>Mineral containment hold: 20 ➔ 200 Units</td>
+                  <td>$200 ➔ $18,000</td>
+                </tr>
+                <tr>
+                  <td><b>Ion Thrusters</b></td>
+                  <td>MK 1–7</td>
+                  <td>Top cruising flight speed: 135 ➔ 285 KPS</td>
+                  <td>$380 ➔ $29,000</td>
+                </tr>
+                <tr>
+                  <td><b>Shield Matrix</b></td>
+                  <td>MK 1–7</td>
+                  <td>Deflector capacity: 40 ➔ 190 Barrier HP</td>
+                  <td>$420 ➔ $30,000</td>
+                </tr>
+                <tr>
+                  <td><b>Armor Plating</b></td>
+                  <td>MK 1–7</td>
+                  <td>Reinforced bulkheads: 100 ➔ 280 Hull HP</td>
+                  <td>$350 ➔ $27,000</td>
+                </tr>
+                <tr>
+                  <td><b>Aux Fuel Cell</b></td>
+                  <td>MK 1–7</td>
+                  <td>Hyperdrive warp reserves: 250 ➔ 460 Fuel Units</td>
+                  <td>$300 ➔ $24,000</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="gauge-card" style="border-left: 3px solid #facc15;">
+            <h4><span>ENDGAME FLAGSHIP PREPARATION</span> <span class="status-tag-amber">[WARNING]</span></h4>
+            <p>
+              Reaching MK-Max across all six modules signals the Confed fleet boundary and provokes the <b>Alien Mothership Dreadnought</b> into warping directly into your sector!
+            </p>
+          </div>
+          <div class="page-footer-meta">
+            <span>PAGE 11 // WORKSHOP UPGRADES</span>
+            <span>FLIP FOR REFINERY COMMERCE ➔</span>
+          </div>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 12: COMMERCE & TARIFFS -->
+      <div class="manual-page" id="page-11">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">COMMERCE 12</span>
+              <h2 class="section-heading">REFINERY COMMERCE &amp; TARIFFS</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">STATION SERVICES</span>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>REFINERY TRADE TARIFFS</span> <span class="status-tag-green">[COMMERCE]</span></h4>
+              <p>Orbital Starbases evaluate cargo prices based on local abundance (0.8x to 1.8x multiplier). Surface Outposts always grant a guaranteed <b>+20% valuation bonus</b> for ore mined on that world!</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>COMMISSION BOUNTY TICKETS</span> <span class="status-tag-amber">[+$1,000 EACH]</span></h4>
+              <p>Defeating priority Green Sector Warlords awards an official Bounty Ticket. Terminals instantly cash in all accumulated tickets at <b>$1,000 Credits each</b>.</p>
+            </div>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 44px;">
+            <svg viewBox="0 0 54 10" style="width: 100%; height: 36px;" shape-rendering="crispEdges">
+              <rect x="6" y="1" width="18" height="8" fill="#14532d" stroke="#22c55e" stroke-width="0.8" />
+              <rect x="8" y="3" width="4" height="4" fill="#86efac" />
+              <rect x="14" y="3" width="8" height="1" fill="#ffffff" />
+              <rect x="14" y="5" width="6" height="1" fill="#facc15" />
+              <rect x="34" y="2" width="14" height="6" fill="#0284c7" stroke="#38bdf8" stroke-width="0.8" />
+              <rect x="38" y="4" width="6" height="2" fill="#ffffff" />
+            </svg>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>EMERGENCY HULL &amp; SUIT REPAIR</span> <span class="status-tag-blue">[MAINTENANCE]</span></h4>
+              <p>Terminals provide immediate bulkhead armor welding and life support replenishment. In surface mode, repairs restore spacesuit life support and barrier shields.</p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>REFUELING RESERVES</span> <span class="status-tag-orange">[FUEL DEPOT]</span></h4>
+              <p>Replenish deep-space hyperdrive cells at Starbase depots. Always top off fuel before jumping into hostile sectors.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 12 // REFINERY COMMERCE</span>
+          <span>FLIP FOR GEOLOGY &amp; WEATHER ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 13: GEOLOGY & WEATHER -->
+      <div class="manual-page" id="page-12">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">GEOLOGY 13</span>
+              <h2 class="section-heading">HOME WORLD, MINERALS &amp; WEATHER</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">SURFACE OPERATIONS</span>
+          </div>
+
+          <p><b>Home World (Sector 0,0,0):</b> Earth-like temperate garden world featuring royal blue oceans, cumulus cloud cover, rich mountain soil, and alternating Iron/Titanium nodes (+30% domestic refinery tariff at Outpost Alpha).</p>
+
+          <div class="ore-grid">
+            <div class="ore-card" style="border-left: 3px solid #64748b;">
+              <b>IRON ORE ($20)</b><br>
+              <small style="color:#475569;">Common structural grade.</small>
+            </div>
+            <div class="ore-card" style="border-left: 3px solid #0284c7;">
+              <b style="color:#0369a1;">TITANIUM ($45)</b><br>
+              <small style="color:#475569;">Armored hull composite.</small>
+            </div>
+            <div class="ore-card" style="border-left: 3px solid #9333ea;">
+              <b style="color:#7e22ce;">PLASMA ($90)</b><br>
+              <small style="color:#475569;">Laser weapon charge.</small>
+            </div>
+            <div class="ore-card" style="border-left: 3px solid #e11d48;">
+              <b style="color:#be123c;">DARK MATTER ($210)</b><br>
+              <small style="color:#475569;">Rare hyper-core fuel.</small>
+            </div>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 42px;">
+            <svg viewBox="0 0 48 10" style="width: 100%; height: 34px;" shape-rendering="crispEdges">
+              <rect x="4" y="4" width="4" height="4" fill="#475569" />
+              <rect x="5" y="3" width="2" height="2" fill="#94a3b8" />
+              <rect x="16" y="2" width="2" height="6" fill="#0284c7" />
+              <rect x="17" y="1" width="1" height="3" fill="#bae6fd" />
+              <rect x="28" y="2" width="4" height="6" fill="#7e22ce" />
+              <rect x="29" y="3" width="2" height="4" fill="#d8b4fe" />
+              <circle cx="40" cy="5" r="3" fill="#9f1239" />
+              <rect x="39" y="4" width="2" height="2" fill="#f43f5e" />
+            </svg>
+          </div>
+
+          <div class="weather-grid">
+            <div class="weather-card">
+              <b style="color:#94a3b8;">IRON DUST GALES</b>
+              Horizontal slate-grey dust gales drifting across rocky terrain.
+            </div>
+            <div class="weather-card">
+              <b style="color:#38bdf8;">TITANIUM BLIZZARDS</b>
+              High-velocity diagonal cyan snow and metallic ice squalls.
+            </div>
+            <div class="weather-card">
+              <b style="color:#c084fc;">PLASMA IONIC SQUALLS</b>
+              Luminescent violet particulate updrafts rising toward low orbit.
+            </div>
+            <div class="weather-card">
+              <b style="color:#f43f5e;">DARK MATTER ANOMALIES</b>
+              Deep crimson harmonic waves and rising anti-gravity embers.
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 13 // PLANETARY GEOLOGY</span>
+          <span>FLIP FOR CORE COLLAPSE SUPERNOVA ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 14: CORE COLLAPSE SUPERNOVA -->
+      <div class="manual-page" id="page-13">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">SUPERNOVA 14</span>
+              <h2 class="section-heading">PLANETARY CORE COLLAPSE EVENT</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">CATACLYSM PROTOCOL</span>
+          </div>
+
+          <div class="gauge-card" style="border-left: 4px solid #ef4444; background: #fff5f5; margin-bottom: 6px;">
+            <h4 style="color:#b91c1c;"><span>🚨 CATASTROPHIC DEPLETION &amp; EVACUATION</span> <span>[60s COUNTDOWN]</span></h4>
+            <p style="font-size: 9.5px;">
+              <b>The Depletion Trigger:</b> If a pilot mines out <b>every single mineral vein</b> across a planet, the total extraction of the crystalline magnetic lattice destabilizes the core, triggering an unstoppable runaway implosion!<br>
+              <b>Ground Evacuation Sirens:</b> Sirens wail across the horizon, the ground heaves violently under mounting tremors, and an alarm pulses. Pilots have exactly <b>60 seconds</b> to reach their landed ship airlock and initiate takeoff. Failing to reach orbit in time results in total pilot and vessel destruction.
+            </p>
+          </div>
+
+          <div class="pixel-art-vignette" style="height: 44px;">
+            <svg viewBox="0 0 60 10" style="width: 100%; height: 36px;" shape-rendering="crispEdges">
+              <circle cx="30" cy="5" r="4" fill="#334155" />
+              <line x1="28" y1="2" x2="32" y2="8" stroke="#ef4444" stroke-width="0.8" />
+              <line x1="26" y1="5" x2="34" y2="5" stroke="#facc15" stroke-width="0.8" />
+              <rect x="20" y="2" width="2" height="2" fill="#f97316" />
+              <rect x="38" y="6" width="2" height="2" fill="#ef4444" />
+              <rect x="14" y="5" width="2" height="1" fill="#facc15" />
+              <rect x="44" y="3" width="2" height="1" fill="#ffffff" />
+            </svg>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4><span>ORBITAL STANDOFF</span> <span class="status-tag-amber">[5s TIMEOUT]</span></h4>
+              <p style="font-size: 9.5px;">
+                Upon boarding and launching into orbit, the departure computer positions the vessel at safe standoff range (220m out) and automatically faces the doomed world during a 5-second countdown.
+              </p>
+            </div>
+            <div class="gauge-card">
+              <h4><span>SUPERNOVA &amp; SALVAGE</span> <span class="status-tag-green">[+$800 + 6x ORE]</span></h4>
+              <p style="font-size: 9.5px;">
+                The world violently obliterates in a 140-particle shockwave ring visible through the canopy! Leaves behind <b>6x dense residual ore chunks</b> and a <b>+$800 salvage cache</b>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 14 // SUPERNOVA EVENT</span>
+          <span>FLIP FOR THREAT BESTIARY ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 15: THREAT BESTIARY (FORMATIONS) -->
+      <div class="manual-page" id="page-14">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">THREATS 15</span>
+              <h2 class="section-heading">SQUADRON FORMATIONS &amp; INVADERS</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">TACTICAL RECON</span>
+          </div>
+
+          <p><b>Pirate Ambush Squadrons:</b> Entering hostile sectors triggers 3-to-6 ship pirate wings attacking in synchronized flight formations that rotate dynamically every 5–8 seconds: <b>Wedge (V-Formation)</b>, <b>Diamond (Ring)</b>, <b>Wall (Line)</b>, and <b>Echelon (Staircase)</b>.</p>
+
+          <div class="bestiary-grid">
+            <div class="bestiary-card">
+              <div class="pixel-box">
+                <svg viewBox="0 0 11 8" shape-rendering="crispEdges">
+                  <rect x="2" y="0" width="1" height="1" fill="#ef4444"/><rect x="8" y="0" width="1" height="1" fill="#ef4444"/>
+                  <rect x="3" y="1" width="1" height="1" fill="#ef4444"/><rect x="7" y="1" width="1" height="1" fill="#ef4444"/>
+                  <rect x="2" y="2" width="7" height="1" fill="#ef4444"/>
+                  <rect x="1" y="3" width="2" height="1" fill="#ef4444"/><rect x="4" y="3" width="3" height="1" fill="#ef4444"/><rect x="8" y="3" width="2" height="1" fill="#ef4444"/>
+                  <rect x="0" y="4" width="11" height="1" fill="#ef4444"/>
+                  <rect x="0" y="5" width="1" height="1" fill="#ef4444"/><rect x="2" y="5" width="7" height="1" fill="#ef4444"/><rect x="10" y="5" width="1" height="1" fill="#ef4444"/>
+                  <rect x="0" y="6" width="1" height="1" fill="#ef4444"/><rect x="2" y="6" width="1" height="1" fill="#ef4444"/><rect x="8" y="6" width="1" height="1" fill="#ef4444"/><rect x="10" y="6" width="1" height="1" fill="#ef4444"/>
+                  <rect x="3" y="7" width="2" height="1" fill="#ef4444"/><rect x="6" y="7" width="2" height="1" fill="#ef4444"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge threat-red">DRAKHLI INVADER</span>
+                <p class="bestiary-desc">Standard pirate raider. Weaves in dogfights at standoff distances (200m–400m); drops credits &amp; crystals. Engages 124 BPM synth combat audio.</p>
+              </div>
+            </div>
+
+            <div class="bestiary-card">
+              <div class="pixel-box">
+                <svg viewBox="0 0 11 8" shape-rendering="crispEdges">
+                  <rect x="2" y="0" width="1" height="1" fill="#22c55e"/><rect x="8" y="0" width="1" height="1" fill="#22c55e"/>
+                  <rect x="0" y="1" width="1" height="1" fill="#22c55e"/><rect x="3" y="1" width="1" height="1" fill="#22c55e"/><rect x="7" y="1" width="1" height="1" fill="#22c55e"/><rect x="10" y="1" width="1" height="1" fill="#22c55e"/>
+                  <rect x="0" y="2" width="1" height="1" fill="#22c55e"/><rect x="2" y="2" width="7" height="1" fill="#22c55e"/><rect x="10" y="2" width="1" height="1" fill="#22c55e"/>
+                  <rect x="0" y="3" width="3" height="1" fill="#22c55e"/><rect x="4" y="3" width="3" height="1" fill="#22c55e"/><rect x="8" y="3" width="3" height="1" fill="#22c55e"/>
+                  <rect x="1" y="4" width="9" height="1" fill="#22c55e"/>
+                  <rect x="2" y="5" width="7" height="1" fill="#22c55e"/>
+                  <rect x="2" y="6" width="1" height="1" fill="#22c55e"/><rect x="8" y="6" width="1" height="1" fill="#22c55e"/>
+                  <rect x="1" y="7" width="1" height="1" fill="#22c55e"/><rect x="9" y="7" width="1" height="1" fill="#22c55e"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge threat-green">SECTOR WARLORD (BOUNTY)</span>
+                <p class="bestiary-desc">Heavy green ace. Paces at long range (400m–700m). Defeating it awards a <b>+$1,000 Green Bounty Ticket</b> redeemable at Starbase terminals.</p>
+              </div>
+            </div>
+
+            <div class="bestiary-card">
+              <div class="pixel-box">
+                <svg viewBox="0 0 8 8" shape-rendering="crispEdges">
+                  <rect x="3" y="0" width="2" height="1" fill="#c084fc"/>
+                  <rect x="2" y="1" width="4" height="1" fill="#c084fc"/>
+                  <rect x="1" y="2" width="6" height="1" fill="#c084fc"/>
+                  <rect x="0" y="3" width="2" height="1" fill="#c084fc"/><rect x="3" y="3" width="2" height="1" fill="#c084fc"/><rect x="6" y="3" width="2" height="1" fill="#c084fc"/>
+                  <rect x="0" y="4" width="8" height="1" fill="#c084fc"/>
+                  <rect x="2" y="5" width="1" height="1" fill="#c084fc"/><rect x="5" y="5" width="1" height="1" fill="#c084fc"/>
+                  <rect x="1" y="6" width="1" height="1" fill="#c084fc"/><rect x="3" y="6" width="2" height="1" fill="#c084fc"/><rect x="6" y="6" width="1" height="1" fill="#c084fc"/>
+                  <rect x="0" y="7" width="1" height="1" fill="#c084fc"/><rect x="2" y="7" width="1" height="1" fill="#c084fc"/><rect x="5" y="7" width="1" height="1" fill="#c084fc"/><rect x="7" y="7" width="1" height="1" fill="#c084fc"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge threat-purple">DEFENSE SENTINEL</span>
+                <p class="bestiary-desc">Automated surface hover drone. Patrols crystal veins and fires suppression bolts. Mining laser lock yields <b>+$150 salvage</b>.</p>
+              </div>
+            </div>
+
+            <div class="bestiary-card berzerk-highlight">
+              <div class="pixel-box">
+                <svg viewBox="0 0 8 11" shape-rendering="crispEdges">
+                  <rect x="2" y="0" width="4" height="1" fill="#f43f5e"/>
+                  <rect x="1" y="1" width="1" height="1" fill="#f43f5e"/><rect x="2" y="1" width="4" height="1" fill="#ffffff"/><rect x="6" y="1" width="1" height="1" fill="#f43f5e"/>
+                  <rect x="2" y="2" width="4" height="1" fill="#f43f5e"/>
+                  <rect x="3" y="3" width="2" height="1" fill="#f43f5e"/>
+                  <rect x="0" y="4" width="8" height="1" fill="#f43f5e"/>
+                  <rect x="0" y="5" width="1" height="1" fill="#f43f5e"/><rect x="2" y="5" width="4" height="1" fill="#f43f5e"/><rect x="7" y="5" width="1" height="1" fill="#f43f5e"/>
+                  <rect x="0" y="6" width="1" height="1" fill="#f43f5e"/><rect x="2" y="6" width="4" height="1" fill="#f43f5e"/><rect x="7" y="6" width="1" height="1" fill="#f43f5e"/>
+                  <rect x="2" y="7" width="4" height="1" fill="#f43f5e"/>
+                  <rect x="2" y="8" width="1" height="1" fill="#f43f5e"/><rect x="5" y="8" width="1" height="1" fill="#f43f5e"/>
+                  <rect x="1" y="9" width="1" height="1" fill="#f43f5e"/><rect x="6" y="9" width="1" height="1" fill="#f43f5e"/>
+                  <rect x="0" y="10" width="1" height="1" fill="#f43f5e"/><rect x="7" y="10" width="1" height="1" fill="#f43f5e"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge threat-berzerk">DARK MATTER APEX // BERZERK BOT</span>
+                <p class="bestiary-desc">Armored bipedal walker. Charges and fires massive <b>Plasma Diamonds (185 DMG!)</b>. Backpedals if approached.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 15 // COMBAT BESTIARY</span>
+          <span>FLIP FOR FINAL BOSS &amp; SOL CORE ➔</span>
+        </div>
+        <div class="page-dogear" onclick="flipPage(1)"></div>
+      </div>
+
+      <!-- PAGE 16: STRONGHOLDS & ALIEN MOTHERSHIP -->
+      <div class="manual-page" id="page-15">
+        <div>
+          <div class="page-header">
+            <div>
+              <span class="section-tag">APEX &amp; SOL 16</span>
+              <h2 class="section-heading">THE IRON MAW, MOTHERSHIP &amp; SOL</h2>
+            </div>
+            <span style="font-size: 9px; color:#64748b; font-weight:bold;">CAPITAL ENGAGEMENTS</span>
+          </div>
+
+          <div class="bestiary-card" style="border: 2px solid #bef264; background: #0b1509; grid-template-columns: 88px 1fr; margin-bottom: 4px;">
+            <div class="pixel-box" style="height: 54px; background: #030a04;">
+              <svg viewBox="0 0 24 24" shape-rendering="crispEdges">
+                <polygon points="12,2 22,7 22,17 12,22 2,17 2,7" fill="#0f172a" stroke="#991b1b" stroke-width="1.2"/>
+                <circle cx="12" cy="12" r="5" fill="#bef264"/>
+                <circle cx="12" cy="12" r="2.5" fill="#ffffff"/>
+                <circle cx="12" cy="12" r="7" fill="none" stroke="#bef264" stroke-width="0.8"/>
+              </svg>
+            </div>
+            <div>
+              <span class="threat-badge" style="background:#14532d; color:#bef264; border:1px solid #65a30d;">FORTRESS // THE IRON MAW BASTION</span>
+              <h4 style="font-family:'Orbitron', sans-serif; font-size:9.5px; color:#bef264; margin: 1px 0;">ATOMIC PIRATE CITADEL</h4>
+              <p class="bestiary-desc" style="color:#dcfce7;">
+                Spawns at grid multiples of 12. Defended by 6 perimeter flak turrets (&lt;1000m range). Obliterating its core awards <b>+$2,500 Credits</b>, ejects 4 contraband pods ($625 each), and permanently liberates its entire zone of control into a safe zone!
+              </p>
+            </div>
+          </div>
+
+          <div class="bestiary-card boss-highlight" style="grid-template-columns: 88px 1fr; margin-bottom: 4px;">
+            <div class="pixel-box" style="height: 52px;">
+              <svg viewBox="0 0 18 7" shape-rendering="crispEdges">
+                <rect x="6" y="0" width="6" height="1" fill="#f43f5e"/>
+                <rect x="4" y="1" width="10" height="1" fill="#f43f5e"/>
+                <rect x="3" y="2" width="12" height="1" fill="#f43f5e"/>
+                <rect x="2" y="3" width="2" height="1" fill="#f43f5e"/><rect x="4" y="3" width="2" height="1" fill="#38bdf8"/><rect x="6" y="3" width="2" height="1" fill="#f43f5e"/><rect x="8" y="3" width="2" height="1" fill="#38bdf8"/><rect x="10" y="3" width="2" height="1" fill="#f43f5e"/><rect x="12" y="3" width="2" height="1" fill="#38bdf8"/><rect x="14" y="3" width="2" height="1" fill="#f43f5e"/>
+                <rect x="0" y="4" width="18" height="1" fill="#f43f5e"/>
+                <rect x="2" y="5" width="3" height="1" fill="#f43f5e"/><rect x="7" y="5" width="4" height="1" fill="#f43f5e"/><rect x="13" y="5" width="3" height="1" fill="#f43f5e"/>
+                <rect x="4" y="6" width="1" height="1" fill="#facc15"/><rect x="13" y="6" width="1" height="1" fill="#facc15"/>
+              </svg>
+            </div>
+            <div>
+              <span class="threat-badge threat-boss">FINAL BOSS // ALIEN MOTHERSHIP</span>
+              <h4 style="font-family:'Orbitron', sans-serif; font-size:9.5px; color:#b91c1c; margin: 1px 0;">CAPITAL FLAGSHIP</h4>
+              <p class="bestiary-desc">
+                Warps in when all 6 modules reach MK-Max (136 BPM music). Features a <b>5s weapon charge window ("EVADE!")</b>, alternating heavy dual plasma, and a <b>+$5,000 Victory Bounty</b>!
+              </p>
+            </div>
+          </div>
+
+          <div class="desktop-columns">
+            <div class="gauge-card">
+              <h4 class="status-tag-alert"><span>SOL-PRIME CORONA (0,0)</span> <span>[EXTREME HAZARD]</span></h4>
+              <p style="font-size: 9px;">
+                Thermal burn zone &lt;360m; vaporization &lt;105m. Steer clear of the system core star!
+              </p>
+            </div>
+            <div class="gauge-card">
+              <h4 class="status-tag-blue"><span>WARP DYNAMICS</span> <span>[DOPPLER BOOM]</span></h4>
+              <p style="font-size: 9px;">
+                Warp jumps accelerate 350% across sectors (15 Fuel), emitting a sub-bass Doppler sonic boom.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 16 // CONFED REGISTRY COMPLETE</span>
+          <span>RECORD #904-VP-PE // RETROS NOT DEAD STUDIO</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- BOTTOM-ANCHORED BINDER CONTROLS -->
+    <div id="binder-footer-controls">
+      <button id="dock-prev-btn" class="dock-btn" onclick="flipPage(-1)" disabled>◀ PREV PAGE</button>
+      <div class="page-indicator" id="dock-page-display">PAGE 1 / 16</div>
+      <button id="dock-next-btn" class="dock-btn" onclick="flipPage(1)">NEXT PAGE ▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let actx = null;
+
+  function ensureAudio() {
+    if (!actx) actx = new AudioCtx();
+    if (actx.state === 'suspended') actx.resume();
+  }
+
+  function playUiBeep(freq = 880, dur = 0.04) {
+    ensureAudio();
+    try {
+      const osc = actx.createOscillator(), g = actx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, actx.currentTime);
+      g.gain.setValueAtTime(0.02, actx.currentTime);
+      g.gain.linearRampToValueAtTime(0, actx.currentTime + dur);
+      osc.connect(g);
+      g.connect(actx.destination);
+      osc.start();
+      osc.stop(actx.currentTime + dur);
+    } catch(e) {}
+  }
+
+  function playPageFlipAudio() {
+    ensureAudio();
+    if (!actx) return;
+    try {
+      const t = actx.currentTime;
+      const dur = 0.20;
+      const bufSize = Math.floor(actx.sampleRate * dur);
+      const buf = actx.createBuffer(1, bufSize, actx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.4));
+      }
+
+      const noise = actx.createBufferSource();
+      noise.buffer = buf;
+
+      const bp = actx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(950, t);
+      bp.frequency.exponentialRampToValueAtTime(320, t + dur);
+      bp.Q.setValueAtTime(2.2, t);
+
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0.12, t);
+      g.gain.linearRampToValueAtTime(0.001, t + dur);
+
+      noise.connect(bp);
+      bp.connect(g);
+      g.connect(actx.destination);
+      noise.start(t);
+
+      const scrape = actx.createOscillator(), sg = actx.createGain();
+      scrape.type = 'triangle';
+      scrape.frequency.setValueAtTime(150, t);
+      scrape.frequency.exponentialRampToValueAtTime(65, t + dur);
+      sg.gain.setValueAtTime(0.05, t);
+      sg.gain.linearRampToValueAtTime(0.001, t + dur);
+      scrape.connect(sg);
+      sg.connect(actx.destination);
+      scrape.start(t);
+      scrape.stop(t + dur);
+    } catch(e) {}
+  }
+
+  const TOTAL_PAGES = 16;
+  let currentPage = 0;
+  let isFlipping = false;
+
+  const pages = Array.from(document.querySelectorAll(".manual-page"));
+  const tabs = Array.from(document.querySelectorAll(".tab-leaf"));
+  const prevBtn = document.getElementById("dock-prev-btn");
+  const nextBtn = document.getElementById("dock-next-btn");
+  const pageDisplay = document.getElementById("dock-page-display");
+
+  function updatePageUI() {
+    pageDisplay.innerText = `PAGE ${currentPage + 1} / ${TOTAL_PAGES}`;
+    prevBtn.disabled = (currentPage === 0);
+    nextBtn.disabled = (currentPage === TOTAL_PAGES - 1);
+
+    tabs.forEach((tab, idx) => {
+      tab.classList.toggle("active", idx === currentPage);
+    });
+  }
+
+  function flipPage(direction) {
+    if (isFlipping) return;
+    const targetPage = currentPage + direction;
+    if (targetPage < 0 || targetPage >= TOTAL_PAGES) return;
+    flipToPage(targetPage);
+  }
+
+  function flipToPage(targetIndex) {
+    if (targetIndex === currentPage || isFlipping || targetIndex < 0 || targetIndex >= TOTAL_PAGES) return;
+    isFlipping = true;
+    playPageFlipAudio();
+
+    const currentEl = pages[currentPage];
+    const targetEl = pages[targetIndex];
+    const isForward = targetIndex > currentPage;
+
+    currentEl.classList.remove("active-page", "flipping-out-left", "flipping-in-left");
+    targetEl.classList.remove("active-page", "flipping-out-left", "flipping-in-left");
+
+    if (isForward) {
+      currentEl.classList.add("flipping-out-left");
+    } else {
+      targetEl.classList.add("flipping-in-left");
+    }
+
+    setTimeout(() => {
+      currentEl.classList.remove("flipping-out-left", "flipping-in-left", "active-page");
+      targetEl.classList.remove("flipping-out-left", "flipping-in-left");
+      targetEl.classList.add("active-page");
+
+      currentPage = targetIndex;
+      updatePageUI();
+      isFlipping = false;
+    }, 360);
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.code === "Space") {
+      if (currentPage < TOTAL_PAGES - 1) flipPage(1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      if (currentPage > 0) flipPage(-1);
+    }
+  });
+
+  let touchStartX = 0, touchStartY = 0;
+  const binderEl = document.getElementById("manual-binder");
+
+  binderEl.addEventListener("touchstart", (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+  }, { passive: true });
+
+  binderEl.addEventListener("touchend", (e) => {
+    const deltaX = e.changedTouches[0].screenX - touchStartX;
+    const deltaY = e.changedTouches[0].screenY - touchStartY;
+    if (Math.abs(deltaX) > 42 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      if (deltaX < 0 && currentPage < TOTAL_PAGES - 1) {
+        flipPage(1);
+      } else if (deltaX > 0 && currentPage > 0) {
+        flipPage(-1);
+      }
+    }
+  }, { passive: true });
+
+  function setManualTheme(theme) {
+    playUiBeep(theme === 'crt' ? 440 : 880, 0.06);
+    const body = document.body;
+    const btnPaper = document.getElementById("btn-theme-paper");
+    const btnCrt = document.getElementById("btn-theme-crt");
+
+    if (theme === 'crt') {
+      body.classList.add("theme-crt");
+      btnCrt.classList.add("active");
+      btnPaper.classList.remove("active");
+    } else {
+      body.classList.remove("theme-crt");
+      btnPaper.classList.add("active");
+      btnCrt.classList.remove("active");
+    }
+  }
+
+  document.querySelectorAll("button, .tab-leaf, .page-dogear, .toc-item").forEach(el => {
+    el.addEventListener("pointerdown", () => playUiBeep(1200, 0.02));
+  });
+
+  updatePageUI();
+</script>
+</body>
+</html>
