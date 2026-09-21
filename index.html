@@ -23,7 +23,6 @@
       --text: #94a3b8;
     }
 
-    /* Kills all Android long-press menus, callouts, and text selection */
     * { 
       box-sizing: border-box; 
       margin: 0; 
@@ -44,7 +43,6 @@
       -webkit-touch-callout: none !important;
     }
 
-    /* Top Navigation Bar */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
@@ -57,11 +55,22 @@
     .logo { font-size: 0.95rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
     .logo span { color: var(--accent); }
 
-    /* Real Telemetry Bar */
     .telemetry-bar {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+    }
+    .btn-manual-link {
+      font-size: 0.72rem;
+      color: #fff;
+      background: #0284c7;
+      border: 1px solid #38bdf8;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 900;
+      text-decoration: none;
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 0.5px;
     }
     .dev-tag {
       font-size: 0.7rem;
@@ -193,14 +202,14 @@
 </head>
 <body>
 
-  <!-- Top Bar with Real Visits Counter -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
 
     <div class="telemetry-bar">
+      <!-- 📖 Direct Flight Manual Link -->
+      <a href="guide.html" class="btn-manual-link">📖 MANUAL</a>
       <div class="dev-tag">RETROS NOT DEAD</div>
 
-      <!-- Real Cloud Visit Counter Badge -->
       <div class="visits-badge">
         <img 
           src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
@@ -214,13 +223,9 @@
   <div class="theater-wrapper" id="theater-root">
     <div class="game-theater">
 
-      <!-- Fullscreen Toggle Button -->
       <button id="fs-toggle-btn">⛶ FULL</button>
-
-      <!-- 10-Minute Mission Clock -->
       <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
 
-      <!-- Demo Expired Modal -->
       <div id="demo-expired-modal">
         <div class="demo-frame">
           <h2 style="color:#facc15; font-size:16px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
@@ -236,7 +241,6 @@
         </div>
       </div>
 
-      <!-- Embedded Game -->
       <iframe 
         id="game-frame" 
         src="game.html" 
@@ -249,9 +253,6 @@
   </div>
 
   <script>
-    // ==========================================
-    // KILLS ANDROID LONG-PRESS CONTEXT MENUS
-    // ==========================================
     window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
     document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
 
@@ -270,9 +271,6 @@
       } catch (err) {}
     });
 
-    // ==========================================
-    // FULLSCREEN HANDLER
-    // ==========================================
     const fsBtn = document.getElementById("fs-toggle-btn");
     const theaterRoot = document.getElementById("theater-root");
 
@@ -298,9 +296,6 @@
       toggleFullscreen();
     });
 
-    // ==========================================
-    // 10-MINUTE DEMO CONTROLLER
-    // ==========================================
     const DEMO_SECONDS = 600;
     let timeLeft = DEMO_SECONDS;
     let timerActive = false;
