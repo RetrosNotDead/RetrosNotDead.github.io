@@ -23,10 +23,27 @@
       --text: #94a3b8;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; user-select: none; -webkit-user-select: none; }
-    html, body { width: 100vw; height: 100vh; height: 100dvh; background-color: var(--bg); color: var(--text); overflow: hidden; }
+    /* Kills all Android long-press menus, callouts, and text selection */
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: 'Inter', sans-serif; 
+      user-select: none !important; 
+      -webkit-user-select: none !important; 
+      -webkit-touch-callout: none !important; 
+    }
 
-    /* Top Navigation Bar */
+    html, body { 
+      width: 100vw; 
+      height: 100vh; 
+      height: 100dvh; 
+      background-color: var(--bg); 
+      color: var(--text); 
+      overflow: hidden; 
+      -webkit-touch-callout: none !important;
+    }
+
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
@@ -40,7 +57,6 @@
     .logo span { color: var(--accent); }
     .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.72rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
 
-    /* Main Theater Wrapper */
     .theater-wrapper {
       position: relative;
       width: 100vw;
@@ -59,15 +75,14 @@
       overflow: hidden;
     }
 
-    /* Embedded Game Frame */
     iframe#game-frame {
       width: 100%;
       height: 100%;
       border: none;
       display: block;
+      -webkit-touch-callout: none !important;
     }
 
-    /* Dedicated Fullscreen Button */
     #fs-toggle-btn {
       position: absolute;
       top: 8px;
@@ -83,10 +98,10 @@
       cursor: pointer;
       z-index: 150;
       box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
+      -webkit-touch-callout: none !important;
     }
     #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
 
-    /* 10-Minute Mission Countdown Clock */
     #demo-timer-badge {
       position: absolute;
       top: 8px;
@@ -107,7 +122,6 @@
       white-space: nowrap;
     }
 
-    /* Demo Expired Modal */
     #demo-expired-modal {
       position: absolute;
       inset: 0;
@@ -150,16 +164,14 @@
     }
     .btn-action:hover { background: #16a34a; color: #fff; }
 
-    /* Mobile Edge-to-Edge Optimization */
     @media (max-width: 768px), (orientation: landscape) and (max-height: 520px) {
-      header { display: none; } /* Hide header on mobile so game gets 100% screen */
+      header { display: none; }
       .theater-wrapper { height: 100vh; height: 100dvh; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Minimal Header (Hidden automatically on phones in landscape) -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
     <div class="dev-badge">DEV: RetrosNotDeadStudio</div>
@@ -168,7 +180,7 @@
   <div class="theater-wrapper" id="theater-root">
     <div class="game-theater">
 
-      <!-- Fullscreen Button -->
+      <!-- Fullscreen Toggle Button -->
       <button id="fs-toggle-btn">⛶ FULL</button>
 
       <!-- 10-Minute Mission Clock -->
@@ -190,7 +202,7 @@
         </div>
       </div>
 
-      <!-- Embedded Game with Full Permission Attributes -->
+      <!-- Embedded Game -->
       <iframe 
         id="game-frame" 
         src="game.html" 
@@ -204,7 +216,29 @@
 
   <script>
     // ==========================================
-    // FULLSCREEN HANDLER (WORKS ON MOBILE)
+    // KILLS ANDROID LONG-PRESS CONTEXT MENUS
+    // ==========================================
+    window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+    document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+
+    // Injects the long-press blocker directly into the game iframe
+    const gameFrame = document.getElementById("game-frame");
+    gameFrame.addEventListener("load", () => {
+      try {
+        const frameWin = gameFrame.contentWindow;
+        const frameDoc = gameFrame.contentDocument || frameWin.document;
+
+        frameWin.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+        frameDoc.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+
+        const killStyle = frameDoc.createElement("style");
+        killStyle.textContent = "* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }";
+        frameDoc.head.appendChild(killStyle);
+      } catch (err) {}
+    });
+
+    // ==========================================
+    // FULLSCREEN HANDLER
     // ==========================================
     const fsBtn = document.getElementById("fs-toggle-btn");
     const theaterRoot = document.getElementById("theater-root");
@@ -217,17 +251,11 @@
       const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
 
       if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-        if (requestFullScreen) {
-          requestFullScreen.call(docEl).catch(() => {});
-        }
-        if (screen.orientation && screen.orientation.lock) {
-          screen.orientation.lock('landscape').catch(() => {});
-        }
+        if (requestFullScreen) requestFullScreen.call(docEl).catch(() => {});
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
         fsBtn.innerText = "✕ EXIT";
       } else {
-        if (cancelFullScreen) {
-          cancelFullScreen.call(doc).catch(() => {});
-        }
+        if (cancelFullScreen) cancelFullScreen.call(doc).catch(() => {});
         fsBtn.innerText = "⛶ FULL";
       }
     }
@@ -245,7 +273,6 @@
     let timerActive = false;
     const timerBadge = document.getElementById("demo-timer-badge");
     const expiredModal = document.getElementById("demo-expired-modal");
-    const gameFrame = document.getElementById("game-frame");
 
     function formatTime(sec) {
       const m = Math.floor(sec / 60);
