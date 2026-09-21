@@ -1,366 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Void Pilot 3D: Rogue Galaxy (10-Min Demo)</title>
-
-  <!-- Monetag Verification -->
-  <meta name="monetag" content="82d3390ad1aab921db41509bc54bbbd5">
-
-  <!-- Monetag MultiTag Ad Script -->
-  <script src="https://quge5.com/88/tag.min.js" data-zone="283710" async data-cfasync="false"></script>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Share+Tech+Mono&display=swap">
-
-  <style>
-    :root {
-      --bg: #05070d;
-      --card-bg: #0b1120;
-      --border: #1e293b;
-      --accent: #38bdf8;
-      --text: #94a3b8;
-    }
-
-    * { 
-      box-sizing: border-box; 
-      margin: 0; 
-      padding: 0; 
-      font-family: 'Inter', sans-serif; 
-      user-select: none !important; 
-      -webkit-user-select: none !important; 
-      -webkit-touch-callout: none !important; 
-    }
-
-    html, body { 
-      width: 100vw; 
-      height: 100vh; 
-      height: 100dvh; 
-      background-color: var(--bg); 
-      color: var(--text); 
-      overflow: hidden; 
-      -webkit-touch-callout: none !important;
-    }
-
-    header {
-      background: #080d1a;
-      border-bottom: 1px solid var(--border);
-      padding: 6px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      height: 42px;
-    }
-    .logo { font-size: 0.95rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
-    .logo span { color: var(--accent); }
-
-    .telemetry-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .btn-manual-link {
-      font-size: 0.72rem;
-      color: #fff;
-      background: #0284c7;
-      border: 1px solid #38bdf8;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-weight: 900;
-      text-decoration: none;
-      font-family: 'Share Tech Mono', monospace;
-      letter-spacing: 0.5px;
-    }
-    .dev-tag {
-      font-size: 0.7rem;
-      color: #facc15;
-      font-family: 'Share Tech Mono', monospace;
-      background: #111e38;
-      border: 1px solid #1e3a8a;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-weight: bold;
-    }
-    .visits-badge {
-      display: flex;
-      align-items: center;
-    }
-
-    .theater-wrapper {
-      position: relative;
-      width: 100vw;
-      height: calc(100dvh - 42px);
-      display: flex;
-      flex-direction: column;
-      background: #000;
-      overflow: hidden;
-    }
-
-    .game-theater {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
-    }
-
-    iframe#game-frame {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-      -webkit-touch-callout: none !important;
-    }
-
-    #fs-toggle-btn {
-      position: absolute;
-      top: 8px;
-      right: 12px;
-      background: rgba(11, 19, 41, 0.88);
-      border: 1.5px solid #38bdf8;
-      color: #38bdf8;
-      font-size: 9.5px;
-      font-weight: 900;
-      letter-spacing: 1px;
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      z-index: 150;
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
-      -webkit-touch-callout: none !important;
-    }
-    #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
-
-    #demo-timer-badge {
-      position: absolute;
-      top: 8px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(4, 9, 24, 0.92);
-      border: 1px solid #38bdf8;
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
-      color: #38bdf8;
-      padding: 4px 12px;
-      font-size: 10.5px;
-      font-family: 'Share Tech Mono', monospace;
-      font-weight: 900;
-      letter-spacing: 1.2px;
-      z-index: 100;
-      pointer-events: none;
-      border-radius: 4px;
-      white-space: nowrap;
-    }
-
-    #demo-expired-modal {
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at center, rgba(11, 23, 56, 0.98) 0%, rgba(2, 5, 15, 0.99) 90%);
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-      padding: 20px;
-      text-align: center;
-      color: #fff;
-    }
-
-    .demo-frame {
-      background: #080e1e;
-      border: 2px solid #facc15;
-      box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
-      padding: 20px;
-      max-width: 440px;
-      width: 90%;
-      border-radius: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .btn-action {
-      background: #22c55e;
-      border: 2px solid #fff;
-      color: #000;
-      font-weight: 900;
-      font-size: 11px;
-      padding: 10px 18px;
-      border-radius: 4px;
-      cursor: pointer;
-      width: 100%;
-      transition: 0.2s;
-    }
-    .btn-action:hover { background: #16a34a; color: #fff; }
-
-    @media (max-width: 768px), (orientation: landscape) and (max-height: 520px) {
-      header { display: none; }
-      .theater-wrapper { height: 100vh; height: 100dvh; }
-    }
-  </style>
-</head>
-<body>
-
-  <header>
-    <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
-
-    <div class="telemetry-bar">
-      <!-- 📖 Direct Flight Manual Link -->
-      <a href="guide.html" class="btn-manual-link">📖 MANUAL</a>
-      <div class="dev-tag">RETROS NOT DEAD</div>
-
-      <div class="visits-badge">
-        <img 
-          src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
-          alt="Total Visits" 
-          style="vertical-align: middle; height: 20px; border-radius: 3px;"
-        />
-      </div>
-    </div>
-  </header>
-
-  <div class="theater-wrapper" id="theater-root">
-    <div class="game-theater">
-
-      <button id="fs-toggle-btn">⛶ FULL</button>
-      <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
-
-      <div id="demo-expired-modal">
-        <div class="demo-frame">
-          <h2 style="color:#facc15; font-size:16px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
-          <p style="font-size:11px; color:#cbd5e1; line-height:1.4;">
-            Your 10-minute trial sortie has concluded. Flight systems have safe-parked.
-          </p>
-          <p style="font-size:9.5px; color:#94a3b8; line-height:1.4;">
-            Launch a brand new 10-minute mission immediately below!
-          </p>
-          <button id="restart-demo-btn" class="btn-action">
-            🚀 LAUNCH NEW 10-MIN MISSION
-          </button>
-        </div>
-      </div>
-
-      <iframe 
-        id="game-frame" 
-        src="game.html" 
-        allow="fullscreen; gamepad; autoplay; screen-wake-lock" 
-        allowfullscreen="true" 
-        webkitallowfullscreen="true" 
-        mozallowfullscreen="true">
-      </iframe>
-    </div>
-  </div>
-
-  <script>
-    window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
-    document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
-
-    const gameFrame = document.getElementById("game-frame");
-    gameFrame.addEventListener("load", () => {
-      try {
-        const frameWin = gameFrame.contentWindow;
-        const frameDoc = gameFrame.contentDocument || frameWin.document;
-
-        frameWin.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
-        frameDoc.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
-
-        const killStyle = frameDoc.createElement("style");
-        killStyle.textContent = "* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }";
-        frameDoc.head.appendChild(killStyle);
-      } catch (err) {}
-    });
-
-    const fsBtn = document.getElementById("fs-toggle-btn");
-    const theaterRoot = document.getElementById("theater-root");
-
-    function toggleFullscreen() {
-      const doc = window.document;
-      const docEl = theaterRoot;
-
-      const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
-      const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
-
-      if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-        if (requestFullScreen) requestFullScreen.call(docEl).catch(() => {});
-        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
-        fsBtn.innerText = "✕ EXIT";
-      } else {
-        if (cancelFullScreen) cancelFullScreen.call(doc).catch(() => {});
-        fsBtn.innerText = "⛶ FULL";
-      }
-    }
-
-    fsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleFullscreen();
-    });
-
-    const DEMO_SECONDS = 600;
-    let timeLeft = DEMO_SECONDS;
-    let timerActive = false;
-    const timerBadge = document.getElementById("demo-timer-badge");
-    const expiredModal = document.getElementById("demo-expired-modal");
-
-    function formatTime(sec) {
-      const m = Math.floor(sec / 60);
-      const s = Math.floor(sec % 60);
-      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-
-    window.addEventListener("blur", () => { timerActive = true; }, { once: true });
-    document.addEventListener("pointerdown", () => { timerActive = true; }, { once: true });
-
-    setInterval(() => {
-      if (!timerActive || timeLeft <= 0) return;
-
-      timeLeft--;
-      timerBadge.innerText = `⏱️ DEMO TIME: ${formatTime(timeLeft)}`;
-
-      if (timeLeft <= 30) {
-        timerBadge.style.color = "#ef4444";
-        timerBadge.style.borderColor = "#ef4444";
-        timerBadge.style.boxShadow = "0 0 14px rgba(239, 68, 68, 0.7)";
-      } else if (timeLeft <= 120) {
-        timerBadge.style.color = "#facc15";
-        timerBadge.style.borderColor = "#facc15";
-      }
-
-      if (timeLeft <= 0) {
-        expiredModal.style.display = "flex";
-        timerBadge.style.display = "none";
-      }
-    }, 1000);
-
-    document.getElementById("restart-demo-btn").addEventListener("click", () => {
-      timeLeft = DEMO_SECONDS;
-      expiredModal.style.display = "none";
-      timerBadge.style.display = "block";
-      timerBadge.style.color = "#38bdf8";
-      timerBadge.style.borderColor = "#38bdf8";
-      timerBadge.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.4)";
-      gameFrame.src = gameFrame.src;
-    });
-  </script>
-</body>
-</html>
-
-(Tap Commit changes... at the bottom).
-
-File 2: Create guide.html (The Full 16-Chapter Flight Manual)
-
-1.  Tap this direct link to create the new file on GitHub:
-    👉 Create guide.html on GitHub
-
-2.  In the "Name your file..." box, type:
-
-    guide.html
-
-3.  Paste this complete, ad-monetized guide code into the big text box:
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>CONFED FLIGHT MANUAL // VOID PILOT 3D: ROGUE GALAXY</title>
@@ -413,7 +53,7 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     transition: background 0.3s ease;
     overflow-x: hidden;
   }
@@ -477,6 +117,7 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     scrollbar-width: thin;
     margin-bottom: -1px;
     z-index: 20;
+    -webkit-overflow-scrolling: touch;
   }
   .tab-leaf {
     flex: 1;
@@ -513,11 +154,12 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     display: flex;
     justify-content: center;
     position: relative;
+    flex: 1;
   }
 
   #manual-binder {
     width: 100%;
-    height: clamp(560px, 80vh, 720px);
+    height: clamp(560px, 80vh, 740px);
     background: var(--binder-leather);
     border: 4px solid var(--binder-border);
     border-radius: 6px;
@@ -553,8 +195,10 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     position: relative;
     transform-style: preserve-3d;
     flex: 1;
+    overflow: hidden;
   }
 
+  /* Mobile-scrollable manual page */
   .manual-page {
     position: absolute;
     inset: 0;
@@ -562,11 +206,16 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     border: 2px solid var(--paper-border);
     border-radius: 3px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-    padding: 14px 20px 12px 20px;
+    padding: 14px 18px 24px 18px;
     display: none;
     flex-direction: column;
-    justify-content: space-between;
-    overflow: hidden;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     height: 100%;
     backface-visibility: hidden;
     transform-origin: left bottom;
@@ -626,7 +275,7 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
   #binder-footer-controls {
     width: 100%;
     height: 36px;
-    background: rgba(8, 6, 4, 0.75);
+    background: rgba(8, 6, 4, 0.85);
     border-top: 1px solid #4a3826;
     display: flex;
     align-items: center;
@@ -666,16 +315,18 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    flex-shrink: 0;
   }
   .page-footer-meta {
     border-top: 1px dashed #7a705c;
-    margin-top: 4px;
-    padding-top: 4px;
+    margin-top: 10px;
+    padding-top: 5px;
     display: flex;
     justify-content: space-between;
     font-size: 8.5px;
     color: var(--ink-faded);
     font-weight: 700;
+    flex-shrink: 0;
   }
 
   .stamp-container { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 3px; }
@@ -955,12 +606,23 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
   body.theme-crt .bestiary-card.boss-highlight, body.theme-crt .bestiary-card.berzerk-highlight { background: #1a050b !important; border-color: #f43f5e !important; }
   body.theme-crt .page-dogear { border-color: transparent transparent var(--crt-dim) transparent; }
 
+  /* MOBILE-SPECIFIC SCROLL & FIT ENHANCEMENT */
   @media (max-width: 920px) {
-    body { padding: 46px 4px 8px 4px; }
-    #manual-binder { padding: 8px 6px 8px 30px; height: 88vh; }
-    .ring { left: 4px; width: 18px; }
-    .manual-page { padding: 10px 12px 8px 12px; }
-    .desktop-columns, .cockpit-grid, .bestiary-grid, .toc-grid, .ore-grid, .weather-grid, .control-grid { grid-template-columns: 1fr; }
+    body { padding: 48px 6px 8px 6px; justify-content: flex-start; }
+    #manual-binder { 
+      padding: 8px 6px 8px 24px; 
+      height: calc(100dvh - 94px); 
+      max-height: none;
+    }
+    .ring { left: 4px; width: 16px; }
+    .manual-page { 
+      padding: 10px 12px 18px 12px;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    .desktop-columns, .cockpit-grid, .bestiary-grid, .toc-grid, .ore-grid, .weather-grid, .control-grid { 
+      grid-template-columns: 1fr; 
+    }
     .pixel-box { height: 48px; }
   }
 </style>
@@ -2245,6 +1907,7 @@ File 2: Create guide.html (The Full 16-Chapter Flight Manual)
     }
   });
 
+  /* TOUCH SWIPE (Leaves vertical dragging for scrolling) */
   let touchStartX = 0, touchStartY = 0;
   const binderEl = document.getElementById("manual-binder");
 
