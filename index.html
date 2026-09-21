@@ -44,18 +44,39 @@
       -webkit-touch-callout: none !important;
     }
 
+    /* Top Navigation Bar */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
-      padding: 8px 16px;
+      padding: 6px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       height: 42px;
     }
-    .logo { font-size: 1rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
+    .logo { font-size: 0.95rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-decoration: none; }
     .logo span { color: var(--accent); }
-    .dev-badge { background: #111e38; border: 1px solid #1e3a8a; color: #facc15; font-size: 0.72rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+
+    /* Real Telemetry Bar */
+    .telemetry-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dev-tag {
+      font-size: 0.7rem;
+      color: #facc15;
+      font-family: 'Share Tech Mono', monospace;
+      background: #111e38;
+      border: 1px solid #1e3a8a;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .visits-badge {
+      display: flex;
+      align-items: center;
+    }
 
     .theater-wrapper {
       position: relative;
@@ -172,9 +193,22 @@
 </head>
 <body>
 
+  <!-- Top Bar with Real Visits Counter -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
-    <div class="dev-badge">DEV: RetrosNotDeadStudio</div>
+
+    <div class="telemetry-bar">
+      <div class="dev-tag">RETROS NOT DEAD</div>
+
+      <!-- Real Cloud Visit Counter Badge -->
+      <div class="visits-badge">
+        <img 
+          src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
+          alt="Total Visits" 
+          style="vertical-align: middle; height: 20px; border-radius: 3px;"
+        />
+      </div>
+    </div>
   </header>
 
   <div class="theater-wrapper" id="theater-root">
@@ -221,7 +255,6 @@
     window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
     document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
 
-    // Injects the long-press blocker directly into the game iframe
     const gameFrame = document.getElementById("game-frame");
     gameFrame.addEventListener("load", () => {
       try {
