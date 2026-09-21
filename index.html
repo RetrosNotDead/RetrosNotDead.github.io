@@ -12,7 +12,7 @@
   <script src="https://quge5.com/88/tag.min.js" data-zone="283710" async data-cfasync="false"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap">
 
   <style>
     :root {
@@ -21,13 +21,20 @@
       --border: #1e293b;
       --accent: #38bdf8;
       --text: #94a3b8;
+      --dos-blue: #0000aa;
+      --dos-cyan: #00aaaa;
+      --dos-bright-cyan: #55ffff;
+      --dos-yellow: #ffff55;
+      --dos-white: #ffffff;
+      --dos-gray: #aaaaaa;
+      --dos-green: #55ff55;
     }
 
     * { 
       box-sizing: border-box; 
       margin: 0; 
       padding: 0; 
-      font-family: 'Inter', sans-serif; 
+      font-family: 'Share Tech Mono', monospace; 
       user-select: none !important; 
       -webkit-user-select: none !important; 
       -webkit-touch-callout: none !important; 
@@ -45,7 +52,7 @@
       -webkit-touch-callout: none !important;
     }
 
-    /* TOP BAR - ALWAYS VISIBLE ON MOBILE & DESKTOP */
+    /* TOP BAR */
     header {
       background: #080d1a;
       border-bottom: 1px solid var(--border);
@@ -67,7 +74,6 @@
     }
     .logo span { color: var(--accent); }
 
-    /* ACTION BUTTONS (ALWAYS VISIBLE ON MOBILE) */
     .top-actions-bar {
       display: flex;
       align-items: center;
@@ -75,7 +81,6 @@
     }
     .btn-nav {
       font-size: 0.68rem;
-      font-family: 'Share Tech Mono', monospace;
       font-weight: 900;
       padding: 4px 8px;
       border-radius: 3px;
@@ -85,16 +90,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.15s;
     }
-    .btn-manual {
-      background: #0284c7;
-      border: 1px solid #38bdf8;
-      color: #fff;
-    }
-    .btn-manual:active { background: #0369a1; }
-    
-    /* GOLD PAYPAL PC FUND BUTTON */
+    .btn-manual { background: #0284c7; border: 1px solid #38bdf8; color: #fff; }
     .btn-pcfund {
       background: linear-gradient(180deg, #b45309 0%, #78350f 100%);
       border: 1px solid #facc15;
@@ -102,16 +99,12 @@
       box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);
       animation: pulseGold 2s infinite alternate ease-in-out;
     }
-    .btn-pcfund:active { transform: translate(1px, 1px); }
     @keyframes pulseGold {
       0% { box-shadow: 0 0 4px rgba(250, 204, 21, 0.3); }
       100% { box-shadow: 0 0 12px rgba(250, 204, 21, 0.65); }
     }
 
-    .visits-badge {
-      display: flex;
-      align-items: center;
-    }
+    .visits-badge { display: flex; align-items: center; }
 
     /* THEATER WRAPPER */
     .theater-wrapper {
@@ -141,7 +134,6 @@
       -webkit-touch-callout: none !important;
     }
 
-    /* FULLSCREEN TOGGLE BUTTON */
     #fs-toggle-btn {
       position: absolute;
       top: 8px;
@@ -157,11 +149,9 @@
       cursor: pointer;
       z-index: 150;
       box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
-      -webkit-touch-callout: none !important;
     }
     #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
 
-    /* 10-MINUTE MISSION CLOCK */
     #demo-timer-badge {
       position: absolute;
       top: 8px;
@@ -173,13 +163,163 @@
       color: #38bdf8;
       padding: 3px 10px;
       font-size: 10px;
-      font-family: 'Share Tech Mono', monospace;
       font-weight: 900;
       letter-spacing: 1.2px;
       z-index: 100;
       pointer-events: none;
       border-radius: 4px;
       white-space: nowrap;
+    }
+
+    /* =======================================================
+       AUTHENTIC 1990s DOS SHAREWARE SPLASH SCREEN
+       ======================================================= */
+    #dos-splash-modal {
+      position: absolute;
+      inset: 0;
+      background: #020210;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+      padding: 8px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .dos-frame {
+      background: #000088;
+      border: 3px solid #55ffff;
+      box-shadow: 0 0 28px rgba(85, 255, 255, 0.45), inset 0 0 16px rgba(0, 0, 0, 0.7);
+      width: 100%;
+      max-width: 620px;
+      padding: 12px 14px;
+      color: var(--dos-white);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+
+    .dos-header-banner {
+      background: #000000;
+      border: 1px solid #55ffff;
+      padding: 6px;
+      text-align: center;
+    }
+    .dos-title {
+      font-family: 'VT323', monospace;
+      font-size: clamp(20px, 5vw, 28px);
+      color: #ffff55;
+      letter-spacing: 2px;
+      line-height: 1;
+      text-shadow: 2px 2px #000;
+    }
+    .dos-subtitle {
+      font-size: 10px;
+      color: #55ffff;
+      letter-spacing: 1.5px;
+      font-weight: bold;
+    }
+
+    .dos-box {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px dashed #55ffff;
+      padding: 8px 10px;
+      font-size: clamp(9.5px, 2.2vw, 11px);
+      line-height: 1.42;
+      color: #ffffff;
+    }
+    .dos-box b { color: #ffff55; }
+    .dos-box .highlight { color: #55ff55; font-weight: bold; }
+
+    .dos-roadmap {
+      background: #001133;
+      border: 1px solid #ffaa00;
+      padding: 6px 9px;
+      font-size: clamp(9px, 2vw, 10.5px);
+      color: #ffdd88;
+      line-height: 1.35;
+    }
+
+    .dos-menu-title {
+      color: #ffff55;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .dos-button-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .dos-btn {
+      background: #000055;
+      border: 2px solid #55ffff;
+      color: #ffffff;
+      padding: 8px 10px;
+      font-size: clamp(10px, 2.5vw, 12px);
+      font-weight: 900;
+      letter-spacing: 1px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-decoration: none;
+      transition: all 0.12s;
+    }
+    .dos-btn:hover, .dos-btn:active {
+      background: #55ffff;
+      color: #000000;
+      border-color: #ffffff;
+      transform: translate(1px, 1px);
+    }
+    .dos-btn-primary {
+      border-color: #55ff55;
+      background: #002200;
+      color: #55ff55;
+    }
+    .dos-btn-primary:hover, .dos-btn-primary:active {
+      background: #55ff55;
+      color: #000000;
+    }
+    .dos-btn-gold {
+      border-color: #ffff55;
+      background: #332200;
+      color: #ffff55;
+    }
+    .dos-btn-gold:hover, .dos-btn-gold:active {
+      background: #ffff55;
+      color: #000000;
+    }
+
+    .dos-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 12px;
+      background: #55ff55;
+      margin-left: 4px;
+      animation: dosBlink 0.8s infinite;
+      vertical-align: middle;
+    }
+    @keyframes dosBlink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    .dos-footer {
+      font-size: 8.5px;
+      color: #aaaaaa;
+      text-align: center;
+      border-top: 1px solid #0055aa;
+      padding-top: 4px;
     }
 
     /* DEMO EXPIRED MODAL */
@@ -242,23 +382,18 @@
       text-align: center;
       box-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
     }
-    .btn-donate-modal:active { transform: translate(1px, 1px); }
   </style>
 </head>
 <body>
 
-  <!-- TOP BAR: ALWAYS VISIBLE ON MOBILE & DESKTOP -->
+  <!-- TOP BAR -->
   <header>
     <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
 
     <div class="top-actions-bar">
-      <!-- 📖 Flight Manual Link (Always visible on mobile) -->
       <a href="guide.html" class="btn-nav btn-manual">📖 MANUAL</a>
-
-      <!-- ☕ Direct PayPal.Me Tip Jar Link (Always visible on mobile) -->
       <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="btn-nav btn-pcfund">☕ PC FUND</a>
 
-      <!-- Real Visitor Badge -->
       <div class="visits-badge">
         <img 
           src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
@@ -272,10 +407,54 @@
   <div class="theater-wrapper" id="theater-root">
     <div class="game-theater">
 
+      <!-- =======================================================
+           AUTHENTIC 1990s DOS SHAREWARE SPLASH SCREEN
+           ======================================================= -->
+      <div id="dos-splash-modal">
+        <div class="dos-frame">
+          <div class="dos-header-banner">
+            <div class="dos-title">VOID PILOT 3D: ROGUE GALAXY</div>
+            <div class="dos-subtitle">PILOT EDITION // 10-MINUTE SHAREWARE SORTIE</div>
+          </div>
+
+          <div class="dos-box">
+            <b>COMMANDER LOG &amp; ORIGIN STORY:</b><br>
+            Greetings! I am <b>Matthew MacLaine</b> (RetrosNotDeadStudio). 
+            <span class="highlight">I do not own a computer.</span> Over months of late nights, I coded this entire 3D retro space simulator—writing the 3D software rasterizer, physics, cockpit VDUs, and procedural Sound Blaster 16 synthwave audio—<b>line-by-line directly on an Android smartphone using a text editor (QuickEdit).</b>
+          </div>
+
+          <div class="dos-roadmap">
+            <b>★ THE SHAREWARE ROADMAP &amp; FUTURE EXPANSIONS:</b><br>
+            This 10-minute sortie is an authentic shareware evaluation flight. <b>MAJOR EXPANSIONS &amp; REGULAR UPDATES ARE IN ACTIVE DEVELOPMENT!</b> My mission is to earn enough from this demo to purchase my first real development PC and bring the complete, full-scale Rogue Galaxy universe to Steam!
+          </div>
+
+          <div class="dos-menu-title">-- SELECT MISSION PROTOCOL --<span class="dos-cursor"></span></div>
+
+          <div class="dos-button-grid">
+            <button id="dos-launch-btn" class="dos-btn dos-btn-primary">
+              <span>[ 1 ] INITIATE 10-MIN FLIGHT SORTIE</span>
+              <span>ENTER ➔</span>
+            </button>
+            <a href="guide.html" class="dos-btn">
+              <span>[ 2 ] CONFED FLIGHT MANUAL (16 CHAPTERS)</span>
+              <span>READ ➔</span>
+            </a>
+            <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="dos-btn dos-btn-gold">
+              <span>[ 3 ] BACK DEV PC FUND (PAYPAL.ME)</span>
+              <span>SUPPORT ★</span>
+            </a>
+          </div>
+
+          <div class="dos-footer">
+            PRESS 1, 2, OR 3 ON KEYBOARD OR TAP ANY BUTTON &bull; (C) 2026 RETROS NOT DEAD STUDIO
+          </div>
+        </div>
+      </div>
+
       <button id="fs-toggle-btn">⛶ FULL</button>
       <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
 
-      <!-- DEMO EXPIRED MODAL WITH PAYPAL TIP JAR -->
+      <!-- DEMO EXPIRED MODAL -->
       <div id="demo-expired-modal">
         <div class="demo-frame">
           <h2 style="color:#facc15; font-size:15px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
@@ -284,10 +463,9 @@
           </p>
 
           <p style="font-size:9.5px; color:#fef08a; background:rgba(180, 83, 9, 0.25); border:1px solid #b45309; padding:6px; border-radius:4px; line-height:1.35;">
-            💡 <b>Help Build the Full Game:</b> I coded this entire 3D space sim on an Android phone without a PC. If you enjoyed the sortie, chip in a few dollars to help me buy my first development computer!
+            💡 <b>Help Build the Full Game:</b> I coded this entire 3D space sim on an Android phone without a PC. If you enjoyed the flight, chip in a few dollars to help me buy my first development computer for the full release!
           </p>
 
-          <!-- Direct PayPal.Me Tip Button -->
           <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="btn-donate-modal">
             ☕ SUPPORT DEV PC FUND (PAYPAL)
           </a>
@@ -357,12 +535,17 @@
       toggleFullscreen();
     });
 
-    // 10-Minute Demo Clock
+    // =======================================================
+    // DOS SPLASH SCREEN & MISSION TIMER
+    // =======================================================
+    const dosSplash = document.getElementById("dos-splash-modal");
+    const dosLaunchBtn = document.getElementById("dos-launch-btn");
+    const timerBadge = document.getElementById("demo-timer-badge");
+    const expiredModal = document.getElementById("demo-expired-modal");
+
     const DEMO_SECONDS = 600;
     let timeLeft = DEMO_SECONDS;
     let timerActive = false;
-    const timerBadge = document.getElementById("demo-timer-badge");
-    const expiredModal = document.getElementById("demo-expired-modal");
 
     function formatTime(sec) {
       const m = Math.floor(sec / 60);
@@ -370,8 +553,31 @@
       return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
 
-    window.addEventListener("blur", () => { timerActive = true; }, { once: true });
-    document.addEventListener("pointerdown", () => { timerActive = true; }, { once: true });
+    function startFlightMission() {
+      if (dosSplash) dosSplash.style.display = "none";
+      timerActive = true;
+      try {
+        if (gameFrame.contentWindow && gameFrame.contentWindow.focus) {
+          gameFrame.contentWindow.focus();
+        }
+      } catch(e) {}
+    }
+
+    dosLaunchBtn.addEventListener("click", startFlightMission);
+
+    // Keyboard Shortcuts for DOS Menu: 1, 2, 3, or Enter
+    window.addEventListener("keydown", (e) => {
+      if (dosSplash && dosSplash.style.display !== "none") {
+        if (e.key === "1" || e.code === "Enter" || e.code === "Space") {
+          e.preventDefault();
+          startFlightMission();
+        } else if (e.key === "2") {
+          window.location.href = "guide.html";
+        } else if (e.key === "3") {
+          window.open("https://paypal.me/aussiedreadsgaming", "_blank");
+        }
+      }
+    });
 
     setInterval(() => {
       if (!timerActive || timeLeft <= 0) return;
