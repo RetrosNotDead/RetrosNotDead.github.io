@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>AussieDreads Gaming - Live Real-Time Sub Counter</title>
+  <title>AussieDreads Gaming - Live Sub Radar & Void Drift</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&family=VT323&display=swap">
 
   <style>
     :root {
@@ -39,7 +39,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 12px;
+      padding: 8px 10px;
     }
 
     /* TOP HEADER */
@@ -58,7 +58,7 @@
     }
     .brand-title {
       font-family: 'Orbitron', sans-serif;
-      font-size: clamp(10px, 2.8vw, 13px);
+      font-size: clamp(9.5px, 2.8vw, 13px);
       color: var(--neon-cyan);
       letter-spacing: 1.5px;
       font-weight: 900;
@@ -66,15 +66,15 @@
     }
     .header-btns {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
     }
     .term-btn {
       background: #111e38;
       border: 1px solid var(--neon-cyan);
       color: var(--neon-cyan);
-      padding: 4px 10px;
-      font-size: 10px;
+      padding: 4px 8px;
+      font-size: 9.5px;
       font-weight: 900;
       border-radius: 3px;
       cursor: pointer;
@@ -85,7 +85,7 @@
     .term-btn-gold { border-color: var(--neon-amber); color: var(--neon-amber); }
     .term-btn-gold:active { background: var(--neon-amber); color: #000; }
 
-    /* RETRO ARCADE CABINET VIEWPORT */
+    /* ARCADE CABINET VIEWPORT */
     .arcade-wrapper {
       position: relative;
       width: 100%;
@@ -94,21 +94,56 @@
       display: flex;
       flex-direction: column;
       background: #000;
-      border: 3px solid #0284c7;
-      border-radius: 8px;
+      border: 2.5px solid #0284c7;
+      border-radius: 6px;
       box-shadow: 0 0 25px rgba(2, 132, 199, 0.35), inset 0 0 20px rgba(0, 0, 0, 0.8);
-      margin: 8px 0;
+      margin: 6px 0;
       overflow: hidden;
     }
 
     /* EMBEDDED REAL-TIME ENGINE */
+    .embed-box {
+      width: 100%;
+      height: 125px;
+      border-bottom: 2px solid #0284c7;
+      flex-shrink: 0;
+      background: #fff;
+      overflow: hidden;
+    }
     iframe#live-embed {
       width: 100%;
       height: 100%;
       border: none;
-      background: #080d1a;
       display: block;
     }
+
+    /* THE DEAD SPACEMAN VOID STAGE */
+    .void-stage {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      background: #02040a;
+      overflow: hidden;
+    }
+    canvas#spaceman-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .void-hud-overlay {
+      position: absolute;
+      bottom: 8px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 8.5px;
+      color: #64748b;
+      pointer-events: none;
+      letter-spacing: 1px;
+    }
+    .void-hud-overlay b { color: #f87171; }
 
     /* BOTTOM TELEMETRY DOCK */
     .bottom-dock {
@@ -116,12 +151,12 @@
       max-width: 900px;
       background: rgba(8, 14, 28, 0.95);
       border: 1px solid var(--border);
-      padding: 6px 12px;
+      padding: 5px 12px;
       border-radius: 4px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 9px;
+      font-size: 8.5px;
       color: #64748b;
       flex-shrink: 0;
     }
@@ -142,7 +177,7 @@
     }
     @keyframes pulseGreen {
       0% { opacity: 0.4; transform: scale(0.9); }
-      100% { opacity: 1; transform: scale(1.2); }
+      100% { opacity: 1; transform: scale(1.15); }
     }
   </style>
 </head>
@@ -157,14 +192,27 @@
     </div>
   </header>
 
-  <!-- RETRO LIVE COUNTER SCREEN -->
+  <!-- ARCADE DISPLAY WITH LIVE COUNTER & DEAD SPACEMAN -->
   <div class="arcade-wrapper" id="arcade-root">
-    <!-- Verified Live Real-Time YouTube Subscriber Engine -->
-    <iframe 
-      id="live-embed" 
-      src="https://livecounts.io/embed/youtube-live-subscriber-counter/UCgCk3Pa0KvAool_gHygkDXA"
-      allow="fullscreen">
-    </iframe>
+    
+    <!-- Top Part: Live YouTube Sub Counter -->
+    <div class="embed-box">
+      <iframe 
+        id="live-embed" 
+        src="https://livecounts.io/embed/youtube-live-subscriber-counter/UCgCk3Pa0KvAool_gHygkDXA"
+        allow="fullscreen">
+      </iframe>
+    </div>
+
+    <!-- Bottom Part: The Dead Pixel Astronaut Drifting in Space -->
+    <div class="void-stage">
+      <canvas id="spaceman-canvas"></canvas>
+      <div class="void-hud-overlay">
+        <span>CASUALTY LOG: <b>PILOT LOST IN DEEP SPACE</b></span>
+        <span>VISOR: <b>BREACHED</b></span>
+      </div>
+    </div>
+
   </div>
 
   <!-- BOTTOM STATUS DOCK -->
@@ -177,7 +225,213 @@
   </footer>
 
   <script>
-    // LIVE TICK CLOCK
+    // =========================================================================
+    // DEAD PIXEL SPACEMAN ZERO-G ENGINE
+    // =========================================================================
+    const canvas = document.getElementById("spaceman-canvas");
+    const ctx = canvas.getContext("2d");
+
+    let width = 0, height = 0;
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      width = Math.floor(rect.width);
+      height = Math.floor(rect.height);
+      canvas.width = width;
+      canvas.height = height;
+      ctx.imageSmoothingEnabled = false;
+    }
+    window.addEventListener("resize", resizeCanvas);
+
+    // Starfield
+    const stars = [];
+    for (let i = 0; i < 65; i++) {
+      stars.push({
+        x: Math.random() * 800,
+        y: Math.random() * 600,
+        spd: 0.2 + Math.random() * 0.5,
+        sz: Math.random() > 0.8 ? 2 : 1,
+        color: Math.random() > 0.3 ? "#ffffff" : "#94a3b8"
+      });
+    }
+
+    // Astronaut Physics
+    const astronaut = {
+      x: 100, y: 100,
+      vx: 18, vy: 10,
+      rot: 0.2,
+      vRot: 0.55,
+      scale: 3.8
+    };
+
+    // Blood Particles
+    const blood = [];
+
+    function updatePhysics(dt) {
+      // Bounds bounce so he never leaves your screen
+      astronaut.x += astronaut.vx * dt;
+      astronaut.y += astronaut.vy * dt;
+      astronaut.rot += astronaut.vRot * dt;
+
+      const pad = 45;
+      if (astronaut.x < pad && astronaut.vx < 0) astronaut.vx = Math.abs(astronaut.vx);
+      if (astronaut.x > width - pad && astronaut.vx > 0) astronaut.vx = -Math.abs(astronaut.vx);
+      if (astronaut.y < pad && astronaut.vy < 0) astronaut.vy = Math.abs(astronaut.vy);
+      if (astronaut.y > height - pad && astronaut.vy > 0) astronaut.vy = -Math.abs(astronaut.vy);
+
+      // Emit blood from helmet puncture
+      const cosR = Math.cos(astronaut.rot), sinR = Math.sin(astronaut.rot);
+      const headX = astronaut.x + (0 * cosR - (-6 * astronaut.scale) * sinR);
+      const headY = astronaut.y + (0 * sinR + (-6 * astronaut.scale) * cosR);
+
+      if (Math.random() < 0.65) {
+        const bleedAng = astronaut.rot - Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+        const bleedSpd = 8 + Math.random() * 16;
+        blood.push({
+          x: headX, y: headY,
+          vx: astronaut.vx * 0.25 + Math.cos(bleedAng) * bleedSpd,
+          vy: astronaut.vy * 0.25 + Math.sin(bleedAng) * bleedSpd,
+          sz: Math.random() > 0.5 ? 2 : 1.5,
+          life: 2.2 + Math.random() * 1.5,
+          maxLife: 3.7,
+          color: Math.random() > 0.4 ? "#ef4444" : "#991b1b"
+        });
+      }
+
+      for (let i = blood.length - 1; i >= 0; i--) {
+        const p = blood[i];
+        p.life -= dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        if (p.life <= 0) blood.splice(i, 1);
+      }
+    }
+
+    function drawPixelAstronaut() {
+      ctx.save();
+      ctx.translate(astronaut.x, astronaut.y);
+      ctx.rotate(astronaut.rot);
+      ctx.scale(astronaut.scale, astronaut.scale);
+
+      // White spacesuit torso
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillRect(-3, -2, 6, 7);
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillRect(1, -2, 2, 7);
+
+      // Life support pack & cyan battery LED
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(-4, -1, 1.5, 5);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(-2, -1, 2, 2);
+
+      // Helmet with Cracked Visor & Blood Breach
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(-4, -9, 8, 7);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.fillRect(-4, -9, 2, 7);
+
+      // Visor Blue Glass
+      ctx.fillStyle = "#0284c7";
+      ctx.fillRect(-1, -7, 4, 3);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(0, -6.5, 2, 1);
+
+      // Cracked Glass Fracture & Blood Stain
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(1, -8, 2, 2);
+      ctx.fillRect(2, -6, 2, 2);
+
+      // Left Arm
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(-6, -4, 3, 2.5);
+      ctx.fillRect(-8, -7, 2.5, 3.5);
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(-8.5, -8.5, 2.5, 2);
+
+      // Right Arm (Reaching out)
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillRect(3, 0, 3, 2.5);
+      ctx.fillRect(5, 2, 2.5, 4);
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(5.5, 6, 2, 2);
+
+      // Left Leg
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillRect(-3, 5, 2.8, 4);
+      ctx.fillRect(-5, 9, 2.8, 3.5);
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(-6, 12, 3.5, 2);
+
+      // Right Leg
+      ctx.fillStyle = "#cbd5e1";
+      ctx.fillRect(0.5, 5, 2.8, 5);
+      ctx.fillRect(1.5, 10, 2.8, 3.5);
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(1.5, 13.5, 3.5, 2);
+
+      ctx.restore();
+    }
+
+    let lastTime = 0;
+    function renderVoidLoop(time) {
+      if (!lastTime) lastTime = time;
+      const dt = Math.min((time - lastTime) / 1000, 0.1);
+      lastTime = time;
+
+      ctx.fillStyle = "#02040a";
+      ctx.fillRect(0, 0, width, height);
+
+      // Stars
+      for (let s of stars) {
+        s.x -= s.spd * 12 * dt;
+        if (s.x < 0) s.x = width;
+        ctx.fillStyle = s.color;
+        ctx.fillRect(Math.round(s.x), Math.round(s.y % height), s.sz, s.sz);
+      }
+
+      updatePhysics(dt);
+
+      // Blood Droplets
+      for (let b of blood) {
+        const alpha = Math.max(0, b.life / b.maxLife);
+        ctx.fillStyle = b.color;
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(Math.round(b.x), Math.round(b.y), b.sz, b.sz);
+      }
+      ctx.globalAlpha = 1.0;
+
+      drawPixelAstronaut();
+      requestAnimationFrame(renderVoidLoop);
+    }
+
+    // Tap spaceman to fling him in zero-g
+    canvas.addEventListener("pointerdown", (e) => {
+      astronaut.vx = (Math.random() - 0.5) * 90;
+      astronaut.vy = (Math.random() - 0.5) * 70;
+      astronaut.vRot = (Math.random() - 0.5) * 2.8;
+
+      // Burst of blood
+      for (let k = 0; k < 12; k++) {
+        blood.push({
+          x: astronaut.x, y: astronaut.y,
+          vx: (Math.random() - 0.5) * 60,
+          vy: (Math.random() - 0.5) * 60,
+          sz: 2, life: 1.8, maxLife: 1.8,
+          color: "#ef4444"
+        });
+      }
+    });
+
+    setTimeout(() => {
+      resizeCanvas();
+      astronaut.x = width / 2;
+      astronaut.y = height / 2;
+      requestAnimationFrame(renderVoidLoop);
+    }, 150);
+
+    // =========================================================================
+    // CLOCK & FULLSCREEN
+    // =========================================================================
     function updateClock() {
       const now = new Date();
       document.getElementById("sys-clock").innerText = `TIME: ${now.toLocaleTimeString('en-US')}`;
@@ -185,7 +439,6 @@
     setInterval(updateClock, 1000);
     updateClock();
 
-    // FULLSCREEN TOGGLE
     const fsBtn = document.getElementById("fs-btn");
     const arcadeRoot = document.getElementById("arcade-root");
 
