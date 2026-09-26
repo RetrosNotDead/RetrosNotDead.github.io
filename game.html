@@ -9861,5 +9861,62 @@ requestAnimationFrame(gameLoop);
   }
 })();
 </script>
+<!-- EXTRA SENTINEL SPAWN INJECTION PATCH -->
+<script>
+(function() {
+  const origLandOnPlanet = window.landOnPlanet;
+  
+  window.landOnPlanet = function(planet) {
+    // 1. Run the normal landing sequence (this spawns the default 3-5 sentinels)
+    origLandOnPlanet.apply(this, arguments);
+
+    // 2. Decide how many extra sentinels to add (e.g., 4 to 6 extra)
+    const extraCount = 4 + Math.floor(Math.random() * 3);
+    const isDarkMatter = planet.ore && planet.ore.name === "Dark Matter";
+
+    let added = 0;
+    let attempts = 0;
+
+    // Loop until we successfully place our extra sentinels
+    while (added < extraCount && attempts < 400) {
+      attempts++;
+      
+      // Pick a random angle and distance from the ship
+      const sAng = Math.random() * Math.PI * 2;
+      const sDist = 260 + Math.random() * 600; 
+      const sx = Math.cos(sAng) * sDist;
+      const sz = Math.sin(sAng) * sDist;
+      
+      // Safety Check 1: Don't spawn them right on top of the ship
+      if (Math.hypot(sx, sz) < 240) continue;
+      
+      // Safety Check 2: Don't spawn them inside the outpost terminal
+      if (typeof surfaceOutpost !== 'undefined' && surfaceOutpost) {
+        if (Math.hypot(sx - surfaceOutpost.x, sz - surfaceOutpost.z) < 120) continue;
+      }
+
+      // 3. Inject the new sentinel directly into the global array!
+      surfaceSentinels.push({
+        id: `sent_extra_${surfaceSentinels.length}`,
+        x: sx, 
+        y: isDarkMatter ? 0 : -18, // Berzerk bots stay lower to the ground
+        z: sz,
+        isBerzerk: isDarkMatter,
+        hp: isDarkMatter ? 95 : 35,
+        maxHp: isDarkMatter ? 95 : 35,
+        reload: isDarkMatter ? (0.35 + Math.random() * 0.4) : (0.6 + Math.random() * 0.7),
+        speed: isDarkMatter ? (38 + Math.random() * 12) : (28 + Math.random() * 12),
+        strafeDir: Math.random() > 0.5 ? 1 : -1,
+        strafeTimer: 0, 
+        alert: false, 
+        walkFrame: 0, 
+        stepTimer: 0
+      });
+      
+      added++;
+    }
+  };
+})();
+</script>
 </body>
 </html>
