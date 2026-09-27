@@ -5488,7 +5488,7 @@ function update(dt) {
     let anySentinelAlert = false;
     for (let s of surfaceSentinels) {
       const sDist = Math.hypot(playerFoot.x - s.x, playerFoot.z - s.z);
-      if (sDist > 220) s.alert = false;
+      if (sDist > 220 && !s.monolithAlert) s.alert = false;
       const aggroRange = s.isBerzerk ? 190 : 170;
       if (sDist < aggroRange || s.alert) {
         if (!s.alert && s.isBerzerk) playSfx('commChirp');
@@ -5591,6 +5591,19 @@ function update(dt) {
           if (cDist < Math.max(34, node.size * proj.scale * 2.5) && proj.dist < closestDist) {
             closestDist = proj.dist;
             targetedObject = { node, proj };
+          }
+        }
+      }
+    }
+    if (!targetedObject && window.surfaceMonoliths) {
+      for (let m of window.surfaceMonoliths) {
+        if (m.hp <= 0) continue;
+        const proj = projectSurface(m.x, m.y, m.z);
+        if (proj && proj.depth > 0) {
+          const cDist = Math.hypot(proj.x - V_WIDTH / 2, proj.y - V_HEIGHT / 2);
+          if (cDist < Math.max(50, 40 * proj.scale) && proj.dist < closestDist) {
+            closestDist = proj.dist;
+            targetedObject = { monolith: m, proj };
           }
         }
       }
@@ -5720,6 +5733,61 @@ function update(dt) {
           rangeWarningTimer -= dt;
           if (rangeWarningTimer <= 0) {
             addPopup(`ENEMY OUT OF RANGE (${Math.round(sentDist)}m / MAX 200m)`, "#f87171");
+            rangeWarningTimer = 1.6;
+          }
+        }
+      } else if (targetedObject && targetedObject.monolith) {
+        const m = targetedObject.monolith;
+        const mDist = targetedObject.proj.dist;
+
+        miningLaserState.beamColor = "#c084fc";
+        miningLaserState.targetX = m.x;
+        miningLaserState.targetY = m.y - 40;
+        miningLaserState.targetZ = m.z;
+        miningLaserState.hit2DX = targetedObject.proj.x;
+        miningLaserState.hit2DY = targetedObject.proj.y - (30 * targetedObject.proj.scale);
+
+        if (mDist <= 180) {
+          if (!m.awakened) {
+            m.awakened = true;
+            for (let s of surfaceSentinels) {
+              if (s.hp <= 0) continue;
+              s.alert = true;
+              s.monolithAlert = true;
+            }
+            if (typeof playSfx === 'function') playSfx('commChirp');
+            if (typeof addPopup === 'function') addPopup("⚠️ THE MONOLITH AWAKENS THE SENTINELS! ⚠️", "#f43f5e");
+          }
+
+          m.hp -= (ship.miningRate || 3.5) * 6 * dt;
+          if (m.hp <= 0) {
+            m.hp = 0;
+            if (typeof playSfx === 'function') playSfx('explosion');
+            if (typeof vibrateGamepad === 'function') vibrateGamepad(600, 1.0, 1.0);
+            screenShake = 1.0; flashEffect = 0.8;
+
+            ship.credits += 2500;
+            if (typeof runStats !== 'undefined') runStats.creditsEarned += 2500;
+
+            if (typeof getCargoTotal === 'function' && getCargoTotal() < ship.maxCargo) {
+              ship.cargo["Dark Matter"] = (ship.cargo["Dark Matter"] || 0) + 3;
+              if (typeof addPopup === 'function') addPopup("MONOLITH SHATTERED! +$2,500 & 3x DARK MATTER", "#c084fc");
+            } else {
+              if (typeof addPopup === 'function') addPopup("MONOLITH SHATTERED! +$2,500 (CARGO FULL!)", "#c084fc");
+            }
+
+            for (let p = 0; p < 50; p++) {
+              particles.push({
+                x: m.x, y: m.y - 40, z: m.z, is3D: true,
+                vx: (Math.random() - 0.5) * 180, vy: -30 - Math.random() * 120, vz: (Math.random() - 0.5) * 180,
+                life: 1.5, maxLife: 1.5, color: Math.random() > 0.5 ? "#c084fc" : "#f43f5e"
+              });
+            }
+          }
+        } else {
+          rangeWarningTimer -= dt;
+          if (rangeWarningTimer <= 0) {
+            addPopup(`ANOMALY OUT OF RANGE (${Math.round(mDist)}m / MAX 180m)`, "#f87171");
             rangeWarningTimer = 1.6;
           }
         }
@@ -7960,6 +8028,13 @@ function render() {
       const sProj = projectSurface(sent.x, sent.y, sent.z);
       if (sProj) surfaceEntities.push({ type: 'sentinel', sent, proj: sProj });
     }
+    if (window.surfaceMonoliths) {
+      for (let m of window.surfaceMonoliths) {
+        if (m.hp <= 0) continue;
+        const mProj = projectSurface(m.x, m.y, m.z);
+        if (mProj && mProj.depth > 0) surfaceEntities.push({ type: 'monolith', m, proj: mProj });
+      }
+    }
     if (et.active) {
       const eProj = projectSurface(et.x, et.y, et.z);
       if (eProj && eProj.depth > 0) surfaceEntities.push({ type: 'et', proj: eProj });
@@ -7983,6 +8058,11 @@ function render() {
       else if (item.type === 'outpost') drawPixelOutpost(item.proj);
       else if (item.type === 'node') drawPixelCrystal(item.proj, item.node);
       else if (item.type === 'sentinel') drawPixelSentinel(item.proj, item.sent);
+      else if (item.type === 'monolith') {
+        if (typeof window.drawMonolith3D === 'function') {
+          window.drawMonolith3D(item.proj.x, item.proj.y, item.proj.scale * item.m.scale, Date.now(), item.m.hp / item.m.maxHp, item.proj.dist);
+        }
+      }
       else if (item.type === 'et') renderAtariEtSurface(item.proj);
       else if (item.type === 'bolt') {
         const bx = Math.round(item.proj.x), by = Math.round(item.proj.y);
@@ -9914,6 +9994,177 @@ requestAnimationFrame(gameLoop);
       });
       
       added++;
+    }
+  };
+})();
+</script>
+<!-- MONOLITH & 260m SENTINEL AGGRO INJECTION PATCH -->
+<script>
+(function() {
+  // ======================================================================
+  // 1. HOOK: PLANET LANDING (Spawn Monoliths)
+  // ======================================================================
+  const origLand = window.landOnPlanet;
+  window.landOnPlanet = function(planet) {
+    origLand.apply(this, arguments);
+    window.surfaceMonoliths = [];
+    
+    // 25% chance to spawn an ancient Monolith in the distance
+    if (Math.random() < 0.25) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 350 + Math.random() * 400; // Spawns 350m to 750m away
+      window.surfaceMonoliths.push({
+        x: Math.cos(ang) * dist,
+        y: 0,
+        z: Math.sin(ang) * dist,
+        hp: 1200,      // Very tough to mine
+        maxHp: 1200,
+        scale: 2.2
+      });
+      // Give a subtle hint that something is out there
+      setTimeout(() => {
+        if(typeof addPopup === 'function') addPopup("ANOMALOUS ENERGY SIGNATURE DETECTED IN THE DISTANCE...", "#c084fc");
+      }, 3000);
+    }
+  };
+
+  // ======================================================================
+  // 2. HOOK: UPDATE LOOP (260m Sentinel Aggro & Monolith Mining Logic)
+  // ======================================================================
+  const origUpdate = window.update;
+  window.update = function(dt) {
+    
+    // --- FEATURE: SENTINEL 260m AGGRO OVERRIDE ---
+    if (typeof gameMode !== 'undefined' && gameMode === 'SURFACE' && typeof landedPlanet !== 'undefined' && landedPlanet) {
+      let extraAlertTriggered = false;
+      for (let s of surfaceSentinels) {
+        const sDist = Math.hypot(playerFoot.x - s.x, playerFoot.z - s.z);
+        const baseAggro = s.isBerzerk ? 190 : 170;
+        
+        // If they are outside the base game's range but inside our new 260m range
+        if (sDist > baseAggro && sDist <= 260) {
+          s.alert = true;
+          extraAlertTriggered = true;
+          
+          // Manually drive their AI for this distance gap
+          const angleToPlayer = Math.atan2(playerFoot.x - s.x, playerFoot.z - s.z);
+          s.strafeTimer = (s.strafeTimer || 0) + dt;
+          if (s.strafeTimer > (s.isBerzerk ? 0.9 : 1.3)) {
+            s.strafeTimer = 0; s.strafeDir = Math.random() > 0.5 ? 1 : -1;
+          }
+          
+          const sentSpeed = s.speed || 30;
+          s.x += (Math.sin(angleToPlayer) * 1.0 + Math.cos(angleToPlayer) * s.strafeDir * 0.8) * sentSpeed * dt;
+          s.z += (Math.cos(angleToPlayer) * 1.0 - Math.sin(angleToPlayer) * s.strafeDir * 0.8) * sentSpeed * dt;
+          
+          if (s.isBerzerk) {
+            s.y = -6; s.stepTimer = (s.stepTimer || 0) + dt * 6; s.walkFrame = Math.floor(s.stepTimer) % 2;
+          } else {
+            s.y += (Math.min(-12, playerFoot.y - 6) - s.y) * 3.2 * dt;
+          }
+          
+          s.reload -= dt;
+          if (s.reload <= 0) {
+            s.reload = s.isBerzerk ? (1.6 + Math.random() * 0.8) : (0.75 + Math.random() * 0.6);
+            if(typeof playSfx === 'function') playSfx(s.isBerzerk ? 'bountyLaser' : 'enemyLaser');
+            const dx = playerFoot.x - s.x, dy = (playerFoot.y - (s.isBerzerk ? 6 : 3)) - s.y, dz = playerFoot.z - s.z;
+            const dTot = Math.hypot(dx, dy, dz) || 1;
+            const boltSpd = s.isBerzerk ? 210 : 360;
+            laserBolts.push({
+              x: s.x, y: s.isBerzerk ? -6 : s.y, z: s.z,
+              vx: (dx / dTot) * boltSpd, vy: (dy / dTot) * boltSpd, vz: (dz / dTot) * boltSpd,
+              life: s.isBerzerk ? 2.5 : 1.8, isEnemy: true, damage: s.isBerzerk ? 185 : 13, isSurface: true, isBerzerk: !!s.isBerzerk
+            });
+          }
+        }
+      }
+      if (extraAlertTriggered) {
+        const banner = document.getElementById("threat-banner");
+        if (banner && banner.style.display === "none") { 
+          banner.style.display = "block"; banner.style.background = "rgba(153, 27, 27, 0.92)"; banner.innerText = "⚠️ COMBAT ALERT: DEFENSE SENTINELS ENGAGING ⚠️"; 
+        }
+      }
+    }
+
+    // Run the main game loop
+    origUpdate.apply(this, arguments);
+  };
+
+  // ======================================================================
+  // 3. DRAWING FUNCTION (3D Canvas Instructions)
+  // ======================================================================
+  // Exposed on window so the core render()'s depth-sorted surfaceEntities
+  // loop can call it in proper back-to-front order (fixes it always
+  // drawing on top of nearer objects like the ship, outpost, sentinels,
+  // and ore nodes).
+  window.drawMonolith3D = function drawMonolith3D(x, y, scale, t, hpRatio, dist) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // Ground Shadow
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.beginPath(); ctx.ellipse(0, 0, 24, 6, 0, 0, Math.PI * 2); ctx.fill();
+
+    if (typeof miningLaserState !== 'undefined' && miningLaserState.active && hpRatio > 0 && typeof targetedObject !== 'undefined' && targetedObject && targetedObject.monolith) {
+      ctx.translate((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8);
+    }
+
+    // Stepped Base
+    ctx.fillStyle = "#020617"; ctx.fillRect(-18, -4, 36, 4);
+    ctx.fillStyle = "#0f172a"; ctx.fillRect(-16, -6, 32, 2);
+
+    // Main Pillar
+    const pillarH = 85, pillarW = 24;
+    ctx.fillStyle = "#020617"; ctx.fillRect(-12, -pillarH, pillarW, pillarH);
+    ctx.fillStyle = "#0f172a"; ctx.fillRect(-10, -pillarH + 2, pillarW - 4, pillarH - 8);
+
+    // Beveled Edges
+    ctx.fillStyle = "#1e293b"; ctx.fillRect(-12, -pillarH + 2, 2, pillarH - 8);
+    ctx.fillStyle = "#334155"; ctx.fillRect(10, -pillarH + 2, 2, pillarH - 8);
+
+    // Angled Top
+    ctx.beginPath(); ctx.moveTo(-12, -pillarH + 2); ctx.lineTo(0, -pillarH - 12); ctx.lineTo(12, -pillarH + 2); ctx.closePath(); ctx.fill();
+
+    // Pulsing Void Runes
+    const pulse = Math.sin(t * 0.002) * 0.5 + 0.5;
+    const runeGlow = `rgba(192, 132, 252, ${pulse * 0.8 + 0.2})`;
+    const runeCore = `rgba(232, 121, 249, ${pulse})`;
+
+    ctx.fillStyle = runeGlow;
+    ctx.fillRect(-1, -pillarH + 10, 2, pillarH - 20);
+    
+    [-60, -45, -30, -15].forEach(ry => {
+      ctx.fillRect(-4, ry, 8, 2); ctx.fillRect(-6, ry - 2, 2, 6); ctx.fillRect(4, ry - 2, 2, 6);
+      ctx.fillStyle = runeCore; ctx.fillRect(-3, ry + 0.5, 6, 1); ctx.fillStyle = runeGlow;
+    });
+
+    // Top Eye
+    const eyeY = -pillarH + 5;
+    ctx.beginPath(); ctx.moveTo(0, eyeY - 8); ctx.lineTo(6, eyeY); ctx.lineTo(0, eyeY + 8); ctx.lineTo(-6, eyeY); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(-1, eyeY - 2, 2, 4);
+
+    // Damage Cracks
+    if (hpRatio < 0.7) {
+      ctx.strokeStyle = "#020617"; ctx.lineWidth = 1; ctx.beginPath();
+      ctx.moveTo(-10, -20); ctx.lineTo(-2, -26); ctx.lineTo(4, -22); ctx.lineTo(10, -30); ctx.stroke();
+    }
+    if (hpRatio < 0.3) {
+      ctx.beginPath(); ctx.moveTo(-10, -50); ctx.lineTo(2, -45); ctx.lineTo(-4, -60); ctx.stroke();
+      ctx.fillStyle = runeCore; ctx.fillRect(-2, -26, 2, 2); ctx.fillRect(4, -23, 2, 2);
+    }
+    ctx.restore();
+    
+    // Reticle UI Tag (Doesn't scale with depth)
+    if (typeof targetedObject !== 'undefined' && targetedObject && targetedObject.monolith && hpRatio > 0) {
+      const inRange = dist <= 180;
+      ctx.strokeStyle = inRange ? "#c084fc" : "#f87171"; ctx.lineWidth = 1;
+      ctx.strokeRect(x - 20 * scale, y - 90 * scale, 40 * scale, 95 * scale);
+      ctx.fillStyle = inRange ? "#ffffff" : "#fca5a5"; ctx.font = "8px monospace"; ctx.textAlign = "center";
+      ctx.fillText(`ANOMALY: MONOLITH [${Math.round(dist)}m ${inRange ? '<180m' : 'TOO FAR'}]`, x, y - 96 * scale);
+      
+      ctx.fillStyle = "#1e293b"; ctx.fillRect(x - 15, y - 96 * scale - 8, 30, 3);
+      ctx.fillStyle = "#c084fc"; ctx.fillRect(x - 15, y - 96 * scale - 8, 30 * hpRatio, 3);
     }
   };
 })();
