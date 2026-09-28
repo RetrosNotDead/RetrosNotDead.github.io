@@ -1568,8 +1568,19 @@ const RESOURCE_TYPES = [
   { name: "Iron", color: "#94a3b8", darkColor: "#475569", lightColor: "#e2e8f0", val: 20 },
   { name: "Titanium", color: "#38bdf8", darkColor: "#0284c7", lightColor: "#bae6fd", val: 45 },
   { name: "Plasma Crystal", color: "#c084fc", darkColor: "#7e22ce", lightColor: "#f3e8ff", val: 90 },
-  { name: "Dark Matter", color: "#f43f5e", darkColor: "#9f1239", lightColor: "#fecdd3", val: 210 }
+  { name: "Dark Matter", color: "#f43f5e", darkColor: "#9f1239", lightColor: "#fecdd3", val: 210 },
+  { name: "Cryo Crystal", color: "#67e8f9", darkColor: "#155e75", lightColor: "#ecfeff", val: 130 }
 ];
+// Cryo Crystal is assigned separately (not via the normal random pick) so adding it
+// doesn't reshuffle which ore every existing planet in a galaxy seed already has.
+const BASE_ORE_COUNT = 4;
+const CRYO_ORE = RESOURCE_TYPES[4];
+function isCryoPlanet(sx, sy, sz, i) {
+  return (hash3D(sx * 31 + 7, sy + 11, sz * 17 + i * 5 + 3, galaxySeed) % 100) < 18;
+}
+function isCryoWorld(planet) {
+  return !!(planet && planet.ore && planet.ore.name === "Cryo Crystal");
+}
 
 const GALAXY_NAMES = ["Aurelia", "Vesper", "Orion", "Zion", "Caelum", "Kronos", "Nebula", "Tartarus", "Hyperion", "Elysium", "Draco", "Phaethon", "Solaris", "Valkyrie", "Genesis", "Xibalba"];
 
@@ -1637,7 +1648,7 @@ function generateSector(sx, sy, sz) {
     activeStations.push({
       id: "0_0_0_starter_station", x: 120, y: 15, z: 690, radius: 26,
       name: "Outpost Alpha", rotation: 0,
-      rates: { "Iron": 1.25, "Titanium": 1.25, "Plasma Crystal": 1.0, "Dark Matter": 1.0 }
+      rates: { "Iron": 1.25, "Titanium": 1.25, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": 1.0 }
     });
     return;
   }
@@ -1651,7 +1662,8 @@ function generateSector(sx, sy, sz) {
   for (let i = 0; i < numPlanets; i++) {
     const pid = `${sx}_${sy}_${sz}_p${i}`;
     if (destroyedPlanets.has(pid)) continue;
-    const ore = RESOURCE_TYPES[Math.floor(rand() * RESOURCE_TYPES.length)];
+    let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
+    if (isCryoPlanet(sx, sy, sz, i)) ore = CRYO_ORE;
     const maxOre = 20 + Math.floor(rand() * 40);
     const currOre = planetDepletionCache.has(pid) ? planetDepletionCache.get(pid) : maxOre;
     activePlanets.push({
@@ -1669,7 +1681,7 @@ function generateSector(sx, sy, sz) {
       y: sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
       z: sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
       radius: 26, name: `Starbase ${baseName}`, rotation: rand() * Math.PI,
-      rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Dark Matter": 1.0 + rand() * 0.8 }
+      rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Dark Matter": 1.0 + rand() * 0.8, "Cryo Crystal": 1.0 + rand() * 0.6 }
     });
   }
 
@@ -3305,8 +3317,8 @@ function landOnPlanet(planet) {
     x: outpostX, y: 0, z: outpostZ, radius: 18,
     name: `${planet.name} Surface Outpost`,
     rates: isHome
-      ? { "Iron": 1.3, "Titanium": 1.3, "Plasma Crystal": 1.0, "Dark Matter": 1.0 }
-      : { [planet.ore.name]: 1.2, "Iron": 1.0, "Titanium": 1.0, "Plasma Crystal": 1.0, "Dark Matter": 1.0 }
+      ? { "Iron": 1.3, "Titanium": 1.3, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": 1.0 }
+      : { [planet.ore.name]: 1.2, "Iron": 1.0, "Titanium": 1.0, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": isCryoWorld(planet) ? 1.2 : 1.0 }
   };
 
   const targetNodeCount = 26;
@@ -4152,11 +4164,14 @@ function projectSurface(worldX, worldY, worldZ) {
   const y2 = dy * cosP - z1 * sinP, z2 = dy * sinP + z1 * cosP;
   if (z2 <= 1) return null;
   const fov = V_HEIGHT * 0.90;
+  const trueDist = Math.max(1, Math.hypot(dx, dy, dz));
   return { 
     x: V_WIDTH / 2 + (x1 / z2) * fov, 
     y: V_HEIGHT / 2 + (y2 / z2) * fov, 
-    scale: fov / z2, 
-    dist: Math.hypot(dx, dy, dz), 
+    // Size follows real distance (not camera-plane depth) so tilting the view up/down
+    // only slides objects around instead of making them swell or shrink.
+    scale: fov / trueDist, 
+    dist: trueDist, 
     depth: z2 
   };
 }
@@ -5338,6 +5353,9 @@ function update(dt) {
       } else if (oreName === "Plasma Crystal") {
         wp.x += Math.sin(Date.now() * 0.003 + wp.y * 0.05) * 22 * dt;
         wp.y -= (26 + wp.size * 10) * dt;
+      } else if (oreName === "Cryo Crystal") {
+        wp.x += Math.sin(Date.now() * 0.0015 + wp.y * 0.04) * 20 * dt;
+        wp.y += (22 + wp.size * 14) * dt;
       } else {
         wp.x += Math.sin(Date.now() * 0.004 + wp.y * 0.08) * 32 * dt;
         wp.y -= (48 + wp.size * 15) * dt;
@@ -5426,7 +5444,8 @@ function update(dt) {
     }
 
     const flightSpeedMultiplier = wantsJetpack ? 2.4 : (playerFoot.isGrounded ? 1.0 : 1.25);
-    const walkSpeed = 38 * flightSpeedMultiplier;
+    const chillSlow = (playerFoot.chillTimer > 0 ? 0.55 : 1) * (1 - 0.15 * (playerFoot.cold || 0));
+    const walkSpeed = 38 * flightSpeedMultiplier * chillSlow;
     const sinY = Math.sin(playerFoot.yaw), cosY = Math.cos(playerFoot.yaw);
     playerFoot.x += (sinY * walkZ + cosY * walkX) * walkSpeed * dt;
     playerFoot.z += (cosY * walkZ - sinY * walkX) * walkSpeed * dt;
@@ -5484,6 +5503,26 @@ function update(dt) {
       btn3.innerText = "BOARD"; btn3.className = "cockpit-btn action";
     }
 
+    // Cryo world: cold exposure. Warm near the ship and the outpost, freezing everywhere else.
+    if (playerFoot.chillTimer > 0) playerFoot.chillTimer -= dt;
+    if (isCryoWorld(landedPlanet)) {
+      const nearShip = Math.hypot(playerFoot.x, playerFoot.z) < 55;
+      const nearOutpost = surfaceOutpost && Math.hypot(playerFoot.x - surfaceOutpost.x, playerFoot.z - surfaceOutpost.z) < 60;
+      const warm = nearShip || nearOutpost;
+      playerFoot.isWarm = warm;
+      playerFoot.cold = Math.max(0, Math.min(1, (playerFoot.cold || 0) + (warm ? -dt / 6 : dt / 40)));
+      if (playerFoot.cold > 0.35 && !gameOver) {
+        // Cold bypasses the shield and slowly eats the suit
+        playerFoot.suitHp -= ((playerFoot.cold - 0.35) / 0.65) * 3.2 * dt;
+        if (playerFoot.suitHp <= 0) {
+          playerFoot.suitHp = 0;
+          triggerGameOver("SUIT FROZEN", "Suit heaters failed. You froze solid on a Cryo world.", "#67e8f9");
+        }
+      }
+    } else {
+      playerFoot.cold = 0; playerFoot.isWarm = false;
+    }
+
     // Surface Sentinels
     let anySentinelAlert = false;
     for (let s of surfaceSentinels) {
@@ -5534,7 +5573,7 @@ function update(dt) {
           const dy = (playerFoot.y - (s.isBerzerk ? 6 : 3)) - s.y;
           const dz = playerFoot.z - s.z;
           const dTot = Math.hypot(dx, dy, dz) || 1;
-          const boltSpd = s.isBerzerk ? 210 : 360;
+          const boltSpd = s.isBerzerk ? 210 : (s.isFrost ? 290 : 360);
 
           laserBolts.push({
             x: s.x, y: s.isBerzerk ? -6 : s.y, z: s.z,
@@ -5543,9 +5582,10 @@ function update(dt) {
             vz: (dz / dTot) * boltSpd,
             life: s.isBerzerk ? 2.5 : 1.8,
             isEnemy: true,
-            damage: s.isBerzerk ? 185 : 13,
+            damage: s.isBerzerk ? 185 : (s.isFrost ? 16 : 13),
             isSurface: true,
-            isBerzerk: !!s.isBerzerk
+            isBerzerk: !!s.isBerzerk,
+            isFrost: !!s.isFrost
           });
         }
       }
@@ -5897,6 +5937,8 @@ function update(dt) {
     if (b.isSurface) {
       if (b.isEnemy && Math.hypot(playerFoot.x - b.x, playerFoot.z - b.z) < 4 && Math.abs(playerFoot.y - b.y) < 12) {
         window.lastSurfaceHitWasBerzerk = !!b.isBerzerk;
+        window.lastSurfaceHitWasFrost = !!b.isFrost;
+        if (b.isFrost) playerFoot.chillTimer = 3.0; // frost bolts chill: slows movement for a few seconds
         damagePlayer(b.damage);
         laserBolts.splice(i, 1);
         continue;
@@ -6988,7 +7030,7 @@ function drawPixelSentinel(proj, sent) {
     for (let col = 0; col < cols; col++) {
       const char = sprite[row][col];
       if (char === '#') {
-        ctx.fillStyle = isBerz ? (sent.alert ? "#f43f5e" : "#facc15") : (sent.alert ? "#ef4444" : "#c084fc");
+        ctx.fillStyle = isBerz ? (sent.alert ? "#f43f5e" : "#facc15") : (sent.isFrost ? (sent.alert ? "#67e8f9" : "#e0f2fe") : (sent.alert ? "#ef4444" : "#c084fc"));
         ctx.fillRect(ox + col * px, oy + row * px + bob, px, px);
       } else if (char === '.') {
         ctx.fillStyle = "#ffffff";
@@ -7848,10 +7890,13 @@ function render() {
   } else if (gameMode === 'SURFACE' && landedPlanet) {
     const isHome = !!landedPlanet.isHomeWorld || landedPlanet.name === "Home World";
     const rawHorizonY = V_HEIGHT / 2 - Math.tan(playerFoot.pitch) * (V_HEIGHT * 0.90);
-    const clampedHorizonY = Math.max(16, Math.min(V_HEIGHT - 16, rawHorizonY));
+    // Only a sanity bound (keeps gradient math finite) - the horizon must be free to
+    // leave the screen so looking straight down/up shows only ground/sky.
+    const clampedHorizonY = Math.max(-V_HEIGHT * 10, Math.min(V_HEIGHT * 10, rawHorizonY));
+    const skySpan = V_HEIGHT * 0.5;
 
     // Blue Sky Gradient on Home World
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, clampedHorizonY);
+    const skyGrad = ctx.createLinearGradient(0, clampedHorizonY - skySpan, 0, clampedHorizonY);
     if (isHome) {
       skyGrad.addColorStop(0, "#0284c7");    // Deep azure blue
       skyGrad.addColorStop(0.55, "#38bdf8"); // Bright sky blue
@@ -7863,13 +7908,13 @@ function render() {
       skyGrad.addColorStop(1.0, landedPlanet.ore.lightColor + "cc");
     }
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, V_WIDTH, clampedHorizonY);
+    if (clampedHorizonY > 0) ctx.fillRect(0, 0, V_WIDTH, Math.min(V_HEIGHT, clampedHorizonY));
 
     if (!isHome) {
-      for (let i = 0; i < 65; i++) {
+      for (let i = 0; i < 140; i++) {
         const starX = ((i * 73 + playerFoot.yaw * 110) % V_WIDTH + V_WIDTH) % V_WIDTH;
-        const starY = (i * 37) % Math.max(12, Math.floor(clampedHorizonY - 14));
-        if (starY < clampedHorizonY - 6) {
+        const starY = clampedHorizonY - 14 - ((i * 37) % (V_HEIGHT * 2.2));
+        if (starY > -2 && starY < V_HEIGHT && starY < clampedHorizonY - 6) {
           ctx.fillStyle = (i % 3 === 0) ? landedPlanet.ore.lightColor : "#ffffff";
           ctx.fillRect(Math.round(starX), Math.round(starY), (i % 5 === 0) ? 2 : 1, (i % 5 === 0) ? 2 : 1);
         }
@@ -7879,8 +7924,8 @@ function render() {
       ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
       for (let c = 0; c < 4; c++) {
         const cx = ((c * 135 - playerFoot.yaw * 40) % (V_WIDTH * 1.5) + (V_WIDTH * 1.5)) % (V_WIDTH * 1.5) - 30;
-        const cy = clampedHorizonY * (0.35 + c * 0.12);
-        if (cy < clampedHorizonY - 8) {
+        const cy = clampedHorizonY - skySpan * (0.65 - c * 0.12);
+        if (cy < clampedHorizonY - 8 && cy > -20 && cy < V_HEIGHT + 20) {
           ctx.beginPath();
           ctx.ellipse(cx, cy, 32 + c * 8, 8 + c * 2, 0, 0, Math.PI * 2);
           ctx.fill();
@@ -7890,8 +7935,8 @@ function render() {
 
     // Luna / Natural Moon
     const moonX = ((V_WIDTH * 0.72 - playerFoot.yaw * 70) % (V_WIDTH * 1.6) + V_WIDTH * 1.6) % (V_WIDTH * 1.6) - V_WIDTH * 0.3;
-    const moonY = clampedHorizonY * 0.44;
-    if (moonY > 10 && clampedHorizonY > 25) {
+    const moonY = clampedHorizonY - V_HEIGHT * 0.28;
+    if (moonY > -30 && moonY < V_HEIGHT + 30) {
       const moonR = isHome ? 20 : 24;
       ctx.save();
       ctx.beginPath();
@@ -7905,37 +7950,44 @@ function render() {
       ctx.restore();
     }
 
-    // Lush Green Distant Mountain Horizon
-    ctx.fillStyle = isHome ? "#14532d" : landedPlanet.ore.darkColor;
-    ctx.beginPath();
-    ctx.moveTo(0, clampedHorizonY);
-    for (let x = 0; x <= V_WIDTH; x += 12) {
-      const angle = playerFoot.yaw + (x / V_WIDTH - 0.5) * 1.4;
-      const h = Math.sin(angle * 3.2) * 12 + Math.cos(angle * 7.1) * 7 + Math.sin(angle * 13.5) * 4;
-      ctx.lineTo(x, clampedHorizonY - Math.max(3, h + 9));
+    // Lush Green Distant Mountain Horizon (only when the horizon is actually near the screen)
+    if (clampedHorizonY > -50 && clampedHorizonY < V_HEIGHT + 60) {
+      ctx.fillStyle = isHome ? "#14532d" : (isCryoWorld(landedPlanet) ? "#bae6fd" : landedPlanet.ore.darkColor);
+      ctx.beginPath();
+      ctx.moveTo(0, clampedHorizonY);
+      for (let x = 0; x <= V_WIDTH; x += 12) {
+        const angle = playerFoot.yaw + (x / V_WIDTH - 0.5) * 1.4;
+        const h = Math.sin(angle * 3.2) * 12 + Math.cos(angle * 7.1) * 7 + Math.sin(angle * 13.5) * 4;
+        ctx.lineTo(x, clampedHorizonY - Math.max(3, h + 9));
+      }
+      ctx.lineTo(V_WIDTH, clampedHorizonY);
+      ctx.closePath();
+      ctx.fill();
     }
-    ctx.lineTo(V_WIDTH, clampedHorizonY);
-    ctx.closePath();
-    ctx.fill();
 
     // Grass & Soil Ground Gradient
-    const groundGrad = ctx.createLinearGradient(0, clampedHorizonY, 0, V_HEIGHT);
+    const groundTop = Math.max(0, clampedHorizonY);
+    const groundGrad = ctx.createLinearGradient(0, clampedHorizonY, 0, clampedHorizonY + skySpan);
     if (isHome) {
       groundGrad.addColorStop(0, "#166534");   // Rich forest green
       groundGrad.addColorStop(0.35, "#14532d"); // Dark emerald grass
       groundGrad.addColorStop(1, "#052e16");    // Deep earth green
+    } else if (isCryoWorld(landedPlanet)) {
+      groundGrad.addColorStop(0, "#f0f9ff");   // fresh snow at the horizon
+      groundGrad.addColorStop(0.4, "#bae6fd");
+      groundGrad.addColorStop(1, "#38bdf8");   // deep blue ice underfoot
     } else {
       groundGrad.addColorStop(0, landedPlanet.ore.darkColor);
       groundGrad.addColorStop(0.3, "#0b1329");
       groundGrad.addColorStop(1, "#030712");
     }
     ctx.fillStyle = groundGrad;
-    ctx.fillRect(0, clampedHorizonY, V_WIDTH, V_HEIGHT - clampedHorizonY);
+    if (groundTop < V_HEIGHT) ctx.fillRect(0, groundTop, V_WIDTH, V_HEIGHT - groundTop);
 
     // 3D Perspective Ground Grid (Omnidirectional 360°)
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, clampedHorizonY, V_WIDTH, V_HEIGHT - clampedHorizonY);
+    ctx.rect(0, groundTop, V_WIDTH, Math.max(0, V_HEIGHT - groundTop));
     ctx.clip();
 
     ctx.lineWidth = 1;
@@ -7982,7 +8034,7 @@ function render() {
 
       if ((sx1 < -60 && sx2 < -60) || (sx1 > V_WIDTH + 60 && sx2 > V_WIDTH + 60)) return;
 
-      ctx.strokeStyle = isHome ? "#22c55e" : landedPlanet.ore.darkColor;
+      ctx.strokeStyle = isHome ? "#22c55e" : (isCryoWorld(landedPlanet) ? "#0284c7" : landedPlanet.ore.darkColor);
       ctx.globalAlpha = alpha;
       ctx.beginPath();
       ctx.moveTo(sx1, sy1);
@@ -8077,6 +8129,10 @@ function render() {
           ctx.fillRect(bx - p, by - 2 * p, 2 * p, 4 * p);
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(bx - Math.max(1, p / 2), by - Math.max(1, p / 2), Math.max(1, p), Math.max(1, p));
+        } else if (item.bolt.isFrost) {
+          ctx.fillStyle = "rgba(103, 232, 249, 0.35)"; ctx.fillRect(bx - 4, by - 4, 8, 8);
+          ctx.fillStyle = "#e0f2fe"; ctx.fillRect(bx - 3, by - 1, 6, 2); ctx.fillRect(bx - 1, by - 3, 2, 6);
+          ctx.fillStyle = "#ffffff"; ctx.fillRect(bx - 1, by - 1, 2, 2);
         } else {
           ctx.fillStyle = item.bolt.isEnemy ? "#f43f5e" : "#38bdf8";
           ctx.fillRect(bx - 2, by - 2, 4, 4);
@@ -8104,9 +8160,31 @@ function render() {
         if (oreName === "Iron") ctx.fillStyle = wp.size > 1.4 ? "#cbd5e1" : "#64748b";
         else if (oreName === "Titanium") ctx.fillStyle = "#bae6fd";
         else if (oreName === "Plasma Crystal") ctx.fillStyle = "#d8b4fe";
+        else if (oreName === "Cryo Crystal") ctx.fillStyle = wp.size > 1.5 ? "#ffffff" : "#bae6fd";
         else ctx.fillStyle = "#f43f5e";
         ctx.fillRect(Math.round(wp.x), Math.round(wp.y), Math.round(wp.size), Math.round(wp.size));
       }
+      ctx.restore();
+    }
+
+    // Cryo world HUD: cold gauge + icy frost creeping in from the screen edges
+    if (isCryoWorld(landedPlanet)) {
+      const cold = playerFoot.cold || 0;
+      const chilled = playerFoot.chillTimer > 0;
+      const frostAmt = Math.min(1, cold * 0.9 + (chilled ? 0.25 : 0));
+      if (frostAmt > 0.02) {
+        const g = ctx.createRadialGradient(V_WIDTH / 2, V_HEIGHT / 2, V_HEIGHT * 0.32, V_WIDTH / 2, V_HEIGHT / 2, V_WIDTH * 0.62);
+        g.addColorStop(0, "rgba(186, 230, 253, 0)");
+        g.addColorStop(1, `rgba(224, 242, 254, ${0.6 * frostAmt})`);
+        ctx.fillStyle = g; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      }
+      const bw = 70, bx0 = Math.round(V_WIDTH / 2 - bw / 2), by0 = 50;
+      ctx.save();
+      ctx.fillStyle = "rgba(2, 6, 23, 0.75)"; ctx.fillRect(bx0 - 2, by0 - 2, bw + 4, 8);
+      ctx.fillStyle = playerFoot.isWarm ? "#fb923c" : (cold > 0.35 ? "#f43f5e" : "#67e8f9");
+      ctx.fillRect(bx0, by0, Math.round(bw * cold), 4);
+      ctx.fillStyle = "#e0f2fe"; ctx.font = "bold 7px monospace"; ctx.textAlign = "center";
+      ctx.fillText(playerFoot.isWarm ? "WARMING UP" : (cold > 0.35 ? "SUIT FREEZING!" : "COLD EXPOSURE"), Math.round(V_WIDTH / 2), by0 + 15);
       ctx.restore();
     }
 
@@ -8840,7 +8918,8 @@ function getSectorData(sx, sz) {
   for (let i = 0; i < numPlanets; i++) {
     const pid = `${sx}_0_${sz}_p${i}`;
     if (destroyedPlanets && destroyedPlanets.has(pid)) continue;
-    const ore = RESOURCE_TYPES[Math.floor(rand() * RESOURCE_TYPES.length)];
+    let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
+    if (isCryoPlanet(sx, 0, sz, i)) ore = CRYO_ORE;
     planets.push({ name: `${baseName}-${i + 1}`, ore, rings: rand() > 0.65 });
   }
 
@@ -9497,6 +9576,7 @@ requestAnimationFrame(gameLoop);
   // 1. Cutscene State & Constants
   let isSurfaceCutscenePlaying = false;
   let isBerzerkCutscenePlaying = false;
+  let isFrostCutscenePlaying = false;
   const CHAR_SCALE = 1.7;
   const GROUND_Y = 190;
 
@@ -9532,6 +9612,27 @@ requestAnimationFrame(gameLoop);
     }
   }
   const bzPop = { active: false, r: 4, maxR: 46, timer: 0, dur: 0.7 };
+
+  // --- Frost Warden "Flash Freeze" fatality state ---
+  const fzState = { timer: 0, shake: 0, flash: 0, flashColor: "186, 230, 253", ready: false, beam: false, frost: 0, cracks: 0 };
+  const fzVictim = { x: 0, y: 0, state: 'STANDING', alpha: 1 };
+  const fzWarden = { x: 0, y: 0 };
+  const fzBlood = [], fzPuddle = [], fzChunks = [], fzMotes = [];
+  const fzPop = { active: false, r: 4, maxR: 52, timer: 0, dur: 0.75 };
+
+  function spawnFrostChunks(x, y, count, gore) {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 35 + Math.random() * 110;
+      const useGore = gore && Math.random() > 0.45;
+      fzChunks.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 50, landed: false,
+        w: 2.5 + Math.random() * 4, h: 2.5 + Math.random() * 4,
+        color1: useGore ? (Math.random() > 0.5 ? "#7f1d1d" : "#991b1b") : (Math.random() > 0.5 ? "#bae6fd" : "#7dd3fc"),
+        color2: useGore ? "#67e8f9" : "#ffffff"
+      });
+    }
+  }
 
   // Custom Audio Synth isolated to this cutscene
   function playCutsceneSfx(type) {
@@ -9580,6 +9681,23 @@ requestAnimationFrame(gameLoop);
         g.gain.setValueAtTime(0.12, t); g.gain.linearRampToValueAtTime(0.001, t + 0.12);
         osc.connect(g); g.connect(actx.destination);
         osc.start(t); osc.stop(t + 0.12);
+      } else if (type === 'freeze') {
+        const osc = actx.createOscillator(), g = actx.createGain();
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(2400, t);
+        osc.frequency.exponentialRampToValueAtTime(320, t + 1.6);
+        g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.12, t + 0.2);
+        g.gain.linearRampToValueAtTime(0.001, t + 1.6);
+        osc.connect(g); g.connect(actx.destination);
+        osc.start(t); osc.stop(t + 1.6);
+      } else if (type === 'shatter') {
+        const bSize = Math.floor(actx.sampleRate * 0.6);
+        const buf = actx.createBuffer(1, bSize, actx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < bSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bSize * 0.2));
+        const src = actx.createBufferSource(); src.buffer = buf;
+        const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.setValueAtTime(1800, t);
+        const g = actx.createGain(); g.gain.setValueAtTime(0.5, t);
+        src.connect(hp); hp.connect(g); g.connect(actx.destination); src.start(t);
       } else if (type === 'impact') {
         const bSize = Math.floor(actx.sampleRate * 0.3);
         const buf = actx.createBuffer(1, bSize, actx.sampleRate);
@@ -9610,11 +9728,17 @@ requestAnimationFrame(gameLoop);
       const isRedPlanet = landedPlanet && landedPlanet.ore && (landedPlanet.ore.name === "Dark Matter" || landedPlanet.ore.color === "#f43f5e");
       const wasBerzerk = window.lastSurfaceHitWasBerzerk !== undefined ? !!window.lastSurfaceHitWasBerzerk : isRedPlanet;
 
+      const wasFrost = !!window.lastSurfaceHitWasFrost && !wasBerzerk;
+
+      if (wasFrost && !isFrostCutscenePlaying) {
+        triggerFrostDeathCutscene();
+        return; // Intercept! Don't show modal yet
+      }
       if (wasBerzerk && !isBerzerkCutscenePlaying) {
         triggerBerzerkDeathCutscene();
         return; // Intercept! Don't show modal yet
       }
-      if (!wasBerzerk && !isSurfaceCutscenePlaying) {
+      if (!wasBerzerk && !wasFrost && !isSurfaceCutscenePlaying) {
         triggerSurfaceDeathCutscene();
         return; // Intercept! Don't show modal yet
       }
@@ -9698,7 +9822,34 @@ requestAnimationFrame(gameLoop);
     origTriggerGameOver("SUIT COMPROMISED", "Torn apart and consumed by an unstable Dark Matter berzerker.");
   }
 
+  function triggerFrostDeathCutscene() {
+    isFrostCutscenePlaying = true;
+    fzState.timer = 0; fzState.shake = 0; fzState.flash = 0; fzState.ready = false;
+    fzState.beam = false; fzState.frost = 0; fzState.cracks = 0;
+    fzVictim.x = Math.round(V_WIDTH / 2); fzVictim.y = GROUND_Y; fzVictim.state = 'STANDING'; fzVictim.alpha = 1;
+    fzWarden.x = fzVictim.x + 150; fzWarden.y = GROUND_Y - 34;
+    fzBlood.length = 0; fzPuddle.length = 0; fzChunks.length = 0; fzMotes.length = 0;
+    fzPop.active = false; fzPop.timer = 0; fzPop.r = 4;
+
+    ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    if (typeof actx !== 'undefined' && actx) {
+      if (typeof windGain !== 'undefined' && windGain) windGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+      if (typeof baseAmbientGain !== 'undefined' && baseAmbientGain) baseAmbientGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+    }
+    playCutsceneSfx('swoop');
+  }
+
+  function dismissFrostCutscene() {
+    isFrostCutscenePlaying = false;
+    origTriggerGameOver("SUIT COMPROMISED", "Flash-frozen solid and shattered by a Frost Warden.", "#67e8f9");
+  }
+
   // 3. Input Handlers to Skip/Dismiss
+  window.addEventListener("pointerdown", () => { if (isFrostCutscenePlaying && fzState.ready) dismissFrostCutscene(); });
+  window.addEventListener("keydown", () => { if (isFrostCutscenePlaying && fzState.ready) dismissFrostCutscene(); });
   window.addEventListener("pointerdown", () => { if (isSurfaceCutscenePlaying && sdState.ready) dismissSurfaceCutscene(); });
   window.addEventListener("keydown", () => { if (isSurfaceCutscenePlaying && sdState.ready) dismissSurfaceCutscene(); });
   window.addEventListener("pointerdown", () => { if (isBerzerkCutscenePlaying && bzState.ready) dismissBerzerkCutscene(); });
@@ -9724,6 +9875,20 @@ requestAnimationFrame(gameLoop);
         }
       }
       return; // Block the main game from ticking
+    }
+    if (isFrostCutscenePlaying) {
+      updateFrostCutscene(dt);
+      if (typeof pollGamepadState === 'function') {
+        pollGamepadState();
+        if (fzState.ready && typeof currentGpButtons !== 'undefined') {
+          if (currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) dismissFrostCutscene();
+        }
+        if (typeof currentGpButtons !== 'undefined') {
+          for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
+          for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
+        }
+      }
+      return;
     }
     if (isBerzerkCutscenePlaying) {
       updateBerzerkCutscene(dt);
@@ -10001,11 +10166,109 @@ requestAnimationFrame(gameLoop);
     if (t >= 4.8) bzState.ready = true;
   }
 
+  function updateFrostCutscene(dt) {
+    const prevT = fzState.timer;
+    fzState.timer += dt;
+    const t = fzState.timer;
+    if (fzState.shake > 0) fzState.shake = Math.max(0, fzState.shake - dt * 2.2);
+    if (fzState.flash > 0) fzState.flash = Math.max(0, fzState.flash - dt * 2.5);
+
+    const torsoY = fzVictim.y - (10 * CHAR_SCALE);
+    const bob = Math.sin(t * 5) * 2;
+    const SHATTER_T = 3.5;
+
+    if (t < 0.8) {
+      // --- APPROACH: warden glides in ---
+      const p = t / 0.8;
+      fzWarden.x = (fzVictim.x + 150) * (1 - p * p) + (fzVictim.x + 40) * (p * p);
+      fzWarden.y = GROUND_Y - 34 + bob;
+    } else if (t < SHATTER_T) {
+      fzWarden.x = fzVictim.x + 40; fzWarden.y = GROUND_Y - 34 + bob;
+
+      if (t >= 0.8 && prevT < 0.8) {
+        fzState.beam = true;
+        fzState.flash = 0.6; fzState.flashColor = "186, 230, 253"; fzState.shake = 0.4;
+        playCutsceneSfx('chirp'); playCutsceneSfx('freeze');
+      }
+      // --- FLASH FREEZE: ice creeps up the body ---
+      const fz = Math.min(1, (t - 0.8) / 1.8);
+      fzState.frost = fz;
+      fzVictim.state = 'STRUGGLING';
+      if (t >= 2.6) fzState.beam = false;
+
+      if (Math.random() < 0.6) {
+        fzMotes.push({ x: fzVictim.x + (Math.random() - 0.5) * 22, y: fzVictim.y - Math.random() * 38,
+          vx: (Math.random() - 0.5) * 8, vy: -6 - Math.random() * 10, life: 0.6 + Math.random() * 0.5 });
+      }
+      // Cracks spread through the ice block just before it goes
+      if (t >= 2.9) fzState.cracks = Math.min(1, (t - 2.9) / 0.6);
+      if ((t >= 3.0 && prevT < 3.0) || (t >= 3.25 && prevT < 3.25)) {
+        fzState.shake = 0.5; playCutsceneSfx('heartbeat');
+      }
+    } else {
+      fzWarden.x = fzVictim.x + 40; fzWarden.y = GROUND_Y - 34 + bob;
+      fzVictim.alpha = 0; fzVictim.state = 'GONE'; fzState.beam = false;
+
+      if (t >= SHATTER_T && prevT < SHATTER_T) {
+        // --- SHATTER: frozen body explodes into ice and gore ---
+        fzState.shake = 1.7; fzState.flash = 1.0; fzState.flashColor = "224, 242, 254";
+        playCutsceneSfx('shatter'); playCutsceneSfx('burst');
+        if (typeof vibrateGamepad === 'function') vibrateGamepad(600, 1.0, 1.0);
+        fzPop.active = true; fzPop.timer = 0; fzPop.r = 4;
+
+        for (let i = 0; i < 70; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 40 + Math.random() * 150;
+          const roll = Math.random();
+          fzBlood.push({
+            x: fzVictim.x + (Math.random() - 0.5) * 10, y: torsoY + (Math.random() - 0.5) * 16,
+            vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 30,
+            color: roll > 0.7 ? "#ef4444" : (roll > 0.4 ? "#b91c1c" : (roll > 0.2 ? "#7f1d1d" : "#e0f2fe")),
+            sz: roll > 0.85 ? (3 + Math.random() * 2.5) : (1.5 + Math.random() * 1.5)
+          });
+        }
+        spawnFrostChunks(fzVictim.x, torsoY, 22, false); // ice shards
+        spawnFrostChunks(fzVictim.x, torsoY, 12, true);  // frozen gore chunks
+      }
+    }
+
+    for (let i = fzBlood.length - 1; i >= 0; i--) {
+      const b = fzBlood[i];
+      b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 135 * dt;
+      if (b.y >= GROUND_Y) {
+        b.y = GROUND_Y;
+        fzPuddle.push({ x: b.x, y: GROUND_Y + (Math.random() - 0.5) * 2, w: 3 + Math.random() * 5, color: b.color });
+        fzBlood.splice(i, 1);
+      }
+    }
+    for (let c of fzChunks) {
+      if (!c.landed) {
+        c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 135 * dt;
+        if (c.y >= GROUND_Y) { c.y = GROUND_Y; c.landed = true; c.vx = 0; c.vy = 0; }
+      }
+    }
+    for (let i = fzMotes.length - 1; i >= 0; i--) {
+      const m = fzMotes[i];
+      m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
+      if (m.life <= 0) fzMotes.splice(i, 1);
+    }
+    if (fzPop.active) {
+      fzPop.timer += dt;
+      if (fzPop.timer >= fzPop.dur) fzPop.active = false;
+      else fzPop.r = 4 + (fzPop.timer / fzPop.dur) * fzPop.maxR;
+    }
+    if (t >= 4.9) fzState.ready = true;
+  }
+
   // 5. Render Loop Injection
   const origRender = window.render;
   window.render = function() {
     if (isSurfaceCutscenePlaying) {
       renderSurfaceCutscene();
+      return; // Block the main game renderer
+    }
+    if (isFrostCutscenePlaying) {
+      renderFrostCutscene();
       return; // Block the main game renderer
     }
     if (isBerzerkCutscenePlaying) {
@@ -10298,6 +10561,149 @@ requestAnimationFrame(gameLoop);
   }
 
 
+  function drawFrostWarden(x, y, t, glow) {
+    const px = 4;
+    ctx.save();
+    // ground shadow
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.beginPath(); ctx.ellipse(Math.round(x), GROUND_Y, 16, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // cold aura
+    ctx.fillStyle = `rgba(103, 232, 249, ${0.12 + glow * 0.25})`;
+    ctx.fillRect(Math.round(x - 20), Math.round(y - 20), 40, 40);
+    const sprite = SENTINEL_SPRITES[Math.floor(t / 300) % 2];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        if (sprite[r][c] === '#') {
+          ctx.fillStyle = (r + c) % 3 === 0 ? "#e0f2fe" : "#67e8f9";
+          ctx.fillRect(Math.round(x + (c - 4) * px), Math.round(y + (r - 4) * px), px, px);
+        }
+      }
+    }
+    // glowing core
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(Math.round(x - px), Math.round(y - px), px, px);
+    ctx.fillRect(Math.round(x), Math.round(y - px), px, px);
+    ctx.restore();
+  }
+
+  function drawFrostOnVictim(vx, vy, frost, cracks, t) {
+    const h = Math.round(frost * 44);
+    if (h < 2) return;
+    ctx.save();
+    const left = Math.round(vx - 13), w = 26;
+    const top = Math.round(vy - h);
+    // translucent ice climbing up from the feet with a jagged leading edge
+    ctx.fillStyle = "rgba(147, 220, 250, 0.5)";
+    ctx.fillRect(left, top, w, h + 2);
+    ctx.fillStyle = "rgba(224, 242, 254, 0.75)";
+    for (let i = 0; i < 6; i++) {
+      const sx = left + 1 + i * 4, sh = 2 + ((i * 5) % 4);
+      ctx.fillRect(sx, top - sh, 3, sh);
+    }
+    // highlights
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.fillRect(left + 3, top + 2, 2, Math.max(0, h - 8));
+    ctx.fillRect(left + w - 6, top + 5, 1, Math.max(0, h - 14));
+    // frosty outline once mostly covered
+    if (frost > 0.85) {
+      ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 1;
+      ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h + 1);
+    }
+    // cracks racing through the block
+    if (cracks > 0) {
+      ctx.fillStyle = "#0c4a6e";
+      const cx = vx, cy = vy - 22;
+      const segs = Math.round(cracks * 10);
+      const dirs = [[-1,-1],[1,-1],[-1,1],[1,1],[0,-1],[0,1],[-1,0],[1,0]];
+      for (let d = 0; d < dirs.length; d++) {
+        for (let k = 1; k <= segs; k++) {
+          const jx = ((d * 7 + k * 3) % 3) - 1;
+          ctx.fillRect(Math.round(cx + dirs[d][0] * k * 1.6 + jx), Math.round(cy + dirs[d][1] * k * 2), 1, 2);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderFrostCutscene() {
+    const t = Date.now();
+    ctx.save();
+    if (fzState.shake > 0) {
+      const sAmt = fzState.shake * 8.0;
+      ctx.translate((Math.random() - 0.5) * sAmt, (Math.random() - 0.5) * sAmt);
+    }
+    drawDynamicPlanetBackdrop();
+
+    for (let p of fzPuddle) { ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.w), 2); }
+    for (let c of fzChunks) {
+      const gx = Math.round(c.x - c.w / 2), gy = Math.round(c.y - c.h);
+      ctx.fillStyle = c.color1; ctx.fillRect(gx, gy, Math.ceil(c.w), Math.ceil(c.h));
+      ctx.fillStyle = c.color2; ctx.fillRect(gx, gy, Math.max(1, Math.round(c.w * 0.4)), Math.max(1, Math.round(c.h * 0.4)));
+    }
+    for (let b of fzBlood) { ctx.fillStyle = b.color; ctx.fillRect(Math.round(b.x), Math.round(b.y), Math.round(b.sz), Math.round(b.sz)); }
+    for (let m of fzMotes) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, m.life * 2));
+      ctx.fillStyle = "#e0f2fe"; ctx.fillRect(Math.round(m.x), Math.round(m.y), 2, 2);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Victim: freezes mid-struggle (animation stops as the ice takes hold)
+    if (fzVictim.alpha > 0.01) {
+      const frozenStill = fzState.frost > 0.7;
+      const animT = frozenStill ? 1000 : t;
+      drawExactSpaceman(fzVictim.x, fzVictim.y, CHAR_SCALE, fzVictim.state, animT);
+      if (fzVictim.state === 'STRUGGLING') drawStrugglingHelmet(fzVictim.x, fzVictim.y, CHAR_SCALE);
+      drawFrostOnVictim(fzVictim.x, fzVictim.y, fzState.frost, fzState.cracks, t);
+    }
+
+    // Warden + freezing beam
+    const charging = fzState.timer >= 2.6 && fzState.timer < 3.5;
+    if (fzState.beam) {
+      const bx1 = fzWarden.x - 8, by1 = fzWarden.y + 4;
+      const bx2 = fzVictim.x + 4, by2 = fzVictim.y - 20;
+      drawChunkyLimb(bx1, by1, bx2, by2, 8, "rgba(103, 232, 249, 0.18)");
+      drawChunkyLimb(bx1, by1, bx2, by2, 5, "rgba(186, 230, 253, 0.38)");
+      drawChunkyLimb(bx1, by1, bx2, by2, 2, Math.floor(t / 70) % 2 === 0 ? "#ffffff" : "#67e8f9");
+    }
+    drawFrostWarden(fzWarden.x, fzWarden.y, t, (fzState.beam || charging) ? 1 : 0);
+
+    if (fzPop.active) {
+      const pp = fzPop.timer / fzPop.dur, r = Math.round(fzPop.r);
+      const py = fzVictim.y - (10 * CHAR_SCALE);
+      ctx.save();
+      ctx.strokeStyle = "#e0f2fe"; ctx.globalAlpha = Math.max(0, 1 - pp); ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(fzVictim.x, py - r); ctx.lineTo(fzVictim.x + r, py);
+      ctx.lineTo(fzVictim.x, py + r); ctx.lineTo(fzVictim.x - r, py);
+      ctx.closePath(); ctx.stroke();
+      ctx.strokeRect(fzVictim.x - Math.round(r * 0.7), py - Math.round(r * 0.7), Math.round(r * 1.4), Math.round(r * 1.4));
+      ctx.restore();
+    }
+
+    if (fzState.flash > 0) {
+      ctx.fillStyle = `rgba(${fzState.flashColor}, ${fzState.flash * 0.5})`;
+      ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+    }
+    ctx.restore();
+
+    if (fzState.timer >= 3.7 && fzState.timer < 5.7) {
+      const alpha = fzState.timer < 4.3 ? (fzState.timer - 3.7) / 0.6 : (5.7 - fzState.timer) / 1.4;
+      ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
+      const cx = Math.round(V_WIDTH / 2), cy = 55;
+      ctx.font = "bold 20px monospace"; ctx.textAlign = "center";
+      ctx.fillStyle = "#000000"; ctx.fillText("FLASH FREEZE FATALITY", cx + 2, cy + 2);
+      ctx.fillStyle = "#0284c7"; ctx.fillText("FLASH FREEZE FATALITY", cx - 1, cy - 1); ctx.fillText("FLASH FREEZE FATALITY", cx + 1, cy - 1);
+      ctx.fillStyle = "#e0f2fe"; ctx.fillText("FLASH FREEZE FATALITY", cx, cy);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("SHATTERED BY A FROST WARDEN", cx, cy + 16);
+      ctx.restore();
+    }
+    if (fzState.ready && Math.floor(t / 400) % 2 === 0) {
+      ctx.save(); ctx.fillStyle = "#facc15"; ctx.font = "bold 8.5px monospace"; ctx.textAlign = "center";
+      ctx.fillText("[ TAP SCREEN OR PRESS ANY KEY FOR MISSION REPORT ]", Math.round(V_WIDTH / 2), V_HEIGHT - 16);
+      ctx.restore();
+    }
+  }
+
   // 6. Draw Functions extracted from your standalone & adapted to global properties
   function drawDynamicPlanetBackdrop() {
     const horizonY = 145; 
@@ -10316,7 +10722,8 @@ requestAnimationFrame(gameLoop);
     }
     ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, V_WIDTH, horizonY);
 
-    ctx.fillStyle = isHome ? "#14532d" : (landedPlanet && landedPlanet.ore ? landedPlanet.ore.darkColor : "#334155");
+    const isCryoBg = !!(landedPlanet && landedPlanet.ore && landedPlanet.ore.name === "Cryo Crystal");
+    ctx.fillStyle = isHome ? "#14532d" : (isCryoBg ? "#bae6fd" : (landedPlanet && landedPlanet.ore ? landedPlanet.ore.darkColor : "#334155"));
     ctx.beginPath(); ctx.moveTo(0, horizonY);
     for (let x = 0; x <= V_WIDTH; x += 16) {
       const h = Math.sin(x * 0.02) * 14 + Math.cos(x * 0.04) * 8;
@@ -10327,6 +10734,8 @@ requestAnimationFrame(gameLoop);
     const groundGrad = ctx.createLinearGradient(0, horizonY, 0, V_HEIGHT);
     if (isHome) {
       groundGrad.addColorStop(0, "#166534"); groundGrad.addColorStop(0.35, "#14532d"); groundGrad.addColorStop(1, "#052e16");
+    } else if (isCryoBg) {
+      groundGrad.addColorStop(0, "#f0f9ff"); groundGrad.addColorStop(0.4, "#bae6fd"); groundGrad.addColorStop(1, "#38bdf8");
     } else {
       groundGrad.addColorStop(0, (landedPlanet && landedPlanet.ore ? landedPlanet.ore.darkColor : "#1e293b"));
       groundGrad.addColorStop(0.3, "#0b1329"); groundGrad.addColorStop(1, "#030712");
@@ -10490,6 +10899,17 @@ requestAnimationFrame(gameLoop);
       
       added++;
     }
+
+    // 3. Cryo worlds: every sentinel becomes a slow, tanky Frost Warden, and the cold starts fresh
+    playerFoot.cold = 0; playerFoot.chillTimer = 0;
+    if (isCryoWorld(planet)) {
+      for (let s of surfaceSentinels) {
+        s.isFrost = true;
+        s.hp = 70; s.maxHp = 70;
+        s.speed = (s.speed || 30) * 0.7;
+      }
+      addPopup("❄ CRYO WORLD: STAY NEAR HEAT OR YOUR SUIT FREEZES", "#67e8f9");
+    }
   };
 })();
 </script>
@@ -10564,11 +10984,11 @@ requestAnimationFrame(gameLoop);
             if(typeof playSfx === 'function') playSfx(s.isBerzerk ? 'bountyLaser' : 'enemyLaser');
             const dx = playerFoot.x - s.x, dy = (playerFoot.y - (s.isBerzerk ? 6 : 3)) - s.y, dz = playerFoot.z - s.z;
             const dTot = Math.hypot(dx, dy, dz) || 1;
-            const boltSpd = s.isBerzerk ? 210 : 360;
+            const boltSpd = s.isBerzerk ? 210 : (s.isFrost ? 290 : 360);
             laserBolts.push({
               x: s.x, y: s.isBerzerk ? -6 : s.y, z: s.z,
               vx: (dx / dTot) * boltSpd, vy: (dy / dTot) * boltSpd, vz: (dz / dTot) * boltSpd,
-              life: s.isBerzerk ? 2.5 : 1.8, isEnemy: true, damage: s.isBerzerk ? 185 : 13, isSurface: true, isBerzerk: !!s.isBerzerk
+              life: s.isBerzerk ? 2.5 : 1.8, isEnemy: true, damage: s.isBerzerk ? 185 : (s.isFrost ? 16 : 13), isSurface: true, isBerzerk: !!s.isBerzerk, isFrost: !!s.isFrost
             });
           }
         }
