@@ -5896,6 +5896,7 @@ function update(dt) {
 
     if (b.isSurface) {
       if (b.isEnemy && Math.hypot(playerFoot.x - b.x, playerFoot.z - b.z) < 4 && Math.abs(playerFoot.y - b.y) < 12) {
+        window.lastSurfaceHitWasBerzerk = !!b.isBerzerk;
         damagePlayer(b.damage);
         laserBolts.splice(i, 1);
         continue;
@@ -9495,6 +9496,7 @@ requestAnimationFrame(gameLoop);
 (function() {
   // 1. Cutscene State & Constants
   let isSurfaceCutscenePlaying = false;
+  let isBerzerkCutscenePlaying = false;
   const CHAR_SCALE = 1.7;
   const GROUND_Y = 190;
 
@@ -9509,6 +9511,27 @@ requestAnimationFrame(gameLoop);
   const sdAttacker = { x: 0, y: 0, latched: false };
   const sdBaby = { active: false, x: 0, y: 0, vx: 0, vy: 0 };
   const sdBlood = [], sdPuddle = [], sdSparks = [];
+
+  // --- Berzerk "Dark Matter Consumption" fatality state ---
+  const bzState = { timer: 0, shake: 0, flash: 0, flashColor: "239, 68, 68", ready: false };
+  const bzVictim = { x: 0, y: 0, state: 'STANDING', glow: 0, scale: 1, alpha: 1 };
+  const bzAttacker = { x: 0, y: 0, latched: false };
+  const bzBlood = [], bzPuddle = [], bzMotes = [], bzGibs = [];
+
+  function spawnBerzerkGibs(x, y, count) {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 30 + Math.random() * 100;
+      bzGibs.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 50,
+        landed: false,
+        w: 3 + Math.random() * 4, h: 3 + Math.random() * 4,
+        color1: Math.random() > 0.4 ? "#7f1d1d" : "#991b1b",
+        color2: Math.random() > 0.5 ? "#ef4444" : "#c084fc"
+      });
+    }
+  }
+  const bzPop = { active: false, r: 4, maxR: 46, timer: 0, dur: 0.7 };
 
   // Custom Audio Synth isolated to this cutscene
   function playCutsceneSfx(type) {
@@ -9557,6 +9580,24 @@ requestAnimationFrame(gameLoop);
         g.gain.setValueAtTime(0.12, t); g.gain.linearRampToValueAtTime(0.001, t + 0.12);
         osc.connect(g); g.connect(actx.destination);
         osc.start(t); osc.stop(t + 0.12);
+      } else if (type === 'impact') {
+        const bSize = Math.floor(actx.sampleRate * 0.3);
+        const buf = actx.createBuffer(1, bSize, actx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < bSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bSize * 0.12));
+        const src = actx.createBufferSource(); src.buffer = buf;
+        const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(220, t);
+        const g = actx.createGain(); g.gain.setValueAtTime(0.6, t);
+        src.connect(lp); lp.connect(g); g.connect(actx.destination); src.start(t);
+      } else if (type === 'drain') {
+        const osc = actx.createOscillator(), g = actx.createGain();
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(90, t);
+        osc.frequency.exponentialRampToValueAtTime(700, t + 1.6);
+        g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.16, t + 0.3);
+        g.gain.linearRampToValueAtTime(0.001, t + 1.6);
+        osc.connect(g); g.connect(actx.destination);
+        osc.start(t); osc.stop(t + 1.6);
       }
     } catch (e) {}
   }
@@ -9567,7 +9608,13 @@ requestAnimationFrame(gameLoop);
     if (title === "SUIT COMPROMISED") {
       // Don't play if it's a Red Planet / Dark Matter (those ones don't have standard sentinels)
       const isRedPlanet = landedPlanet && landedPlanet.ore && (landedPlanet.ore.name === "Dark Matter" || landedPlanet.ore.color === "#f43f5e");
-      if (!isRedPlanet && !isSurfaceCutscenePlaying) {
+      const wasBerzerk = window.lastSurfaceHitWasBerzerk !== undefined ? !!window.lastSurfaceHitWasBerzerk : isRedPlanet;
+
+      if (wasBerzerk && !isBerzerkCutscenePlaying) {
+        triggerBerzerkDeathCutscene();
+        return; // Intercept! Don't show modal yet
+      }
+      if (!wasBerzerk && !isSurfaceCutscenePlaying) {
         triggerSurfaceDeathCutscene();
         return; // Intercept! Don't show modal yet
       }
@@ -9618,9 +9665,44 @@ requestAnimationFrame(gameLoop);
     origTriggerGameOver("SUIT COMPROMISED", "Life support breached by parasitic alien chestburst.");
   }
 
+  function triggerBerzerkDeathCutscene() {
+    isBerzerkCutscenePlaying = true;
+    bzState.timer = 0; bzState.shake = 0; bzState.flash = 0; bzState.ready = false;
+
+    bzVictim.x = Math.round(V_WIDTH / 2); bzVictim.y = GROUND_Y;
+    bzVictim.state = 'STANDING'; bzVictim.glow = 0; bzVictim.scale = 1; bzVictim.alpha = 1;
+
+    bzAttacker.x = bzVictim.x + 150; bzAttacker.y = GROUND_Y;
+    bzAttacker.latched = false;
+
+    bzBlood.length = 0; bzPuddle.length = 0; bzMotes.length = 0; bzGibs.length = 0;
+    bzPop.active = false; bzPop.timer = 0; bzPop.r = 4;
+
+    // Hide normal HUD
+    ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    // Mute ambient wind/hum
+    if (typeof actx !== 'undefined' && actx) {
+      if (typeof windGain !== 'undefined' && windGain) windGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+      if (typeof baseAmbientGain !== 'undefined' && baseAmbientGain) baseAmbientGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+    }
+
+    playCutsceneSfx('swoop');
+  }
+
+  function dismissBerzerkCutscene() {
+    isBerzerkCutscenePlaying = false;
+    origTriggerGameOver("SUIT COMPROMISED", "Torn apart and consumed by an unstable Dark Matter berzerker.");
+  }
+
   // 3. Input Handlers to Skip/Dismiss
   window.addEventListener("pointerdown", () => { if (isSurfaceCutscenePlaying && sdState.ready) dismissSurfaceCutscene(); });
   window.addEventListener("keydown", () => { if (isSurfaceCutscenePlaying && sdState.ready) dismissSurfaceCutscene(); });
+  window.addEventListener("pointerdown", () => { if (isBerzerkCutscenePlaying && bzState.ready) dismissBerzerkCutscene(); });
+  window.addEventListener("keydown", () => { if (isBerzerkCutscenePlaying && bzState.ready) dismissBerzerkCutscene(); });
 
   // 4. Update Loop Injection
   const origUpdate = window.update;
@@ -9634,6 +9716,24 @@ requestAnimationFrame(gameLoop);
         if (sdState.ready && typeof currentGpButtons !== 'undefined') {
           if (currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) {
             dismissSurfaceCutscene();
+          }
+        }
+        if (typeof currentGpButtons !== 'undefined') {
+          for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
+          for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
+        }
+      }
+      return; // Block the main game from ticking
+    }
+    if (isBerzerkCutscenePlaying) {
+      updateBerzerkCutscene(dt);
+
+      // Gamepad Polling to dismiss cutscene
+      if (typeof pollGamepadState === 'function') {
+        pollGamepadState();
+        if (bzState.ready && typeof currentGpButtons !== 'undefined') {
+          if (currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) {
+            dismissBerzerkCutscene();
           }
         }
         if (typeof currentGpButtons !== 'undefined') {
@@ -9737,11 +9837,179 @@ requestAnimationFrame(gameLoop);
     if (t >= 6.0) sdState.ready = true;
   }
 
+  function updateBerzerkCutscene(dt) {
+    const prevT = bzState.timer;
+    bzState.timer += dt;
+    const t = bzState.timer;
+
+    if (bzState.shake > 0) bzState.shake = Math.max(0, bzState.shake - dt * 2.2);
+    if (bzState.flash > 0) bzState.flash = Math.max(0, bzState.flash - dt * 2.5);
+
+    const torsoY = bzVictim.y - (10 * CHAR_SCALE);
+
+    if (t < 0.7) {
+      // --- CHARGE: the berzerk bot rushes in low and fast ---
+      const p = t / 0.7;
+      bzAttacker.x = (bzVictim.x + 150) * (1 - p * p) + bzVictim.x * (p * p);
+      bzAttacker.y = GROUND_Y;
+      bzVictim.state = 'STANDING';
+    } else if (t >= 0.7 && t < 1.0) {
+      // --- IMPACT: violent contact, blood + gore burst ---
+      bzAttacker.x = bzVictim.x + 22; bzAttacker.y = GROUND_Y;
+      bzAttacker.latched = true;
+      bzVictim.state = 'STRUGGLING';
+
+      if (t >= 0.7 && prevT < 0.7) {
+        bzState.shake = 0.8; bzState.flash = 0.8; bzState.flashColor = "239, 68, 68";
+        playCutsceneSfx('impact');
+        if (typeof vibrateGamepad === 'function') vibrateGamepad(300, 0.7, 0.8);
+
+        // Body-slam contact: a modest first spray before the arm actually punches through
+        for (let i = 0; i < 22; i++) {
+          const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+          const spd = 30 + Math.random() * 90;
+          const roll = Math.random();
+          bzBlood.push({
+            x: bzVictim.x + (Math.random() - 0.5) * 5, y: torsoY,
+            vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+            color: roll > 0.65 ? "#ef4444" : (roll > 0.4 ? "#b91c1c" : (roll > 0.18 ? "#7f1d1d" : "#c084fc")),
+            sz: roll > 0.82 ? (3 + Math.random() * 2) : (1.5 + Math.random() * 1.5)
+          });
+        }
+      }
+    } else if (t >= 1.0 && t < 2.8) {
+      // --- DRAIN: dark matter consumes the victim, blood keeps dripping ---
+      bzAttacker.x = bzVictim.x + 22; bzAttacker.y = GROUND_Y;
+      bzAttacker.latched = true;
+      bzVictim.state = 'STRUGGLING';
+      bzVictim.glow = Math.min(1, (t - 1.0) / 1.4);
+
+      if (t >= 1.0 && prevT < 1.0) playCutsceneSfx('drain');
+
+      // The arm actually punches through partway into this phase - that's the real gore payoff
+      const punchT = 0.7 + ARM_WINDUP + ARM_THRUST;
+      if (t >= punchT && prevT < punchT) {
+        bzState.shake = 1.2; bzState.flash = 1.0; bzState.flashColor = "239, 68, 68";
+        playCutsceneSfx('burst');
+        if (typeof vibrateGamepad === 'function') vibrateGamepad(500, 1.0, 1.0);
+
+        for (let i = 0; i < 60; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 40 + Math.random() * 140;
+          const roll = Math.random();
+          bzBlood.push({
+            x: bzVictim.x + (Math.random() - 0.5) * 6, y: torsoY,
+            vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 30,
+            color: roll > 0.65 ? "#ef4444" : (roll > 0.4 ? "#b91c1c" : (roll > 0.18 ? "#7f1d1d" : "#c084fc")),
+            sz: roll > 0.82 ? (3 + Math.random() * 2.5) : (1.5 + Math.random() * 1.5)
+          });
+        }
+        spawnBerzerkGibs(bzVictim.x, torsoY, 9);
+      }
+
+      if ((t >= 1.3 && prevT < 1.3) || (t >= 1.9 && prevT < 1.9) || (t >= 2.4 && prevT < 2.4)) {
+        bzState.shake = 0.35; bzState.flashColor = "192, 132, 252"; bzState.flash = 0.35;
+        playCutsceneSfx('heartbeat');
+      }
+
+      if (Math.random() < 0.55) {
+        bzMotes.push({
+          x: bzVictim.x + (Math.random() - 0.5) * 6, y: torsoY + (Math.random() - 0.5) * 8,
+          tx: bzAttacker.x, ty: bzAttacker.y - 14,
+          life: 0.5 + Math.random() * 0.3
+        });
+      }
+      if (t >= punchT && Math.random() < 0.65) {
+        bzBlood.push({
+          x: bzVictim.x + (Math.random() - 0.5) * 8, y: torsoY,
+          vx: (Math.random() - 0.5) * 16, vy: 6 + Math.random() * 16,
+          color: Math.random() > 0.5 ? "#b91c1c" : "#7f1d1d",
+          sz: 1.5 + Math.random() * 2
+        });
+      }
+    } else if (t >= 2.8 && t < 3.4) {
+      // --- CONSUMED: victim shrinks and dissolves into the bot ---
+      const p = (t - 2.8) / 0.6;
+      bzVictim.scale = Math.max(0, 1 - p);
+      bzVictim.alpha = Math.max(0, 1 - p * 1.3);
+      bzAttacker.latched = false;
+
+      for (let i = 0; i < 3; i++) {
+        bzMotes.push({
+          x: bzVictim.x + (Math.random() - 0.5) * 8, y: torsoY + (Math.random() - 0.5) * 10,
+          tx: bzAttacker.x, ty: bzAttacker.y - 14,
+          life: 0.3 + Math.random() * 0.2
+        });
+      }
+    } else if (t >= 3.4) {
+      bzVictim.state = 'GONE';
+      bzVictim.scale = 0; bzVictim.alpha = 0;
+
+      if (t >= 3.4 && prevT < 3.4) {
+        bzState.shake = 1.6; bzState.flash = 1.0; bzState.flashColor = "192, 132, 252";
+        playCutsceneSfx('burst');
+        bzPop.active = true; bzPop.timer = 0; bzPop.r = 4;
+        // A last, heavy scatter of gore flings free of the consumption
+        for (let i = 0; i < 34; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 30 + Math.random() * 110;
+          bzBlood.push({
+            x: bzVictim.x, y: torsoY,
+            vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 20,
+            color: Math.random() > 0.5 ? "#ef4444" : "#7f1d1d",
+            sz: 1.5 + Math.random() * 2.5
+          });
+        }
+        spawnBerzerkGibs(bzVictim.x, torsoY, 12);
+      }
+    }
+
+    for (let i = bzBlood.length - 1; i >= 0; i--) {
+      const p = bzBlood[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 135 * dt;
+      if (p.y >= GROUND_Y) {
+        p.y = GROUND_Y;
+        bzPuddle.push({ x: p.x, y: GROUND_Y + (Math.random() - 0.5) * 2, w: 3 + Math.random() * 5, color: p.color });
+        bzBlood.splice(i, 1);
+      }
+    }
+
+    for (let g of bzGibs) {
+      if (!g.landed) {
+        g.x += g.vx * dt; g.y += g.vy * dt; g.vy += 135 * dt;
+        if (g.y >= GROUND_Y) { g.y = GROUND_Y; g.landed = true; g.vx = 0; g.vy = 0; }
+      }
+    }
+
+    for (let i = bzMotes.length - 1; i >= 0; i--) {
+      const m = bzMotes[i];
+      m.x += (m.tx - m.x) * Math.min(1, dt * 6);
+      m.y += (m.ty - m.y) * Math.min(1, dt * 6);
+      m.life -= dt;
+      if (m.life <= 0) bzMotes.splice(i, 1);
+    }
+
+    if (bzPop.active) {
+      bzPop.timer += dt;
+      if (bzPop.timer >= bzPop.dur) {
+        bzPop.active = false;
+      } else {
+        bzPop.r = 4 + (bzPop.timer / bzPop.dur) * bzPop.maxR;
+      }
+    }
+
+    if (t >= 4.8) bzState.ready = true;
+  }
+
   // 5. Render Loop Injection
   const origRender = window.render;
   window.render = function() {
     if (isSurfaceCutscenePlaying) {
       renderSurfaceCutscene();
+      return; // Block the main game renderer
+    }
+    if (isBerzerkCutscenePlaying) {
+      renderBerzerkCutscene();
       return; // Block the main game renderer
     }
     origRender.apply(this, arguments);
@@ -9802,6 +10070,233 @@ requestAnimationFrame(gameLoop);
       ctx.restore();
     }
   }
+
+  function renderBerzerkCutscene() {
+    const t = Date.now();
+    ctx.save();
+    if (bzState.shake > 0) {
+      const sAmt = bzState.shake * 8.0;
+      ctx.translate((Math.random() - 0.5) * sAmt, (Math.random() - 0.5) * sAmt);
+    }
+
+    drawDynamicPlanetBackdrop();
+
+    // Blood, gore and puddles
+    for (let p of bzPuddle) { ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.w), 2); }
+    for (let g of bzGibs) {
+      const gx = Math.round(g.x - g.w / 2), gy = Math.round(g.y - g.h);
+      ctx.fillStyle = g.color1; ctx.fillRect(gx, gy, Math.ceil(g.w), Math.ceil(g.h));
+      ctx.fillStyle = g.color2; ctx.fillRect(gx, gy, Math.max(1, Math.round(g.w * 0.4)), Math.max(1, Math.round(g.h * 0.4)));
+    }
+    for (let b of bzBlood) { ctx.fillStyle = b.color; ctx.fillRect(Math.round(b.x), Math.round(b.y), Math.round(b.sz), Math.round(b.sz)); }
+    // Dark matter motes draining into the bot
+    for (let m of bzMotes) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, m.life * 2.2));
+      ctx.fillStyle = "#c084fc";
+      ctx.fillRect(Math.round(m.x), Math.round(m.y), 2, 2);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Victim (shrinks/fades as it's consumed)
+    if (bzVictim.alpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = bzVictim.alpha;
+      if (bzVictim.glow > 0.1) {
+        ctx.fillStyle = `rgba(192, 132, 252, ${bzVictim.glow * 0.5})`;
+        ctx.beginPath();
+        ctx.ellipse(bzVictim.x, bzVictim.y - (10 * CHAR_SCALE), 14, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      drawExactSpaceman(bzVictim.x, bzVictim.y, CHAR_SCALE * Math.max(0.05, bzVictim.scale), bzVictim.state, t);
+
+      // drawExactSpaceman's STRUGGLING pose omits the helmet (in the alien
+      // cutscene the attacker sits right on top of the head) - our berzerk
+      // grabs the torso instead, so draw the helmet back in ourselves.
+      if (bzVictim.state === 'STRUGGLING') {
+        drawStrugglingHelmet(bzVictim.x, bzVictim.y, CHAR_SCALE * Math.max(0.05, bzVictim.scale));
+      }
+
+      // Wound splatter growing across the suit once the arm has punched through
+      const punchT = 0.7 + ARM_WINDUP + ARM_THRUST;
+      if (bzVictim.state === 'STRUGGLING' && bzState.timer >= punchT) {
+        const woundP = Math.min(1, (bzState.timer - punchT) / 1.6);
+        const splatCount = Math.round(woundP * 9);
+        for (let i = 0; i < splatCount; i++) {
+          const sx = bzVictim.x + Math.sin(i * 12.9898) * 6.5;
+          const sy = bzVictim.y - 9 - Math.abs(Math.sin(i * 7.233)) * 9;
+          ctx.fillStyle = i % 2 === 0 ? "#7f1d1d" : "#ef4444";
+          ctx.fillRect(Math.round(sx), Math.round(sy), 2, 2);
+        }
+      }
+
+      // The berzerk's clawed limb: lifts up, then thrusts down through the victim
+      if (bzAttacker.latched) {
+        drawBerzerkArmThroughVictim(bzAttacker.x, bzAttacker.y, bzVictim.x, bzVictim.y, t, 1.6);
+      }
+      ctx.restore();
+    }
+
+    // Berzerk bot
+    drawBerzerkBotCutscene(bzAttacker.x, bzAttacker.y, 1.6, t, bzAttacker.latched);
+
+    if (bzPop.active) {
+      const p = bzPop.timer / bzPop.dur;
+      const r = Math.round(bzPop.r);
+      const alpha = Math.max(0, 1.0 - p);
+      const py = bzVictim.y - (10 * CHAR_SCALE);
+      ctx.save();
+      ctx.strokeStyle = "#c084fc"; ctx.globalAlpha = alpha; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(bzVictim.x, py - r); ctx.lineTo(bzVictim.x + r, py);
+      ctx.lineTo(bzVictim.x, py + r); ctx.lineTo(bzVictim.x - r, py);
+      ctx.closePath(); ctx.stroke();
+      ctx.strokeRect(bzVictim.x - Math.round(r * 0.7), py - Math.round(r * 0.7), Math.round(r * 1.4), Math.round(r * 1.4));
+      ctx.restore();
+    }
+
+    if (bzState.flash > 0) {
+      ctx.fillStyle = `rgba(${bzState.flashColor}, ${bzState.flash * 0.45})`;
+      ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+    }
+    ctx.restore();
+
+    // Banners
+    if (bzState.timer >= 3.6 && bzState.timer < 5.6) {
+      const alpha = bzState.timer < 4.2 ? (bzState.timer - 3.6) / 0.6 : (5.6 - bzState.timer) / 1.4;
+      ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
+      const cx = Math.round(V_WIDTH / 2), cy = 55;
+      ctx.fillStyle = "#000000"; ctx.font = "bold 20px monospace"; ctx.textAlign = "center"; ctx.fillText("DARK MATTER FATALITY", cx + 2, cy + 2);
+      ctx.fillStyle = "#ef4444"; ctx.fillText("DARK MATTER FATALITY", cx - 1, cy - 1); ctx.fillText("DARK MATTER FATALITY", cx + 1, cy - 1);
+      ctx.fillStyle = "#c084fc"; ctx.fillText("DARK MATTER FATALITY", cx, cy);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("CONSUMED BY AN UNSTABLE BERZERK UNIT", cx, cy + 16);
+      ctx.restore();
+    }
+    if (bzState.ready && Math.floor(t / 400) % 2 === 0) {
+      ctx.save(); ctx.fillStyle = "#facc15"; ctx.font = "bold 8.5px monospace"; ctx.textAlign = "center";
+      ctx.fillText("[ TAP SCREEN OR PRESS ANY KEY FOR MISSION REPORT ]", Math.round(V_WIDTH / 2), V_HEIGHT - 16);
+      ctx.restore();
+    }
+  }
+
+  function drawStrugglingHelmet(x, y, scale) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+    ctx.fillStyle = "#f8fafc"; ctx.fillRect(-4, -23, 8, 7);
+    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-4, -23, 2, 7);
+    ctx.fillStyle = "#0284c7"; ctx.fillRect(-1, -21, 4, 3);
+    ctx.fillStyle = "#38bdf8"; ctx.fillRect(0, -20.5, 2, 1);
+    ctx.restore();
+  }
+
+  function drawChunkyLimb(x1, y1, x2, y2, thickness, color) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    const steps = Math.max(1, Math.round(dist / (thickness * 0.7)));
+    ctx.fillStyle = color;
+    for (let i = 0; i <= steps; i++) {
+      const p = i / steps;
+      const px = x1 + dx * p, py = y1 + dy * p;
+      ctx.fillRect(Math.round(px - thickness / 2), Math.round(py - thickness / 2), Math.ceil(thickness), Math.ceil(thickness));
+    }
+  }
+
+  const ARM_WINDUP = 0.18;  // claw rears back and lifts up
+  const ARM_THRUST = 0.16;  // then slams down through the victim
+
+  function drawBerzerkArmThroughVictim(bx, by, vx, vy, t, botScale) {
+    const armP = bzState.timer - 0.7; // time since the latch/impact began
+
+    // Match the bot's own sprite geometry so the arm reads as part of its body
+    const bpx = Math.max(1, 2.6 * botScale);
+    const bw = 8 * bpx, bh = 11 * bpx;
+    const bx0 = bx - bw / 2, by0 = by - bh + 4 * botScale;
+
+    const shoulderX = bx0 + bpx * 0.5;           // left edge of the bot's body
+    const shoulderY = by0 + bpx * 5;             // arm-row height on the sprite
+    const raisedX = shoulderX - bpx * 1.5;       // reared-up, cocked position
+    const raisedY = by0 - bpx * 2.5;
+    const throughX = vx - 9, throughY = vy - (11 * CHAR_SCALE); // fully extended, into the victim
+
+    let tipX, tipY, phase;
+    if (armP < ARM_WINDUP) {
+      const p = Math.min(1, armP / ARM_WINDUP);
+      tipX = shoulderX + (raisedX - shoulderX) * p;
+      tipY = shoulderY + (raisedY - shoulderY) * p;
+      phase = 'windup';
+    } else {
+      const p = Math.min(1, (armP - ARM_WINDUP) / ARM_THRUST);
+      const ep = p * p; // accelerate into the strike
+      tipX = raisedX + (throughX - raisedX) * ep;
+      tipY = raisedY + (throughY - raisedY) * ep;
+      phase = 'thrust';
+    }
+
+    const pulse = Math.floor(t / 100) % 2 === 0;
+    const coreColor = pulse ? "#f43f5e" : "#c084fc";
+    const glowRgb = pulse ? "244, 63, 94" : "192, 132, 252";
+
+    ctx.save();
+    // Soft glow aura, same path as the arm, layered wide-to-narrow
+    drawChunkyLimb(shoulderX, shoulderY, tipX, tipY, bpx * 2.4, `rgba(${glowRgb}, 0.16)`);
+    drawChunkyLimb(shoulderX, shoulderY, tipX, tipY, bpx * 1.5, `rgba(${glowRgb}, 0.32)`);
+
+    // The arm itself, built from the same pixel size & alert palette as the body
+    drawChunkyLimb(shoulderX, shoulderY, tipX, tipY, bpx, coreColor);
+
+    // Glowing clawed fist at the tip
+    const cx = Math.round(tipX), cy = Math.round(tipY);
+    const cp = Math.round(bpx);
+    ctx.fillStyle = `rgba(${glowRgb}, 0.4)`;
+    ctx.fillRect(cx - cp * 2, cy - cp * 2, cp * 4, cp * 4);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(cx - cp, cy - Math.round(cp * 0.5), cp, cp);
+    ctx.fillRect(cx, cy - cp, cp, cp);
+    ctx.fillRect(cx, cy + Math.round(cp * 0.3), cp, cp);
+
+    if (phase === 'thrust') {
+      // Blood welling up where the claw punches through
+      ctx.fillStyle = "#7f1d1d";
+      ctx.fillRect(cx - cp * 2, cy - Math.round(cp * 0.5), cp, cp);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(cx - Math.round(cp * 0.8), cy - cp, cp, cp);
+    }
+    ctx.restore();
+  }
+
+  function drawBerzerkBotCutscene(x, y, scale, t, isLatched) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.beginPath();
+    ctx.ellipse(Math.round(x), Math.round(y), 15 * scale, 4 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const frameIdx = Math.floor(t / 140) % 2;
+    const sprite = BERZERK_SPRITES[frameIdx];
+    const px = Math.max(1, 2.6 * scale);
+    const cols = 8, rows = 11;
+    const w = cols * px, h = rows * px;
+    const ox = Math.round(x - w / 2), oy = Math.round(y - h + 4 * scale);
+    const shake = isLatched ? (Math.random() - 0.5) * 1.6 : 0;
+    const pulse = (Math.floor(t / 180) % 2 === 0);
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        // The extended punching arm replaces this side's arm pixels while latched -
+        // otherwise the original hanging arm shows through alongside it.
+        if (isLatched && col === 0 && (row === 5 || row === 6)) continue;
+
+        const ch = sprite[row][col];
+        if (ch === '#') {
+          ctx.fillStyle = pulse ? "#f43f5e" : "#c084fc";
+          ctx.fillRect(Math.round(ox + col * px + shake), Math.round(oy + row * px), Math.ceil(px), Math.ceil(px));
+        } else if (ch === '.') {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(Math.round(ox + col * px + shake), Math.round(oy + row * px), Math.ceil(px), Math.ceil(px));
+        }
+      }
+    }
+    ctx.restore();
+  }
+
 
   // 6. Draw Functions extracted from your standalone & adapted to global properties
   function drawDynamicPlanetBackdrop() {
