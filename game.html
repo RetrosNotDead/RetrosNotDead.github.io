@@ -10569,20 +10569,23 @@ requestAnimationFrame(gameLoop);
     ctx.beginPath(); ctx.ellipse(Math.round(x), GROUND_Y, 16, 4, 0, 0, Math.PI * 2); ctx.fill();
     // cold aura
     ctx.fillStyle = `rgba(103, 232, 249, ${0.12 + glow * 0.25})`;
-    ctx.fillRect(Math.round(x - 20), Math.round(y - 20), 40, 40);
+    ctx.beginPath(); ctx.arc(Math.round(x), Math.round(y), 24, 0, Math.PI * 2); ctx.fill();
     const sprite = SENTINEL_SPRITES[Math.floor(t / 300) % 2];
+    // dark-blue outline pass first so the warden stands out against the snow
+    ctx.fillStyle = "#0c4a6e";
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        if (sprite[r][c] === '#') ctx.fillRect(Math.round(x + (c - 4) * px) - 2, Math.round(y + (r - 4) * px) - 2, px + 4, px + 4);
+      }
+    }
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         if (sprite[r][c] === '#') {
-          ctx.fillStyle = (r + c) % 3 === 0 ? "#e0f2fe" : "#67e8f9";
+          ctx.fillStyle = "#67e8f9";
           ctx.fillRect(Math.round(x + (c - 4) * px), Math.round(y + (r - 4) * px), px, px);
         }
       }
     }
-    // glowing core
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(Math.round(x - px), Math.round(y - px), px, px);
-    ctx.fillRect(Math.round(x), Math.round(y - px), px, px);
     ctx.restore();
   }
 
