@@ -4082,32 +4082,34 @@ const dice = {
   angleX: 0, velX: 0,
   angleY: 0, velY: 0,
   secAngle: 0.35, secVel: 0,
-  prevYaw: null, prevPitch: null, prevSpeed: null,
+  prevSpeed: null,
   drawX: 0, drawY: 0, radius: 28
 };
 
 function updateFuzzyDicePhysics(dt) {
-  if (!dt || dt <= 0.0001 || isNaN(dt) || !ship || gameMode !== 'SPACE') return;
+  if (!dt || dt <= 0.0001 || isNaN(dt) || !ship) return;
 
-  const curYaw = Math.atan2(ship.fx, ship.fz);
-  const curPitch = Math.asin(Math.max(-1, Math.min(1, ship.fy)));
-
-  if (dice.prevYaw === null) {
-    dice.prevYaw = curYaw;
-    dice.prevPitch = curPitch;
+  if (gameMode !== 'SPACE') {
+    // Keep the speed baseline in sync while away from the cockpit (landed, docked,
+    // etc.) so we don't get a bogus one-frame swing kick from a stale reading the
+    // moment the player launches back into space. No turn input while grounded.
+    ship.turnYawAmt = 0; ship.turnPitchAmt = 0;
     dice.prevSpeed = ship.speed;
     return;
   }
 
-  let yawRate = (curYaw - dice.prevYaw) / dt;
-  if (yawRate > Math.PI / dt) yawRate -= (Math.PI * 2) / dt;
-  if (yawRate < -Math.PI / dt) yawRate += (Math.PI * 2) / dt;
+  if (dice.prevSpeed === null) {
+    dice.prevSpeed = ship.speed;
+    return;
+  }
 
-  let pitchRate = (curPitch - dice.prevPitch) / dt;
+  // Use the ship's own local-frame turn input for this frame - not the world-frame
+  // heading - so "turning right" always swings the dice the same way regardless of
+  // how the ship is currently oriented (including flipped/rolled/upside-down).
+  let yawRate = (ship.turnYawAmt || 0) / dt;
+  let pitchRate = (ship.turnPitchAmt || 0) / dt;
   let accelRate = (ship.speed - dice.prevSpeed) / dt;
 
-  dice.prevYaw = curYaw;
-  dice.prevPitch = curPitch;
   dice.prevSpeed = ship.speed;
 
   let gForceX = -yawRate * 0.45;
@@ -4541,11 +4543,14 @@ function update(dt) {
     }
   }
 
+  // Runs every frame regardless of mode: it keeps the yaw/pitch/speed baseline
+  // fresh while away from the cockpit, and only swings the dice while in SPACE.
+  updateFuzzyDicePhysics(dt);
+
   // =========================================================================
   // SPACE MODE SIMULATION
   // =========================================================================
   if (gameMode === 'SPACE') {
-    updateFuzzyDicePhysics(dt);
 
     // Safe Cinematic Orbital Detonation Controller
     if (window.spaceDetonation) {
@@ -4740,6 +4745,7 @@ function update(dt) {
       ship.x += ship.fx * ship.speed * dt;
       ship.y += ship.fy * ship.speed * dt;
       ship.z += ship.fz * ship.speed * dt;
+      ship.turnYawAmt = 0; ship.turnPitchAmt = 0; // no manual steering during warp
       if (warpState.progress <= 0) {
         warpState.active = false;
         ship.speed = ship.maxSpeed;
@@ -4771,6 +4777,11 @@ function update(dt) {
       const yawAmt = (steerX * turnSpeed * dt) + (mouseDeltaX * 0.0022);
       mouseDeltaX = 0;
       mouseDeltaY = 0;
+      // Stashed for the dice: this is the ship's own local-frame turn input for
+      // this frame (independent of world orientation), so "turning right" always
+      // means the same thing to the dice even if the ship is flipped/rolled.
+      ship.turnYawAmt = yawAmt;
+      ship.turnPitchAmt = pitchAmt;
 
       if (pitchAmt !== 0) {
         const cosP = Math.cos(pitchAmt), sinP = Math.sin(pitchAmt);
