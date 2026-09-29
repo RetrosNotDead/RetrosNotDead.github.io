@@ -11,8 +11,9 @@
 <meta name="theme-color" content="#000000">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
-  body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
+  body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
   canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
+  canvas#game-upscale { display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; touch-action: none; pointer-events: none; z-index: 1; }
 
   /* === LANDSCAPE TITLE SCREEN === */
   #launch-screen {
@@ -428,6 +429,7 @@
 
 <div id="crt-overlay"></div>
 <canvas id="game"></canvas>
+<canvas id="game-upscale"></canvas>
 
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -9370,6 +9372,125 @@ mapCanvas.addEventListener("wheel", e => {
 }, { passive: false });
 
 /* ==========================================================================
+   GPU SHARP-BILINEAR UPSCALE ENGINE
+   Reads the low-res game canvas as a texture and redraws it at full display
+   resolution with an edge-preserving filter: crisp inside each source pixel,
+   smoothly blended only right at pixel boundaries. Sharper than plain CSS
+   bilinear scaling, far cleaner than the blocky blur of nearest-neighbor
+   upscaling (which is what makes canvas-drawn text look rough normally).
+   Entirely self-contained - the game keeps drawing to #game exactly as
+   before; this only reads that canvas's pixels and displays a scaled copy.
+   ========================================================================== */
+const upscaleCanvas = document.getElementById("game-upscale");
+let upGl = null, upProgram = null, upTexture = null, upActive = false, upRafId = null;
+const upUniforms = {};
+
+function initUpscaleGL() {
+  if (upGl) return true;
+  try {
+    upGl = upscaleCanvas.getContext("webgl", { antialias: false, alpha: false, depth: false, stencil: false })
+        || upscaleCanvas.getContext("experimental-webgl", { antialias: false, alpha: false });
+  } catch (e) { upGl = null; }
+  if (!upGl) return false;
+  const gl = upGl;
+
+  const vsSrc = "attribute vec2 aPos; varying vec2 vUv; void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }";
+  const fsSrc = `
+    precision mediump float;
+    varying vec2 vUv;
+    uniform sampler2D uTex;
+    uniform vec2 uSrcSize;
+    uniform vec2 uScale;
+    void main() {
+      vec2 texel = vec2(vUv.x, 1.0 - vUv.y) * uSrcSize;
+      vec2 texelFloor = floor(texel);
+      vec2 s = fract(texel);
+      vec2 regionRange = 0.5 - 0.5 / uScale;
+      vec2 centerDist = s - 0.5;
+      vec2 f = (centerDist - clamp(centerDist, -regionRange, regionRange)) * uScale + 0.5;
+      vec2 modTexel = texelFloor + clamp(f, 0.0, 1.0);
+      gl_FragColor = texture2D(uTex, modTexel / uSrcSize);
+    }`;
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); return null; }
+    return sh;
+  }
+  const vs = compile(gl.VERTEX_SHADER, vsSrc);
+  const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  if (!vs || !fs) return false;
+
+  upProgram = gl.createProgram();
+  gl.attachShader(upProgram, vs);
+  gl.attachShader(upProgram, fs);
+  gl.linkProgram(upProgram);
+  if (!gl.getProgramParameter(upProgram, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(upProgram)); return false; }
+  gl.useProgram(upProgram);
+
+  const quad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(upProgram, "aPos");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  upTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, upTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  upUniforms.uTex = gl.getUniformLocation(upProgram, "uTex");
+  upUniforms.uSrcSize = gl.getUniformLocation(upProgram, "uSrcSize");
+  upUniforms.uScale = gl.getUniformLocation(upProgram, "uScale");
+  return true;
+}
+
+function resizeUpscaleCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  upscaleCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
+  upscaleCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
+}
+
+function renderUpscaleFrame() {
+  if (!upActive || !upGl) return;
+  const gl = upGl;
+  gl.viewport(0, 0, upscaleCanvas.width, upscaleCanvas.height);
+  gl.bindTexture(gl.TEXTURE_2D, upTexture);
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  } catch (e) { /* skip a frame if the source canvas isn't ready */ }
+  gl.uniform1i(upUniforms.uTex, 0);
+  gl.uniform2f(upUniforms.uSrcSize, canvas.width, canvas.height);
+  gl.uniform2f(upUniforms.uScale, upscaleCanvas.width / canvas.width, upscaleCanvas.height / canvas.height);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  upRafId = requestAnimationFrame(renderUpscaleFrame);
+}
+
+function setUpscaleActive(active) {
+  if (active && !initUpscaleGL()) active = false; // WebGL unsupported - silently stay on the raw canvas
+  upActive = active;
+  if (active) {
+    resizeUpscaleCanvas();
+    canvas.style.visibility = "hidden";
+    upscaleCanvas.style.display = "block";
+    if (upRafId) cancelAnimationFrame(upRafId);
+    renderUpscaleFrame();
+  } else {
+    canvas.style.visibility = "visible";
+    upscaleCanvas.style.display = "none";
+    if (upRafId) cancelAnimationFrame(upRafId);
+    upRafId = null;
+  }
+}
+window.addEventListener("resize", () => { if (upActive) resizeUpscaleCanvas(); });
+
+/* ==========================================================================
    SAFE CRT SHADER OVERLAY MANAGER
    ========================================================================== */
 const CRT_MODES = [
@@ -9381,7 +9502,8 @@ const CRT_MODES = [
   { label: "NTSC 80s TV", tag: "WARM COMPOSITE TUBE + SCANLINES", color: "#f87171", cls: "ntsc" },
   { label: "CYBER BLUE", tag: "AVIONICS COCKPIT HUD (CYAN)", color: "#06b6d4", cls: "cyber" },
   { label: "TACTICAL RED", tag: "MIL-SPEC NIGHT VISION (RED)", color: "#ef4444", cls: "tactical" },
-  { label: "SMOOTH SCALE", tag: "BILINEAR UPSCALE - SOFTER TEXT & EDGES", color: "#a78bfa", cls: "smooth", smooth: true }
+  { label: "SMOOTH SCALE", tag: "BILINEAR UPSCALE - SOFTER TEXT & EDGES", color: "#a78bfa", cls: "smooth", smooth: true },
+  { label: "SHARP UPSCALE", tag: "GPU SHARP-BILINEAR UPSCALE - CRISP EDGES", color: "#34d399", cls: "off", upscale: true }
 ];
 
 let currentCrtIdx = 0;
@@ -9399,6 +9521,7 @@ function applyCrtMode(idx) {
   const mode = CRT_MODES[idx];
   if (crtOverlayEl) crtOverlayEl.className = mode.cls === "off" ? "" : mode.cls;
   canvas.style.imageRendering = mode.smooth ? "auto" : "pixelated";
+  setUpscaleActive(!!mode.upscale);
   try { localStorage.setItem("void_pilot_crt_safe_v3", idx.toString()); } catch(e) {}
   updateCrtUIState();
 }
