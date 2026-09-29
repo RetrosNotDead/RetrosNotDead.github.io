@@ -9380,7 +9380,8 @@ const CRT_MODES = [
   { label: "GREEN MATRIX", tag: "P1 GREEN PHOSPHOR RADAR", color: "#22c55e", cls: "green" },
   { label: "NTSC 80s TV", tag: "WARM COMPOSITE TUBE + SCANLINES", color: "#f87171", cls: "ntsc" },
   { label: "CYBER BLUE", tag: "AVIONICS COCKPIT HUD (CYAN)", color: "#06b6d4", cls: "cyber" },
-  { label: "TACTICAL RED", tag: "MIL-SPEC NIGHT VISION (RED)", color: "#ef4444", cls: "tactical" }
+  { label: "TACTICAL RED", tag: "MIL-SPEC NIGHT VISION (RED)", color: "#ef4444", cls: "tactical" },
+  { label: "SMOOTH SCALE", tag: "BILINEAR UPSCALE - SOFTER TEXT & EDGES", color: "#a78bfa", cls: "smooth", smooth: true }
 ];
 
 let currentCrtIdx = 0;
@@ -9397,6 +9398,7 @@ const crtOverlayEl = document.getElementById("crt-overlay");
 function applyCrtMode(idx) {
   const mode = CRT_MODES[idx];
   if (crtOverlayEl) crtOverlayEl.className = mode.cls === "off" ? "" : mode.cls;
+  canvas.style.imageRendering = mode.smooth ? "auto" : "pixelated";
   try { localStorage.setItem("void_pilot_crt_safe_v3", idx.toString()); } catch(e) {}
   updateCrtUIState();
 }
