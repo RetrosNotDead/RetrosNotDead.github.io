@@ -13,7 +13,6 @@
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
   body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
   canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
-  canvas#game-upscale { display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; touch-action: none; pointer-events: none; z-index: 1; }
 
   /* === LANDSCAPE TITLE SCREEN === */
   #launch-screen {
@@ -327,6 +326,15 @@
         <button id="crt-next-btn" class="crt-nav-btn" type="button" title="Next">&gt;</button>
       </div>
     </div>
+    <div class="crt-config-bar">
+      <div>
+        <b style="color:#38bdf8; font-size:10px;">🖥️ RENDER RESOLUTION</b>
+        <div id="res-mode-desc" style="font-size:8px; color:#94a3b8;">1080p BACKING BUFFER - SHARP TEXT & EDGES</div>
+      </div>
+      <div class="crt-btn-group">
+        <button id="res-toggle-btn" class="crt-toggle-btn" type="button">RES: 1080p</button>
+      </div>
+    </div>
     <div style="font-size:9px; color:#94a3b8;">Click any action to bind. Supports buttons, triggers, &amp; stick axes.</div>
     <div id="controls-list" class="controls-list"></div>
     <div class="controls-actions">
@@ -429,7 +437,6 @@
 
 <div id="crt-overlay"></div>
 <canvas id="game"></canvas>
-<canvas id="game-upscale"></canvas>
 
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -479,7 +486,14 @@ let V_WIDTH = 480;
 // (targeting a 1080-tall buffer) while every existing draw call, hit-test, and
 // UI position in the file keeps using the same logical numbers unchanged - a
 // single scale transform (applied once per frame in gameLoop) does the rest.
-const RENDER_SCALE = 1080 / V_HEIGHT;
+// Toggleable in the options menu between HD (1080p buffer) and RETRO (native
+// 1:1 pixel buffer, the original blocky pixel-art look).
+let renderResMode = "HD";
+try {
+  const savedRes = localStorage.getItem("void_pilot_res_mode");
+  if (savedRes === "HD" || savedRes === "RETRO") renderResMode = savedRes;
+} catch(e) {}
+let RENDER_SCALE = renderResMode === "HD" ? (1080 / V_HEIGHT) : 1;
 
 const joy = { active: false, pointerId: null, baseX: 60, baseY: V_HEIGHT - 55, dx: 0, dy: 0, radius: 28 };
 
@@ -494,6 +508,14 @@ function resize() {
 }
 window.addEventListener("resize", resize);
 resize();
+
+function setRenderResMode(mode) {
+  renderResMode = mode;
+  RENDER_SCALE = mode === "HD" ? (1080 / V_HEIGHT) : 1;
+  try { localStorage.setItem("void_pilot_res_mode", mode); } catch(e) {}
+  resize();
+  updateResUIState();
+}
 
 /* ==========================================================================
    UNIFIED 1993 WING COMMANDER: PRIVATEER AUDIO & SYNTHWAVE ENGINE
@@ -1321,6 +1343,7 @@ let isControlsModalOpen = false, currentControlTab = 'KEYBOARD', listeningTarget
 function openControlsModal() {
   isControlsModalOpen = true;
   document.getElementById("controls-modal").style.display = "flex";
+  controlsFocusIndex = 0;
   renderControlsList();
 }
 function closeControlsModal() {
@@ -1328,6 +1351,7 @@ function closeControlsModal() {
   saveBindings();
   isControlsModalOpen = false;
   document.getElementById("controls-modal").style.display = "none";
+  clearControlsFocus();
 }
 function cancelListening() {
   if (listeningTarget && listeningTarget.buttonEl) listeningTarget.buttonEl.classList.remove("listening");
@@ -1367,6 +1391,7 @@ function renderControlsList() {
     };
     container.appendChild(row);
   }
+  if (isControlsModalOpen) updateControlsFocus();
 }
 
 document.getElementById("close-controls-btn").addEventListener("click", closeControlsModal);
@@ -3878,6 +3903,40 @@ if (mslBtn) mslBtn.addEventListener("pointerdown", e => {
    ========================================================================== */
 let isSurfaceShopOpen = false, shopFocusIndex = 0, currentDockedStation = null;
 let menuFocusIndex = 0;
+let controlsFocusIndex = 0;
+
+function getControlsFocusableButtons() {
+  const modal = document.getElementById("controls-modal");
+  if (!modal || modal.style.display === 'none') return [];
+  return Array.from(modal.querySelectorAll("button")).filter(btn => {
+    return btn.offsetParent !== null && window.getComputedStyle(btn).display !== 'none';
+  });
+}
+
+function updateControlsFocus() {
+  const buttons = getControlsFocusableButtons();
+  if (buttons.length === 0) return;
+  if (controlsFocusIndex >= buttons.length) controlsFocusIndex = buttons.length - 1;
+  if (controlsFocusIndex < 0) controlsFocusIndex = 0;
+
+  buttons.forEach((btn, idx) => {
+    if (idx === controlsFocusIndex) {
+      btn.style.outline = "2px solid #facc15";
+      btn.style.boxShadow = "0 0 10px rgba(250, 204, 21, 0.9)";
+      try { btn.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+    } else {
+      btn.style.outline = "";
+      btn.style.boxShadow = "";
+    }
+  });
+}
+
+function clearControlsFocus() {
+  Array.from(document.querySelectorAll("#controls-modal button")).forEach(btn => {
+    btn.style.outline = "";
+    btn.style.boxShadow = "";
+  });
+}
 
 function getShopFocusableButtons() {
   const modal = document.getElementById("shop-modal");
@@ -4281,6 +4340,34 @@ function pollGamepadState() {
   }
 
   if (isControlsModalOpen) {
+    // While actively waiting for a keyboard key press, let the keyboard listener handle
+    // it - don't let gamepad input move focus or re-trigger a click in the meantime.
+    // (Waiting for a gamepad input is already intercepted earlier in this function.)
+    if (listeningTarget) return;
+
+    const navDown = (currentGpButtons[13] && !prevGamepadButtons[13]) || (currentGpAxes[1] > 0.55 && prevGamepadAxes[1] <= 0.55);
+    const navUp = (currentGpButtons[12] && !prevGamepadButtons[12]) || (currentGpAxes[1] < -0.55 && prevGamepadAxes[1] >= -0.55);
+    const navRight = (currentGpButtons[15] && !prevGamepadButtons[15]) || (currentGpAxes[0] > 0.55 && prevGamepadAxes[0] <= 0.55);
+    const navLeft = (currentGpButtons[14] && !prevGamepadButtons[14]) || (currentGpAxes[0] < -0.55 && prevGamepadAxes[0] >= -0.55);
+
+    const btns = getControlsFocusableButtons();
+    if (btns.length > 0) {
+      if (navDown || navRight) {
+        controlsFocusIndex = (controlsFocusIndex + 1) % btns.length;
+        playSfx('jump');
+        updateControlsFocus();
+      } else if (navUp || navLeft) {
+        controlsFocusIndex = (controlsFocusIndex - 1 + btns.length) % btns.length;
+        playSfx('jump');
+        updateControlsFocus();
+      }
+
+      if (currentGpButtons[0] && !prevGamepadButtons[0]) {
+        btns[controlsFocusIndex]?.click();
+        vibrateGamepad(120, 0.3, 0.4);
+      }
+    }
+
     if ((currentGpButtons[1] && !prevGamepadButtons[1]) || (currentGpButtons[9] && !prevGamepadButtons[9])) {
       closeControlsModal();
     }
@@ -9382,124 +9469,6 @@ mapCanvas.addEventListener("wheel", e => {
 }, { passive: false });
 
 /* ==========================================================================
-   GPU SHARP-BILINEAR UPSCALE ENGINE
-   Reads the low-res game canvas as a texture and redraws it at full display
-   resolution with an edge-preserving filter: crisp inside each source pixel,
-   smoothly blended only right at pixel boundaries. Sharper than plain CSS
-   bilinear scaling, far cleaner than the blocky blur of nearest-neighbor
-   upscaling (which is what makes canvas-drawn text look rough normally).
-   Entirely self-contained - the game keeps drawing to #game exactly as
-   before; this only reads that canvas's pixels and displays a scaled copy.
-   ========================================================================== */
-const upscaleCanvas = document.getElementById("game-upscale");
-let upGl = null, upProgram = null, upTexture = null, upActive = false, upRafId = null;
-const upUniforms = {};
-
-function initUpscaleGL() {
-  if (upGl) return true;
-  try {
-    upGl = upscaleCanvas.getContext("webgl", { antialias: false, alpha: false, depth: false, stencil: false })
-        || upscaleCanvas.getContext("experimental-webgl", { antialias: false, alpha: false });
-  } catch (e) { upGl = null; }
-  if (!upGl) return false;
-  const gl = upGl;
-
-  const vsSrc = "attribute vec2 aPos; varying vec2 vUv; void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }";
-  const fsSrc = `
-    precision mediump float;
-    varying vec2 vUv;
-    uniform sampler2D uTex;
-    uniform vec2 uSrcSize;
-    uniform vec2 uScale;
-    void main() {
-      vec2 texel = vec2(vUv.x, 1.0 - vUv.y) * uSrcSize;
-      vec2 texelFloor = floor(texel);
-      vec2 s = fract(texel);
-      vec2 regionRange = 0.5 - 0.5 / uScale;
-      vec2 centerDist = s - 0.5;
-      vec2 f = (centerDist - clamp(centerDist, -regionRange, regionRange)) * uScale + 0.5;
-      vec2 modTexel = texelFloor + clamp(f, 0.0, 1.0);
-      gl_FragColor = texture2D(uTex, modTexel / uSrcSize);
-    }`;
-
-  function compile(type, src) {
-    const sh = gl.createShader(type);
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); return null; }
-    return sh;
-  }
-  const vs = compile(gl.VERTEX_SHADER, vsSrc);
-  const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
-  if (!vs || !fs) return false;
-
-  upProgram = gl.createProgram();
-  gl.attachShader(upProgram, vs);
-  gl.attachShader(upProgram, fs);
-  gl.linkProgram(upProgram);
-  if (!gl.getProgramParameter(upProgram, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(upProgram)); return false; }
-  gl.useProgram(upProgram);
-
-  const quad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(upProgram, "aPos");
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-  upTexture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, upTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  upUniforms.uTex = gl.getUniformLocation(upProgram, "uTex");
-  upUniforms.uSrcSize = gl.getUniformLocation(upProgram, "uSrcSize");
-  upUniforms.uScale = gl.getUniformLocation(upProgram, "uScale");
-  return true;
-}
-
-function resizeUpscaleCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  upscaleCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
-  upscaleCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
-}
-
-function renderUpscaleFrame() {
-  if (!upActive || !upGl) return;
-  const gl = upGl;
-  gl.viewport(0, 0, upscaleCanvas.width, upscaleCanvas.height);
-  gl.bindTexture(gl.TEXTURE_2D, upTexture);
-  try {
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-  } catch (e) { /* skip a frame if the source canvas isn't ready */ }
-  gl.uniform1i(upUniforms.uTex, 0);
-  gl.uniform2f(upUniforms.uSrcSize, canvas.width, canvas.height);
-  gl.uniform2f(upUniforms.uScale, upscaleCanvas.width / canvas.width, upscaleCanvas.height / canvas.height);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  upRafId = requestAnimationFrame(renderUpscaleFrame);
-}
-
-function setUpscaleActive(active) {
-  if (active && !initUpscaleGL()) active = false; // WebGL unsupported - silently stay on the raw canvas
-  upActive = active;
-  if (active) {
-    resizeUpscaleCanvas();
-    canvas.style.visibility = "hidden";
-    upscaleCanvas.style.display = "block";
-    if (upRafId) cancelAnimationFrame(upRafId);
-    renderUpscaleFrame();
-  } else {
-    canvas.style.visibility = "visible";
-    upscaleCanvas.style.display = "none";
-    if (upRafId) cancelAnimationFrame(upRafId);
-    upRafId = null;
-  }
-}
-window.addEventListener("resize", () => { if (upActive) resizeUpscaleCanvas(); });
-
 /* ==========================================================================
    SAFE CRT SHADER OVERLAY MANAGER
    ========================================================================== */
@@ -9511,9 +9480,7 @@ const CRT_MODES = [
   { label: "GREEN MATRIX", tag: "P1 GREEN PHOSPHOR RADAR", color: "#22c55e", cls: "green" },
   { label: "NTSC 80s TV", tag: "WARM COMPOSITE TUBE + SCANLINES", color: "#f87171", cls: "ntsc" },
   { label: "CYBER BLUE", tag: "AVIONICS COCKPIT HUD (CYAN)", color: "#06b6d4", cls: "cyber" },
-  { label: "TACTICAL RED", tag: "MIL-SPEC NIGHT VISION (RED)", color: "#ef4444", cls: "tactical" },
-  { label: "SMOOTH SCALE", tag: "BILINEAR UPSCALE - SOFTER TEXT & EDGES", color: "#a78bfa", cls: "smooth", smooth: true },
-  { label: "SHARP UPSCALE", tag: "GPU SHARP-BILINEAR UPSCALE - CRISP EDGES", color: "#34d399", cls: "off", upscale: true }
+  { label: "TACTICAL RED", tag: "MIL-SPEC NIGHT VISION (RED)", color: "#ef4444", cls: "tactical" }
 ];
 
 let currentCrtIdx = 0;
@@ -9530,8 +9497,6 @@ const crtOverlayEl = document.getElementById("crt-overlay");
 function applyCrtMode(idx) {
   const mode = CRT_MODES[idx];
   if (crtOverlayEl) crtOverlayEl.className = mode.cls === "off" ? "" : mode.cls;
-  canvas.style.imageRendering = mode.smooth ? "auto" : "pixelated";
-  setUpscaleActive(!!mode.upscale);
   try { localStorage.setItem("void_pilot_crt_safe_v3", idx.toString()); } catch(e) {}
   updateCrtUIState();
 }
@@ -9561,6 +9526,28 @@ document.getElementById("crt-prev-btn").addEventListener("click", (e) => { e.pre
 document.getElementById("crt-next-btn").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); stepCrtMode(1); });
 document.getElementById("crt-toggle-btn").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); stepCrtMode(1); });
 applyCrtMode(currentCrtIdx);
+
+const RES_MODE_INFO = {
+  HD: { label: "1080p", color: "#34d399", tag: "1080p BACKING BUFFER - SHARP TEXT & EDGES" },
+  RETRO: { label: "RETRO", color: "#facc15", tag: "NATIVE PIXEL BUFFER - ORIGINAL BLOCKY PIXEL ART" }
+};
+
+function updateResUIState() {
+  const btn = document.getElementById("res-toggle-btn");
+  const desc = document.getElementById("res-mode-desc");
+  const info = RES_MODE_INFO[renderResMode];
+  if (btn) { btn.innerText = `RES: ${info.label}`; btn.style.color = info.color; }
+  if (desc) { desc.innerText = info.tag; desc.style.color = info.color; }
+}
+
+function toggleResMode() {
+  setRenderResMode(renderResMode === "HD" ? "RETRO" : "HD");
+  playSfx('coin');
+  addPopup(`RESOLUTION: ${RES_MODE_INFO[renderResMode].label}`, RES_MODE_INFO[renderResMode].color);
+}
+
+document.getElementById("res-toggle-btn").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); toggleResMode(); });
+updateResUIState();
 
 /* ==========================================================================
    CONSOLIDATED COCKPIT MENU SUBSYSTEM
