@@ -474,14 +474,20 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const V_HEIGHT = 250;
 let V_WIDTH = 480;
+// The game draws everything in this fixed 480x250-ish logical coordinate space.
+// RENDER_SCALE lets the actual canvas backing buffer be much higher-resolution
+// (targeting a 1080-tall buffer) while every existing draw call, hit-test, and
+// UI position in the file keeps using the same logical numbers unchanged - a
+// single scale transform (applied once per frame in gameLoop) does the rest.
+const RENDER_SCALE = 1080 / V_HEIGHT;
 
 const joy = { active: false, pointerId: null, baseX: 60, baseY: V_HEIGHT - 55, dx: 0, dy: 0, radius: 28 };
 
 function resize() {
   const aspect = window.innerWidth / window.innerHeight;
   V_WIDTH = Math.floor(V_HEIGHT * Math.max(1.33, aspect));
-  canvas.width = V_WIDTH;
-  canvas.height = V_HEIGHT;
+  canvas.width = Math.round(V_WIDTH * RENDER_SCALE);
+  canvas.height = Math.round(V_HEIGHT * RENDER_SCALE);
   ctx.imageSmoothingEnabled = false;
   joy.baseX = Math.floor(V_WIDTH * 0.12);
   joy.baseY = V_HEIGHT - 55;
@@ -1657,69 +1663,73 @@ function generateSector(sx, sy, sz) {
 
   const sSeed = hash3D(sx, sy, sz, galaxySeed);
   const rand = createRNG(sSeed);
-  if (rand() > 0.75) return;
+  
+  const hasSystem = rand() <= 0.75;
+  let baseName = "Void";
 
-  const baseName = GALAXY_NAMES[Math.floor(rand() * GALAXY_NAMES.length)];
-  const numPlanets = 1 + Math.floor(rand() * 2);
-  for (let i = 0; i < numPlanets; i++) {
-    const pid = `${sx}_${sy}_${sz}_p${i}`;
-    if (destroyedPlanets.has(pid)) continue;
-    let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
-    if (isCryoPlanet(sx, sy, sz, i)) ore = CRYO_ORE;
-    const maxOre = 20 + Math.floor(rand() * 40);
-    const currOre = planetDepletionCache.has(pid) ? planetDepletionCache.get(pid) : maxOre;
-    activePlanets.push({
-      id: pid, x: sx * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
-      y: sy * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
-      z: sz * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
-      radius: 24 + Math.floor(rand() * 20),
-      name: `${baseName}-${i + 1}`, ore: ore, totalOre: currOre, hasRings: rand() > 0.65
-    });
-  }
+  if (hasSystem) {
+    baseName = GALAXY_NAMES[Math.floor(rand() * GALAXY_NAMES.length)];
+    const numPlanets = 1 + Math.floor(rand() * 2);
+    for (let i = 0; i < numPlanets; i++) {
+      const pid = `${sx}_${sy}_${sz}_p${i}`;
+      if (destroyedPlanets.has(pid)) continue;
+      let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
+      if (isCryoPlanet(sx, sy, sz, i)) ore = CRYO_ORE;
+      const maxOre = 20 + Math.floor(rand() * 40);
+      const currOre = planetDepletionCache.has(pid) ? planetDepletionCache.get(pid) : maxOre;
+      activePlanets.push({
+        id: pid, x: sx * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
+        y: sy * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
+        z: sz * SECTOR_SIZE + 200 + rand() * (SECTOR_SIZE - 400),
+        radius: 24 + Math.floor(rand() * 20),
+        name: `${baseName}-${i + 1}`, ore: ore, totalOre: currOre, hasRings: rand() > 0.65
+      });
+    }
 
-  if (rand() < 0.35) {
-    activeStations.push({
-      id: `${sx}_${sy}_${sz}_station`, x: sx * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
-      y: sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
-      z: sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
-      radius: 26, name: `Starbase ${baseName}`, rotation: rand() * Math.PI,
-      rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Dark Matter": 1.0 + rand() * 0.8, "Cryo Crystal": 1.0 + rand() * 0.6 }
-    });
-  }
+    if (rand() < 0.35) {
+      activeStations.push({
+        id: `${sx}_${sy}_${sz}_station`, x: sx * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
+        y: sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
+        z: sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
+        radius: 26, name: `Starbase ${baseName}`, rotation: rand() * Math.PI,
+        rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Dark Matter": 1.0 + rand() * 0.8, "Cryo Crystal": 1.0 + rand() * 0.6 }
+      });
+    }
 
-  if (rand() < 0.55) {
-    const astCount = 4 + Math.floor(rand() * 7);
-    const cx = sx * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
-    const cy = sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
-    const cz = sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
-    for (let k = 0; k < astCount; k++) {
-      activeAsteroids.push({
-        id: `ast_${sx}_${sy}_${sz}_${k}`,
-        x: cx + (rand() - 0.5) * 350, y: cy + (rand() - 0.5) * 350, z: cz + (rand() - 0.5) * 350,
-        radius: 8 + Math.floor(rand() * 12), hp: 20, maxHp: 20,
-        ore: rand() > 0.4 ? RESOURCE_TYPES[0] : RESOURCE_TYPES[1],
-        rotX: rand() * Math.PI, rotY: rand() * Math.PI, rotSpeed: 0.2 + rand() * 0.5
+    if (rand() < 0.55) {
+      const astCount = 4 + Math.floor(rand() * 7);
+      const cx = sx * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
+      const cy = sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
+      const cz = sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600);
+      for (let k = 0; k < astCount; k++) {
+        activeAsteroids.push({
+          id: `ast_${sx}_${sy}_${sz}_${k}`,
+          x: cx + (rand() - 0.5) * 350, y: cy + (rand() - 0.5) * 350, z: cz + (rand() - 0.5) * 350,
+          radius: 8 + Math.floor(rand() * 12), hp: 20, maxHp: 20,
+          ore: rand() > 0.4 ? RESOURCE_TYPES[0] : RESOURCE_TYPES[1],
+          rotX: rand() * Math.PI, rotY: rand() * Math.PI, rotSpeed: 0.2 + rand() * 0.5
+        });
+      }
+    }
+
+    if (rand() < 0.22 && (sx !== 0 || sy !== 0 || sz !== 0)) {
+      activeDerelicts.push({
+        id: `derelict_${sx}_${sy}_${sz}`,
+        x: sx * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
+        y: sy * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
+        z: sz * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
+        radius: 20, salvaged: false, name: `Derelict ${baseName}-Echo`
       });
     }
   }
 
-  if (rand() < 0.22 && (sx !== 0 || sy !== 0 || sz !== 0)) {
-    activeDerelicts.push({
-      id: `derelict_${sx}_${sy}_${sz}`,
-      x: sx * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
-      y: sy * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
-      z: sz * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
-      radius: 20, salvaged: false, name: `Derelict ${baseName}-Echo`
-    });
-  }
-
-  const distFromOrigin = Math.hypot(sx, sy, sz);
   const secKey = `${sx},${sy},${sz}`;
-
-  // Spawn The Iron Maw Stronghold in unliberated hostile sectors
   const isStrongholdGrid = (sx % STRONGHOLD_GRID_SPACING === 0 && sz % STRONGHOLD_GRID_SPACING === 0) && (sx !== 0 || sz !== 0);
+  
   if (sy === 0 && isStrongholdGrid && !liberatedSectors.has(secKey) && activeStrongholds.length === 0) {
     const persistedHp = strongholdHpRegistry[secKey];
+    if (!hasSystem) baseName = GALAXY_NAMES[hash3D(sx, sy, sz, 999) % GALAXY_NAMES.length];
+
     activeStrongholds.push({
       id: `stronghold_${sx}_${sy}_${sz}`,
       secKey: secKey,
@@ -8582,7 +8592,7 @@ function drawCenterAvionicsConsole(cx, cy, cw, ch) {
 
     ctx.fillStyle = litColor; ctx.fillRect(lx, lampY, lampW - 2, lampH);
     ctx.strokeStyle = "#000000"; ctx.lineWidth = 1; ctx.strokeRect(lx, lampY, lampW - 2, lampH);
-    ctx.fillStyle = textColor; ctx.font = "bold 6px monospace"; ctx.textAlign = "center";
+    ctx.fillStyle = textColor; ctx.font = "bold 7px monospace"; ctx.textAlign = "center";
     ctx.fillText(labels[i], lx + (lampW - 2) / 2, lampY + 7);
   }
 
@@ -9650,6 +9660,7 @@ function gameLoop(time) {
   const dt = Math.min((time - lastTime) / 1000, 0.1);
   lastTime = time;
   update(dt);
+  ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
   render();
   requestAnimationFrame(gameLoop);
 }
