@@ -655,7 +655,7 @@
   <button class="tab-leaf" onclick="flipToPage(10)">11 // WORKSHOP</button>
   <button class="tab-leaf" onclick="flipToPage(11)">12 // COMMERCE</button>
   <button class="tab-leaf" onclick="flipToPage(12)">13 // GEOLOGY</button>
-  <button class="tab-leaf" onclick="flipToPage(13)">14 // SUPERNOVA</button>
+  <button class="tab-leaf" onclick="flipToPage(13)">14 // ANOMALIES</button>
   <button class="tab-leaf" onclick="flipToPage(14)">15 // BESTIARY</button>
   <button class="tab-leaf" onclick="flipToPage(15)">16 // APEX &amp; SOL</button>
 </div>
@@ -768,8 +768,8 @@
             <div class="toc-item" onclick="flipToPage(9)"><span>10 // 3D WAYPOINTS &amp; BEACONS</span> ➔</div>
             <div class="toc-item" onclick="flipToPage(10)"><span>11 // WORKSHOP UPGRADES</span> ➔</div>
             <div class="toc-item" onclick="flipToPage(11)"><span>12 // REFINERY COMMERCE &amp; TARIFFS</span> ➔</div>
-            <div class="toc-item" onclick="flipToPage(12)"><span>13 // GEOLOGY &amp; PLANETARY WEATHER</span> ➔</div>
-            <div class="toc-item" onclick="flipToPage(13)"><span>14 // CORE COLLAPSE SUPERNOVA</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(12)"><span>13 // GEOLOGY &amp; CRYO WORLDS</span> ➔</div>
+            <div class="toc-item" onclick="flipToPage(13)"><span>14 // SUPERNOVA &amp; MONOLITHS</span> ➔</div>
             <div class="toc-item" onclick="flipToPage(14)"><span>15 // THREAT BESTIARY (INVADERS)</span> ➔</div>
             <div class="toc-item" onclick="flipToPage(15)"><span>16 // APEX &amp; SOL</span> ➔</div>
           </div>
@@ -1396,17 +1396,20 @@
           </div>
         </div>
 
-        <div>
+        <div class="desktop-columns" style="margin-top: 6px;">
           <div class="gauge-card" style="border-left: 3px solid #facc15;">
             <h4><span>ENDGAME FLAGSHIP PREPARATION</span> <span class="status-tag-amber">[WARNING]</span></h4>
-            <p>
-              Reaching MK-Max across all six modules signals the Confed fleet boundary and provokes the <b>Alien Mothership Dreadnought</b> into warping directly into your sector!
-            </p>
+            <p>Reaching MK-Max across all six modules signals the Confed fleet boundary and provokes the <b>Alien Mothership Dreadnought</b> into warping directly into your sector!</p>
           </div>
-          <div class="page-footer-meta">
-            <span>PAGE 11 // WORKSHOP UPGRADES</span>
-            <span>FLIP FOR REFINERY COMMERCE ➔</span>
+          <div class="gauge-card" style="border-left: 3px solid #22c55e;">
+            <h4><span>DEFENSE SYNERGY SCALING</span> <span class="status-tag-green">[ARMOR + SHIELD]</span></h4>
+            <p>Enemy damage is multiplied by <b>1.8x</b> against MK-1 hulls. Upgrading <i>both</i> Shield and Armor to MK-5 or higher fortifies the chassis, reducing incoming hits to normal <b>1.0x</b> damage!</p>
           </div>
+        </div>
+
+        <div class="page-footer-meta">
+          <span>PAGE 11 // WORKSHOP UPGRADES</span>
+          <span>FLIP FOR REFINERY COMMERCE ➔</span>
         </div>
         <div class="page-dogear" onclick="flipPage(1)"></div>
       </div>
@@ -1458,7 +1461,7 @@
 
         <div class="page-footer-meta">
           <span>PAGE 12 // REFINERY COMMERCE</span>
-          <span>FLIP FOR GEOLOGY &amp; WEATHER ➔</span>
+          <span>FLIP FOR GEOLOGY &amp; CRYO WORLDS ➔</span>
         </div>
         <div class="page-dogear" onclick="flipPage(1)"></div>
       </div>
@@ -1469,12 +1472,25 @@
           <div class="page-header">
             <div>
               <span class="section-tag">GEOLOGY 13</span>
-              <h2 class="section-heading">HOME WORLD, MINERALS &amp; WEATHER</h2>
+              <h2 class="section-heading">GEOLOGY, WEATHER &amp; CRYO WORLDS</h2>
             </div>
             <span style="font-size: 9px; color:#64748b; font-weight:bold;">SURFACE OPERATIONS</span>
           </div>
 
-          <p><b>Home World (Sector 0,0,0):</b> Earth-like temperate garden world featuring royal blue oceans, cumulus cloud cover, rich mountain soil, and alternating Iron/Titanium nodes (+30% domestic refinery tariff at Outpost Alpha).</p>
+          <div class="desktop-columns" style="margin-bottom: 6px;">
+            <div class="gauge-card" style="border-left: 3px solid #06b6d4;">
+              <h4><span>CRYO WORLDS &amp; SUIT FREEZING</span> <span class="status-tag-blue">[EXTREME HAZARD]</span></h4>
+              <p style="font-size: 9.5px;">
+                Sub-zero planets rich in <b>Cryo Crystals ($130)</b>. <b>Hazard:</b> Pilots must stay within the thermal footprint of their ship (55m) or the Outpost Terminal. Extended exposure to the freezing winds will deplete suit heaters, leading to a flash-freeze fatality!
+              </p>
+            </div>
+            <div class="gauge-card" style="border-left: 3px solid #16a34a;">
+              <h4><span>HOME WORLD (0,0,0)</span> <span class="status-tag-green">[SAFE SYSTEM]</span></h4>
+              <p style="font-size: 9.5px;">
+                Earth-like temperate garden world featuring royal blue oceans, cumulus cloud cover, and alternating Iron/Titanium nodes. Domestic refineries offer a <b>+30% tariff bonus</b> on all ores!
+              </p>
+            </div>
+          </div>
 
           <div class="ore-grid">
             <div class="ore-card" style="border-left: 3px solid #64748b;">
@@ -1493,19 +1509,6 @@
               <b style="color:#be123c;">DARK MATTER ($210)</b><br>
               <small style="color:#475569;">Rare hyper-core fuel.</small>
             </div>
-          </div>
-
-          <div class="pixel-art-vignette" style="height: 42px;">
-            <svg viewBox="0 0 48 10" style="width: 100%; height: 34px;" shape-rendering="crispEdges">
-              <rect x="4" y="4" width="4" height="4" fill="#475569" />
-              <rect x="5" y="3" width="2" height="2" fill="#94a3b8" />
-              <rect x="16" y="2" width="2" height="6" fill="#0284c7" />
-              <rect x="17" y="1" width="1" height="3" fill="#bae6fd" />
-              <rect x="28" y="2" width="4" height="6" fill="#7e22ce" />
-              <rect x="29" y="3" width="2" height="4" fill="#d8b4fe" />
-              <circle cx="40" cy="5" r="3" fill="#9f1239" />
-              <rect x="39" y="4" width="2" height="2" fill="#f43f5e" />
-            </svg>
           </div>
 
           <div class="weather-grid">
@@ -1530,20 +1533,28 @@
 
         <div class="page-footer-meta">
           <span>PAGE 13 // PLANETARY GEOLOGY</span>
-          <span>FLIP FOR CORE COLLAPSE SUPERNOVA ➔</span>
+          <span>FLIP FOR SUPERNOVA &amp; MONOLITHS ➔</span>
         </div>
         <div class="page-dogear" onclick="flipPage(1)"></div>
       </div>
 
-      <!-- PAGE 14: CORE COLLAPSE SUPERNOVA -->
+      <!-- PAGE 14: CORE COLLAPSE SUPERNOVA & MONOLITHS -->
       <div class="manual-page" id="page-13">
         <div>
           <div class="page-header">
             <div>
-              <span class="section-tag">SUPERNOVA 14</span>
-              <h2 class="section-heading">PLANETARY CORE COLLAPSE EVENT</h2>
+              <span class="section-tag">ANOMALIES 14</span>
+              <h2 class="section-heading">SURFACE MONOLITHS &amp; CORE COLLAPSE</h2>
             </div>
             <span style="font-size: 9px; color:#64748b; font-weight:bold;">CATACLYSM PROTOCOL</span>
+          </div>
+
+          <div class="gauge-card" style="border-left: 4px solid #c084fc; background: #faf5ff; margin-bottom: 6px;">
+            <h4 style="color:#7e22ce;"><span>🔮 SURFACE MONOLITH ANOMALIES</span> <span>[HIGH VALUE TARGET]</span></h4>
+            <p style="font-size: 9.5px;">
+              There is a <b>25% chance</b> of detecting an ancient, towering Monolith far out on the planetary surface (350m+ away). These structures are incredibly dense (1200 HP). Sustained mining will shatter them, instantly awarding <b>+$2,500 Credits and 3x Dark Matter</b>. <br><br>
+              <i>WARNING:</i> Damaging a monolith will awaken it, immediately triggering a global alert that sends all active Sentinels and Berzerkers into a frenzy toward your position!
+            </p>
           </div>
 
           <div class="gauge-card" style="border-left: 4px solid #ef4444; background: #fff5f5; margin-bottom: 6px;">
@@ -1552,18 +1563,6 @@
               <b>The Depletion Trigger:</b> If a pilot mines out <b>every single mineral vein</b> across a planet, the total extraction of the crystalline magnetic lattice destabilizes the core, triggering an unstoppable runaway implosion!<br>
               <b>Ground Evacuation Sirens:</b> Sirens wail across the horizon, the ground heaves violently under mounting tremors, and an alarm pulses. Pilots have exactly <b>60 seconds</b> to reach their landed ship airlock and initiate takeoff. Failing to reach orbit in time results in total pilot and vessel destruction.
             </p>
-          </div>
-
-          <div class="pixel-art-vignette" style="height: 44px;">
-            <svg viewBox="0 0 60 10" style="width: 100%; height: 36px;" shape-rendering="crispEdges">
-              <circle cx="30" cy="5" r="4" fill="#334155" />
-              <line x1="28" y1="2" x2="32" y2="8" stroke="#ef4444" stroke-width="0.8" />
-              <line x1="26" y1="5" x2="34" y2="5" stroke="#facc15" stroke-width="0.8" />
-              <rect x="20" y="2" width="2" height="2" fill="#f97316" />
-              <rect x="38" y="6" width="2" height="2" fill="#ef4444" />
-              <rect x="14" y="5" width="2" height="1" fill="#facc15" />
-              <rect x="44" y="3" width="2" height="1" fill="#ffffff" />
-            </svg>
           </div>
 
           <div class="desktop-columns">
@@ -1583,7 +1582,7 @@
         </div>
 
         <div class="page-footer-meta">
-          <span>PAGE 14 // SUPERNOVA EVENT</span>
+          <span>PAGE 14 // ANOMALIES &amp; CATACLYSMS</span>
           <span>FLIP FOR THREAT BESTIARY ➔</span>
         </div>
         <div class="page-dogear" onclick="flipPage(1)"></div>
@@ -1656,7 +1655,7 @@
               </div>
               <div>
                 <span class="threat-badge threat-purple">DEFENSE SENTINEL</span>
-                <p class="bestiary-desc">Automated surface hover drone. Patrols crystal veins and fires suppression bolts. Mining laser lock yields <b>+$150 salvage</b>.</p>
+                <p class="bestiary-desc">Automated surface hover drone. Swarms in groups of 7-11 per planet. Extended <b>260m aggro range</b>. Mining laser lock yields <b>+$150 salvage</b>.</p>
               </div>
             </div>
 
@@ -1679,6 +1678,44 @@
               <div>
                 <span class="threat-badge threat-berzerk">DARK MATTER APEX // BERZERK BOT</span>
                 <p class="bestiary-desc">Armored bipedal walker. Charges and fires massive <b>Plasma Diamonds (185 DMG!)</b>. Backpedals if approached.</p>
+              </div>
+            </div>
+
+            <div class="bestiary-card" style="border: 2px solid #0284c7; background: #f0f9ff;">
+              <div class="pixel-box">
+                <svg viewBox="0 0 8 8" shape-rendering="crispEdges">
+                  <rect x="3" y="0" width="2" height="1" fill="#0284c7"/>
+                  <rect x="2" y="1" width="4" height="1" fill="#0284c7"/>
+                  <rect x="1" y="2" width="6" height="1" fill="#0284c7"/>
+                  <rect x="0" y="3" width="2" height="1" fill="#0284c7"/><rect x="3" y="3" width="2" height="1" fill="#0284c7"/><rect x="6" y="3" width="2" height="1" fill="#0284c7"/>
+                  <rect x="0" y="4" width="8" height="1" fill="#0284c7"/>
+                  <rect x="2" y="5" width="1" height="1" fill="#0284c7"/><rect x="5" y="5" width="1" height="1" fill="#0284c7"/>
+                  <rect x="1" y="6" width="1" height="1" fill="#38bdf8"/><rect x="3" y="6" width="2" height="1" fill="#38bdf8"/><rect x="6" y="6" width="1" height="1" fill="#38bdf8"/>
+                  <rect x="0" y="7" width="1" height="1" fill="#38bdf8"/><rect x="2" y="7" width="1" height="1" fill="#38bdf8"/><rect x="5" y="7" width="1" height="1" fill="#38bdf8"/><rect x="7" y="7" width="1" height="1" fill="#38bdf8"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge" style="background:#0369a1; color:#e0f2fe;">FROST WARDEN</span>
+                <p class="bestiary-desc">Defends Cryo Worlds. Heavier armor (70 HP) and slower. Fires sub-zero bolts that chill the suit and slow movement. Proximity results in a flash-freeze fatality.</p>
+              </div>
+            </div>
+
+            <div class="bestiary-card" style="border: 2px solid #475569; background: #f8fafc;">
+              <div class="pixel-box" style="background:#0f172a;">
+                <svg viewBox="0 0 14 14" shape-rendering="crispEdges">
+                  <rect x="4" y="2" width="6" height="1" fill="#cbd5e1"/>
+                  <rect x="3" y="3" width="8" height="3" fill="#cbd5e1"/>
+                  <rect x="2" y="6" width="10" height="3" fill="#cbd5e1"/>
+                  <rect x="4" y="9" width="6" height="2" fill="#cbd5e1"/>
+                  <rect x="5" y="11" width="4" height="1" fill="#cbd5e1"/>
+                  <rect x="4" y="5" width="2" height="2" fill="#0f172a"/>
+                  <rect x="8" y="5" width="2" height="2" fill="#0f172a"/>
+                  <rect x="6" y="8" width="2" height="1" fill="#0f172a"/>
+                </svg>
+              </div>
+              <div>
+                <span class="threat-badge" style="background:#334155; color:#f1f5f9;">LETHAL FATALITIES</span>
+                <p class="bestiary-desc">Total suit compromise near surface hostiles results in visceral executions (Chestburst, Frost Shatter, Berzerk Consumption). Running out of fuel in space leaves you adrift for pirates.</p>
               </div>
             </div>
           </div>
