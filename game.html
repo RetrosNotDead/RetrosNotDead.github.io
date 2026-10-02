@@ -14,100 +14,23 @@
   body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
   canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
 
-  /* === LANDSCAPE TITLE SCREEN === */
+  /* === LANDSCAPE TITLE SCREEN ===
+     The title screen is now drawn entirely on the game canvas itself
+     (see renderTitleScreen). This element only exists as a state flag that
+     the rest of the game already checks via its display property - it has
+     no visible content and no pointer-events of its own. */
   #launch-screen {
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at center, rgba(11, 23, 56, 0.95) 0%, rgba(2, 5, 15, 0.99) 88%);
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: clamp(14px, 3.5vw, 36px);
-    padding: clamp(8px, 2.5vw, 24px) clamp(16px, 4vw, 40px);
+    background: transparent;
     z-index: 500;
-    color: #fff;
-    box-sizing: border-box;
-    overflow: hidden;
-    backdrop-filter: blur(4px);
-  }
-  .title-col-left { display: flex; flex-direction: column; align-items: flex-start; text-align: left; max-width: 320px; gap: 4px; }
-  .title-logo-header h1 {
-    font-size: clamp(20px, 3.8vw, 30px);
-    color: #38bdf8;
-    letter-spacing: 3px;
-    line-height: 1.1;
-    text-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 30px rgba(2, 132, 199, 0.5), 2px 2px 0 #000;
-  }
-  .title-logo-header .sub {
-    font-size: clamp(8.5px, 1.6vw, 10px);
-    color: #facc15;
-    letter-spacing: 2px;
-    font-weight: 900;
-    display: block;
-    margin-top: 2px;
-    text-shadow: 0 0 8px rgba(250, 204, 21, 0.5);
-  }
-  .launch-credits {
-    margin-top: 4px;
-    font-size: clamp(8px, 1.4vw, 9.5px);
-    color: #94a3b8;
-    letter-spacing: 0.8px;
-    line-height: 1.45;
-    background: rgba(4, 9, 24, 0.85);
-    border: 1px solid #1e3a8a;
-    padding: 5px 9px;
-    box-shadow: 1px 1px 0 #000;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .launch-credits .creator { color: #facc15; font-weight: 900; }
-  .launch-credits .studio { color: #f43f5e; font-weight: 900; letter-spacing: 1.2px; text-shadow: 0 0 8px rgba(244, 63, 94, 0.5); }
-  .title-telemetry { font-size: 7.5px; color: #475569; letter-spacing: 0.8px; line-height: 1.35; margin-top: 2px; }
-  .title-col-right { display: flex; flex-direction: column; gap: 8px; width: clamp(190px, 28vw, 245px); align-items: stretch; }
-  .title-btn-primary {
-    background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
-    border: 2px solid #38bdf8;
-    color: #fff;
-    padding: clamp(9px, 2vh, 13px) 14px;
-    font-size: clamp(10px, 1.8vw, 11.5px);
-    font-weight: 900;
-    letter-spacing: 1px;
-    cursor: pointer;
-    box-shadow: 0 0 18px rgba(2, 132, 199, 0.7), 2px 2px 0 #000;
-    animation: titlePulse 1.2s infinite alternate ease-in-out;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font-family: inherit;
-  }
-  .title-btn-primary:active { transform: translate(1px, 1px); }
-  @keyframes titlePulse { 0% { transform: scale(0.98); box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); } 100% { transform: scale(1.02); box-shadow: 0 0 20px rgba(56, 189, 248, 0.85); } }
-  .title-btn-sec {
-    background: #0f172a;
-    border: 1px solid #38bdf8;
-    color: #e2e8f0;
-    padding: clamp(6px, 1.5vh, 9px) 10px;
-    font-size: clamp(8.5px, 1.5vw, 9.5px);
-    font-weight: 900;
-    letter-spacing: 0.8px;
-    cursor: pointer;
-    box-shadow: 2px 2px 0 #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font-family: inherit;
-  }
-  .title-btn-sec:active { transform: translate(1px, 1px); background: #1e293b; color: #fff; }
-
-  @media (max-aspect-ratio: 1.15) {
-    #launch-screen { flex-direction: column; text-align: center; gap: 12px; }
-    .title-col-left { align-items: center; text-align: center; }
+    pointer-events: none;
   }
 
-  /* === HUD & INSTRUMENTS === */
+  /* === HUD & INSTRUMENTS ===
+     Hidden by default and revealed by launchGame() once the title screen's
+     2-step sequence completes, so none of the flight HUD is visible while
+     the title screen is still up. */
   #hud { position: absolute; top: 8px; left: env(safe-area-inset-left, 12px); right: env(safe-area-inset-right, 12px); display: flex; justify-content: space-between; pointer-events: none; color: #38bdf8; font-size: 10px; font-weight: 900; z-index: 100; }
   .hud-box { background: rgba(8, 14, 28, 0.88); border: 2px solid #0284c7; box-shadow: 2px 2px 0 #000; padding: 4px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: auto; max-width: 140px; }
   .bar-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
@@ -232,33 +155,9 @@
 </head>
 <body>
 
-<div id="launch-screen">
-  <div class="title-col-left">
-    <div class="title-logo-header">
-      <h1>VOID PILOT 3D</h1>
-      <span class="sub">ROGUE GALAXY &bull; PILOT EDITION</span>
-    </div>
-    <div class="launch-credits">
-      DREAMED UP &amp; CREATED BY <span class="creator">MATTHEW MACLAINE</span><br>
-      <span class="studio">RetrosNotDeadStudio</span>
-    </div>
-    <div class="title-telemetry">
-      SYS_BOOT: NOMINAL // 16 SECTOR ASTRO-GRID<br>
-      BT-HID &bull; GAMEPAD &bull; WARP DRIVE READY
-    </div>
-  </div>
+<div id="launch-screen"></div>
 
-  <div class="title-col-right">
-    <button id="title-launch-btn" class="title-btn-primary">
-      <span>🚀</span> INITIATE LAUNCH
-    </button>
-    <button id="title-ctrl-btn" class="title-btn-sec">
-      ⚙️ FLIGHT CONTROLS &amp; CRT
-    </button>
-  </div>
-</div>
-
-<div id="hud">
+<div id="hud" style="display:none;">
   <div class="hud-box">
     <div>CREDITS: <span id="stat-cred" style="color:#38bdf8">$100</span></div>
     <div>CARGO: <span id="stat-cargo" style="color:#facc15">0/20</span></div>
@@ -287,12 +186,12 @@
   </div>
 </div>
 
-<div id="nav-banner">SYSTEM ONLINE: ENGINES READY</div>
+<div id="nav-banner" style="display:none;">SYSTEM ONLINE: ENGINES READY</div>
 <div id="threat-banner">⚠️ COMBAT ALERT: HOSTILE INVADERS DETECTED ⚠️</div>
 
-<div id="btn-msl" class="cockpit-btn">🚀 MSL: 6</div>
+<div id="btn-msl" class="cockpit-btn" style="display:none;">🚀 MSL: 6</div>
 
-<div id="flight-cluster">
+<div id="flight-cluster" style="display:none;">
   <div id="btn-1" class="cockpit-btn thrust">THRUST</div>
   <div id="btn-2" class="cockpit-btn fire">FIRE</div>
   <div id="btn-3" class="cockpit-btn reverse">REVERSE</div>
@@ -451,26 +350,15 @@ function requestAppFullscreen() {
 function launchGame() {
   const el = document.getElementById('launch-screen');
   if (el) el.style.display = 'none';
-  try { requestAppFullscreen(); } catch (err) {}
+  // Reveal the flight HUD, which is hidden by inline style until launch -
+  // clearing it falls back to each element's real CSS display value.
+  ['hud', 'nav-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
+    const node = document.getElementById(id);
+    if (node) node.style.display = '';
+  });
   try { ensureAudio(); } catch (err) {}
   setTimeout(resize, 150);
 }
-
-['click', 'pointerdown'].forEach(evt => {
-  document.getElementById('title-launch-btn')?.addEventListener(evt, (e) => {
-    e.stopPropagation();
-    launchGame();
-  });
-  document.getElementById('title-ctrl-btn')?.addEventListener(evt, (e) => {
-    e.stopPropagation();
-    try { ensureAudio(); } catch (err) {}
-    if (typeof openControlsModal === 'function') openControlsModal();
-  });
-  document.getElementById('launch-screen')?.addEventListener(evt, (e) => {
-    if (e.target.closest('button')) return;
-    launchGame();
-  });
-});
 
 document.getElementById('fs-btn').addEventListener('click', () => {
   requestAppFullscreen();
@@ -515,6 +403,397 @@ function setRenderResMode(mode) {
   try { localStorage.setItem("void_pilot_res_mode", mode); } catch(e) {}
   resize();
   updateResUIState();
+}
+
+/* ==========================================================================
+   TITLE SCREEN: THE IRON MAW BASTION
+   Fully canvas-drawn (background, stronghold, pirates, logo, credits, prompt)
+   - #launch-screen has no visible content of its own, it's just a state flag.
+   Drawn via its own render path in gameLoop while #launch-screen is visible,
+   so it animates smoothly at full frame rate before the real game starts.
+   Everything here lives in a "title"-prefixed namespace (and INVADER_SPRITES
+   is reused from the real game's own pirate sprite data) so none of it
+   collides with the real in-flight starfield/pirate state used once flying.
+   ========================================================================== */
+let titleRotation = 0;
+let titleStep = 'FULLSCREEN'; // 'FULLSCREEN' -> 'START' -> launch triggered
+let titleLaunchTriggered = false;
+let titleLaunchProgress = 0;
+let lastTitleInputTime = 0;
+const titleTracers = [];
+const titleStars = [];
+for (let i = 0; i < 110; i++) {
+  titleStars.push({
+    x: Math.random() * 800,
+    y: Math.random() * V_HEIGHT,
+    speed: 0.15 + Math.random() * 0.45,
+    size: Math.random() > 0.8 ? 2 : 1
+  });
+}
+
+function playFullscreenChime() {
+  try {
+    ensureAudio();
+    const t = actx.currentTime;
+    const osc = actx.createOscillator();
+    const g = actx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(587.33, t);
+    osc.frequency.setValueAtTime(880.00, t + 0.08);
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.connect(g); g.connect(actx.destination);
+    osc.start(t); osc.stop(t + 0.28);
+  } catch (e) {}
+}
+
+function playStartChord() {
+  try {
+    ensureAudio();
+    const t = actx.currentTime;
+    const freqs = [146.83, 185.00, 220.00, 293.66, 587.33];
+    freqs.forEach((f, idx) => {
+      const osc = actx.createOscillator();
+      const g = actx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, t + idx * 0.05);
+      const filt = actx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.setValueAtTime(400, t);
+      filt.frequency.exponentialRampToValueAtTime(3200, t + 1.2);
+      g.gain.setValueAtTime(0.08, t + idx * 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+      osc.connect(filt); filt.connect(g); g.connect(actx.destination);
+      osc.start(t + idx * 0.05); osc.stop(t + 2.0);
+    });
+  } catch (e) {}
+}
+
+function handleTitleInput(e) {
+  if (document.getElementById('launch-screen')?.style.display === 'none') return;
+  if (titleLaunchTriggered) return;
+
+  const now = performance.now();
+  // Collapses the 'click' + 'pointerdown' (and keydown, if both somehow fire
+  // together) that a single physical tap can produce into one logical input,
+  // so one tap doesn't skip straight from step 1 to step 2.
+  if (now - lastTitleInputTime < 350) return;
+  lastTitleInputTime = now;
+
+  if (titleStep === 'FULLSCREEN') {
+    try { requestAppFullscreen(); } catch (err) {}
+    playFullscreenChime();
+    titleStep = 'START';
+  } else {
+    // Hand off to the warp-flash transition in renderTitleScreen(); it calls
+    // the real launchGame() itself once the flash finishes.
+    playStartChord();
+    titleLaunchTriggered = true;
+    titleLaunchProgress = 0.01;
+  }
+}
+window.addEventListener('keydown', handleTitleInput);
+window.addEventListener('click', handleTitleInput);
+
+function drawTitlePatrolPirate(x, y, scale, angle, frame) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+  const sprite = INVADER_SPRITES[frame % 2];
+  const px = 1.6;
+  ctx.fillStyle = "#ef4444";
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 11; c++) {
+      if (sprite[r][c] === '#') {
+        ctx.fillRect(Math.round((c - 5.5) * px), Math.round((r - 4) * px), Math.ceil(px), Math.ceil(px));
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawTitleSpinningStronghold(cx, cy, scale, rot, t) {
+  const baseRadius = 56;
+  const sqSize = 38;
+  const halfSq = sqSize / 2;
+  const time = t * 0.003;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale * 0.85);
+  ctx.rotate(rot);
+
+  const corona = ctx.createRadialGradient(0, 0, 10, 0, 0, baseRadius * 1.6);
+  corona.addColorStop(0, "rgba(190, 242, 100, 0.45)");
+  corona.addColorStop(0.35, "rgba(132, 204, 22, 0.2)");
+  corona.addColorStop(0.8, "rgba(153, 27, 27, 0.12)");
+  corona.addColorStop(1, "transparent");
+  ctx.fillStyle = corona;
+  ctx.beginPath();
+  ctx.arc(0, 0, baseRadius * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const x = Math.cos(a) * baseRadius, y = Math.sin(a) * baseRadius;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.strokeStyle = "#991b1b";
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const px = Math.cos(a) * baseRadius, py = Math.sin(a) * baseRadius;
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(a + Math.PI / 2);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.moveTo(-13, 0); ctx.lineTo(0, -9); ctx.lineTo(13, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#475569"; ctx.lineWidth = 1.0; ctx.stroke();
+
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-9, -8, 18, 16);
+    ctx.strokeStyle = "#7f1d1d";
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(-9, -8, 18, 16);
+
+    ctx.fillStyle = Math.floor(t / 200 + i) % 2 === 0 ? "#ef4444" : "#450a0a";
+    ctx.fillRect(-7, -6, 2.5, 2.5);
+    ctx.fillRect(4.5, -6, 2.5, 2.5);
+
+    const turretAim = Math.sin(t * 0.002 + i * 1.3) * 0.5;
+    ctx.save();
+    ctx.rotate(turretAim);
+    ctx.fillStyle = "#090d16";
+    ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#cbd5e1"; ctx.stroke();
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillRect(-2.5, 3, 1.8, 7);
+    ctx.fillRect(0.7, 3, 1.8, 7);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-4, halfSq); ctx.lineTo(-4, baseRadius - 8);
+    ctx.moveTo(4, halfSq);  ctx.lineTo(4, baseRadius - 8);
+    ctx.stroke();
+
+    const flow = (t * 0.04) % (baseRadius - halfSq - 8);
+    ctx.fillStyle = "#bef264";
+    ctx.fillRect(-5, halfSq + flow, 3, 4);
+    ctx.fillRect(2, halfSq + flow, 3, 4);
+    ctx.restore();
+  }
+
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(-halfSq, -halfSq, sqSize, 5);
+  ctx.fillRect(-halfSq, halfSq - 5, sqSize, 5);
+  ctx.fillRect(-halfSq, -halfSq, 5, sqSize);
+  ctx.fillRect(halfSq - 5, -halfSq, 5, sqSize);
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-halfSq, -halfSq, sqSize, sqSize);
+
+  const pulse = Math.sin(t * 0.008) * 3;
+  const coreR = Math.max(9, 14 + pulse);
+
+  const nucGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, coreR);
+  nucGrad.addColorStop(0, "#ffffff");
+  nucGrad.addColorStop(0.35, "#bef264");
+  nucGrad.addColorStop(0.85, "#65a30d");
+  ctx.fillStyle = nucGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let r = 0; r < 3; r++) {
+    ctx.save();
+    ctx.rotate((r * Math.PI) / 3 + rot * 0.6);
+    ctx.strokeStyle = "rgba(163, 230, 53, 0.85)";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, coreR * 1.85, coreR * 0.55, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const eAng = time * 4.2 + (r * Math.PI) / 1.5;
+    const ex = Math.cos(eAng) * (coreR * 1.85);
+    const ey = Math.sin(eAng) * (coreR * 0.55);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(ex - 1.5, ey - 1.5, 3, 3);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function updateTitleEffects(dt, cx, cy, t) {
+  if (Math.random() < 0.035 && titleTracers.length < 5) {
+    const a = Math.random() * Math.PI * 2;
+    const speed = 240 + Math.random() * 80;
+    titleTracers.push({
+      x: cx + Math.cos(a) * 45,
+      y: cy + Math.sin(a) * 35,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: 0.85,
+      maxLife: 0.85
+    });
+  }
+
+  for (let i = titleTracers.length - 1; i >= 0; i--) {
+    const tr = titleTracers[i];
+    tr.x += tr.vx * dt;
+    tr.y += tr.vy * dt;
+    tr.life -= dt;
+
+    const alpha = Math.max(0, tr.life / tr.maxLife);
+    ctx.fillStyle = `rgba(190, 242, 100, ${alpha})`;
+    ctx.fillRect(Math.round(tr.x), Math.round(tr.y), 4, 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(Math.round(tr.x + 1), Math.round(tr.y), 2, 1);
+
+    if (tr.life <= 0) titleTracers.splice(i, 1);
+  }
+
+  const orbitR1 = 110, orbitR2 = 135;
+  const p1X = cx + Math.cos(t * 0.0012) * orbitR1;
+  const p1Y = cy + Math.sin(t * 0.0012) * (orbitR1 * 0.42);
+  const p1Angle = Math.atan2(Math.cos(t * 0.0012) * (orbitR1 * 0.42), -Math.sin(t * 0.0012) * orbitR1);
+  drawTitlePatrolPirate(p1X, p1Y, 1.0, p1Angle, Math.floor(t / 220));
+
+  const p2X = cx + Math.cos(t * 0.0012 + Math.PI) * orbitR2;
+  const p2Y = cy + Math.sin(t * 0.0012 + Math.PI) * (orbitR2 * 0.42);
+  const p2Angle = Math.atan2(Math.cos(t * 0.0012 + Math.PI) * (orbitR2 * 0.42), -Math.sin(t * 0.0012 + Math.PI) * orbitR2);
+  drawTitlePatrolPirate(p2X, p2Y, 0.85, p2Angle, Math.floor(t / 220));
+}
+
+function renderTitleSpaceBG(dt) {
+  ctx.fillStyle = "#020208";
+  ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+  const neb = ctx.createRadialGradient(V_WIDTH * 0.5, V_HEIGHT * 0.55, 20, V_WIDTH * 0.5, V_HEIGHT * 0.55, 140);
+  neb.addColorStop(0, "rgba(127, 29, 29, 0.22)");
+  neb.addColorStop(0.5, "rgba(88, 28, 135, 0.14)");
+  neb.addColorStop(1, "transparent");
+  ctx.fillStyle = neb;
+  ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+  ctx.fillStyle = "#ffffff";
+  for (let s of titleStars) {
+    s.x -= s.speed * (titleLaunchTriggered ? 12 : 1);
+    if (s.x < 0) s.x = V_WIDTH;
+    ctx.fillRect(Math.round(s.x), Math.round(s.y), s.size, s.size);
+  }
+}
+
+function drawTitleAndCredits(t) {
+  const midX = Math.round(V_WIDTH / 2);
+  const titleY = 38;
+
+  ctx.fillStyle = "#020617";
+  ctx.font = "bold 26px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("VOID PILOT 3D", midX + 3, titleY + 3);
+
+  ctx.fillStyle = "#0369a1";
+  ctx.fillText("VOID PILOT 3D", midX + 2, titleY + 2);
+  ctx.fillText("VOID PILOT 3D", midX + 1, titleY + 1);
+
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillText("VOID PILOT 3D", midX, titleY);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("VOID PILOT 3D", midX, titleY - 1);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillText("VOID PILOT 3D", midX, titleY);
+
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 10px monospace";
+  ctx.fillText("◆  ROGUE GALAXY  ◆", midX, titleY + 14);
+
+  const pulse = Math.floor(t / 400) % 2 === 0;
+  if (!titleLaunchTriggered) {
+    ctx.fillStyle = pulse ? "#facc15" : "#ffffff";
+    ctx.font = "bold 9px monospace";
+    const prompt = titleStep === 'FULLSCREEN'
+      ? "[ 1ST TAP OR KEY: FULLSCREEN & EXPAND ]"
+      : "[ 2ND TAP OR KEY: LAUNCH ]";
+    ctx.fillText(prompt, midX, V_HEIGHT - 38);
+  } else {
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 9.5px monospace";
+    ctx.fillText(">> HYPERDRIVE ENGAGED: LAUNCHING <<", midX, V_HEIGHT - 38);
+  }
+
+  ctx.font = "bold 7.5px monospace";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText("DREAMED UP & CREATED BY ", midX - 60, V_HEIGHT - 12);
+  ctx.fillStyle = "#facc15";
+  ctx.fillText("MATTHEW MACLAINE", midX + 38, V_HEIGHT - 12);
+
+  ctx.fillStyle = "#f43f5e";
+  ctx.fillText("RetrosNotDeadStudio", midX, V_HEIGHT - 21);
+}
+
+let titleLastTime = 0;
+function renderTitleScreen(timestamp) {
+  if (!titleLastTime) titleLastTime = timestamp;
+  const dt = Math.min((timestamp - titleLastTime) / 1000, 0.1);
+  titleLastTime = timestamp;
+  const t = Date.now();
+
+  titleRotation += (titleLaunchTriggered ? 1.8 : 0.42) * dt;
+
+  ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
+  renderTitleSpaceBG(dt);
+
+  const midX = Math.round(V_WIDTH / 2);
+  const midY = Math.round(V_HEIGHT * 0.54);
+  drawTitleSpinningStronghold(midX, midY, 1.15, titleRotation, t);
+  updateTitleEffects(dt, midX, midY, t);
+  drawTitleAndCredits(t);
+
+  if (titleLaunchTriggered) {
+    titleLaunchProgress += dt * 1.5;
+    if (titleLaunchProgress > 0.05) {
+      const alpha = Math.min(1.0, (titleLaunchProgress - 0.05) / 0.5);
+      ctx.fillStyle = `rgba(56, 189, 248, ${alpha * 0.55})`;
+      ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+      if (titleLaunchProgress > 0.5) {
+        const whiteAlpha = Math.min(1.0, (titleLaunchProgress - 0.5) / 0.4);
+        ctx.fillStyle = `rgba(255, 255, 255, ${whiteAlpha})`;
+        ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      }
+
+      if (titleLaunchProgress >= 1.0) {
+        titleLaunchTriggered = false;
+        titleLaunchProgress = 0;
+        launchGame();
+      }
+    }
+  }
 }
 
 /* ==========================================================================
@@ -2821,9 +3100,7 @@ function fcDrawRedInvader(x, y, scale, bankAngle) {
       }
     }
   }
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(Math.round(-3.5 * px), Math.round(-1 * px), Math.ceil(px), Math.ceil(px));
-  ctx.fillRect(Math.round(2.5 * px), Math.round(-1 * px), Math.ceil(px), Math.ceil(px));
+
   ctx.restore();
 }
 
@@ -3189,10 +3466,16 @@ function initGame() {
   gameOver = false; isDocked = false; gameMode = 'SPACE'; landedPlanet = null;
   isDeathCutscenePlaying = false;
   isFuelCutscenePlaying = false;
-  ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = '';
-  });
+  // Only reveal the HUD here if the title screen has already been dismissed once
+  // (i.e. this is a restart-after-death, not the very first page-load call) -
+  // otherwise this would undo the title screen's "HUD hidden until launch" state
+  // before the player even sees it.
+  if (document.getElementById('launch-screen')?.style.display === 'none') {
+    ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = '';
+    });
+  }
   galaxySeed = Math.floor(Math.random() * 999999); planetDepletionCache.clear();
   destroyedPlanets.clear();
   liberatedSectors.clear();
@@ -4329,7 +4612,7 @@ function pollGamepadState() {
   }
 
   if (document.getElementById('launch-screen').style.display !== 'none') {
-    if (currentGpButtons.some(Boolean)) launchGame();
+    if (currentGpButtons.some(Boolean)) handleTitleInput();
     return;
   }
 
@@ -9651,6 +9934,11 @@ canvas.addEventListener("pointerdown", () => {
    GAME LOOP TICKER & INITIALIZATION
    ========================================================================== */
 function gameLoop(time) {
+  if (document.getElementById('launch-screen')?.style.display !== 'none') {
+    renderTitleScreen(time);
+    requestAnimationFrame(gameLoop);
+    return;
+  }
   if (!lastTime) lastTime = time;
   const dt = Math.min((time - lastTime) / 1000, 0.1);
   lastTime = time;
