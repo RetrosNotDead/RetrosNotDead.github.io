@@ -5122,7 +5122,7 @@ function update(dt) {
             vx: (aimDx / aimLen) * bSpeed,
             vy: (aimDy / aimLen) * bSpeed,
             vz: (aimDz / aimLen) * bSpeed,
-            life: 2.8, isEnemy: true, isGreen: false,
+            life: 2.8, isEnemy: true, isGreen: false, isMothershipBolt: true,
             damage: 22
           });
         }
@@ -8177,21 +8177,75 @@ function render() {
         const b = item.obj;
         if (b.isPlayer) {
           const pFront = proj;
-          const pTail = projectSpace(b.x - ship.fx * 10, b.y - ship.fy * 10, b.z - ship.fz * 10);
+          // Use the bolt's own travel direction (like every other bolt type) rather
+          // than the ship's current facing - the ship keeps turning after the bolt
+          // is fired, so anchoring the trail to live ship orientation made the near
+          // end of freshly-fired bolts swing around near the cockpit as you turned.
+          const pSpeed = Math.hypot(b.vx, b.vy, b.vz) || 1;
+          const trailLen = 16;
+          const pTail = projectSpace(
+            b.x - (b.vx / pSpeed) * trailLen,
+            b.y - (b.vy / pSpeed) * trailLen,
+            b.z - (b.vz / pSpeed) * trailLen
+          );
           ctx.save();
+          ctx.lineCap = "round";
           if (pTail && pTail.depth > 0) {
+            // Soft outer glow, then a hot core, then a bright white spine - same
+            // layered treatment as the other bolts, kept in the player's red/white.
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.38)";
+            ctx.lineWidth = Math.max(4, 7 * pFront.scale);
+            ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(pFront.x, pFront.y); ctx.stroke();
+
             ctx.strokeStyle = "#ef4444";
             ctx.lineWidth = Math.max(2, 3.5 * pFront.scale);
             ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(pFront.x, pFront.y); ctx.stroke();
+
             ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = Math.max(1, 1.2 * pFront.scale);
+            ctx.lineWidth = Math.max(1, 1.3 * pFront.scale);
             ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(pFront.x, pFront.y); ctx.stroke();
           } else {
-            const bLen = Math.max(4, 9 * pFront.scale);
+            // Tail point landed behind the camera (bolt just spawned right at the
+            // ship) - a straight fillRect bar here has no real on-screen direction
+            // to follow, which is what was showing up as a horizontal line jutting
+            // out near the cockpit. A simple glow dot has no direction to get wrong.
+            const r = Math.max(2, 3.5 * pFront.scale);
+            ctx.fillStyle = "rgba(239, 68, 68, 0.35)";
+            ctx.beginPath(); ctx.arc(pFront.x, pFront.y, r + 1.5, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = "#ef4444";
-            ctx.fillRect(pFront.x - 1, pFront.y - 1, bLen, 2);
+            ctx.beginPath(); ctx.arc(pFront.x, pFront.y, r, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = "#ffffff";
-            ctx.fillRect(pFront.x, pFront.y, bLen * 0.6, 1);
+            ctx.beginPath(); ctx.arc(pFront.x, pFront.y, r * 0.5, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+        } else if (b.isMothershipBolt) {
+          // Same tracer treatment as the pirate/flak beam below, just recolored
+          // fluoro pink - purely visual, the firing logic above is untouched.
+          const bSpeed = Math.hypot(b.vx, b.vy, b.vz) || 1;
+          const trailLen = 42;
+          const pTail = projectSpace(
+            b.x - (b.vx / bSpeed) * trailLen,
+            b.y - (b.vy / bSpeed) * trailLen,
+            b.z - (b.vz / bSpeed) * trailLen
+          );
+          ctx.save();
+          if (pTail && pTail.depth > 0) {
+            ctx.lineCap = "round";
+            ctx.strokeStyle = "rgba(255, 46, 196, 0.35)";
+            ctx.lineWidth = Math.max(3, 6 * proj.scale);
+            ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(proj.x, proj.y); ctx.stroke();
+
+            ctx.strokeStyle = "#ff2ec4";
+            ctx.lineWidth = Math.max(1.5, 3 * proj.scale);
+            ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(proj.x, proj.y); ctx.stroke();
+
+            ctx.strokeStyle = "#fff0fb";
+            ctx.lineWidth = Math.max(0.8, 1.2 * proj.scale);
+            ctx.beginPath(); ctx.moveTo(pTail.x, pTail.y); ctx.lineTo(proj.x, proj.y); ctx.stroke();
+          } else {
+            const bLen = Math.max(4, 14 * proj.scale);
+            ctx.fillStyle = "#ff2ec4";
+            ctx.fillRect(proj.x - 1, proj.y - 1, bLen, 2);
           }
           ctx.restore();
         } else if (b.isFlak || b.isPirateBeam) {
