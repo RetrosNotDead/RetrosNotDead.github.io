@@ -2311,6 +2311,7 @@ function generateSector(sx, sy, sz) {
 }
 
 function destroyStrongholdAndLiberateSector(st) {
+  awardTrophy('stronghold');
   const secKey = st.secKey || `${st.sx},${st.sy},${st.sz}`;
 
   // Liberate the stronghold's entire square zone of control - matches the tiling convention
@@ -3272,7 +3273,7 @@ function dcPlayBlewItTone() {
 }
 
 function triggerSpaceDeathCutscene(title, desc) {
-  if (isDeathCutscenePlaying || isFuelCutscenePlaying || gameOver) return;
+  if (isDeathCutscenePlaying || isFuelCutscenePlaying || (typeof isSunCutscenePlaying !== 'undefined' && isSunCutscenePlaying) || gameOver) return;
   isDeathCutscenePlaying = true;
   dcState.timer = 0.0;
   dcState.shake = 0.3;
@@ -3845,7 +3846,7 @@ function fcPlayFlameout() {
 }
 
 function triggerFuelExhaustionCutscene() {
-  if (isFuelCutscenePlaying || isDeathCutscenePlaying || gameOver) return;
+  if (isFuelCutscenePlaying || isDeathCutscenePlaying || isSunCutscenePlaying || gameOver) return;
   isFuelCutscenePlaying = true;
 
   fcState.timer = 0.0; fcState.shake = 0.0; fcState.flash = 0.0; fcState.warpFlash = 0.0;
@@ -4208,6 +4209,473 @@ function dismissFuelCutsceneToModal() {
   triggerGameOver("FUEL EXHAUSTED", "Drifting endlessly in deep space.");
 }
 
+
+/* ==========================================================================
+   SOLAR INCINERATION CUTSCENE (plays before the "INCINERATED BY STAR" /
+   "THERMAL HULL FAILURE" modal). Same pattern as the other death scenes:
+   own state, hides the HUD, reuses the shared dc fireball/shockwave/debris
+   systems, tap/any key to continue once the message has played.
+   The Chimera is dragged into Sol-Prime: hull glows red -> orange -> white,
+   antenna burns off, canopy cracks, a flare whips it, the ship melts nose
+   first into molten drips, and the pilot is flung out and cooked to ash.
+   ========================================================================== */
+let isSunCutscenePlaying = false;
+const scState = { timer: 0, shake: 0, flash: 0, msgAlpha: 0, readyForModal: false, title: "", desc: "", heat: 0, meltX: 60, alarmT: 0 };
+const scShip = { x: 0, y: 0, vx: 0, bank: 0, antennaLost: false, cracked: false, canopyBlown: false, alive: true };
+const scPilot = { active: false, x: 0, y: 0, vx: 0, vy: 0, rot: 0, vRot: 0, burn: 0 };
+const scEmbers = [], scDrips = [], scBlood = [];
+const scGran = [];
+for (let i = 0; i < 150; i++) scGran.push({ a: Math.random() * Math.PI * 2, r: Math.sqrt(Math.random()), ph: Math.random() * 6.28, sz: 2 + Math.floor(Math.random() * 3) });
+
+function scSun() {
+  const k = Math.min(1, scState.timer / 5);
+  return { x: V_WIDTH + 40 - k * 30, y: V_HEIGHT / 2 + 6, r: 130 + k * 28 };
+}
+function scHex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function scMix(a, b, k) {
+  k = Math.max(0, Math.min(1, k));
+  const A = scHex(a), B = scHex(b);
+  const c = (i) => Math.round(A[i] + (B[i] - A[i]) * k).toString(16).padStart(2, '0');
+  return "#" + c(0) + c(1) + c(2);
+}
+// metal heating up: dull red -> orange -> yellow-white
+function scHeatCol(base, heat) {
+  const ramp = heat < 0.5 ? scMix("#7f1d1d", "#ea580c", heat / 0.5) : scMix("#ea580c", "#fef3c7", (heat - 0.5) / 0.5);
+  return scMix(base, ramp, Math.min(1, heat * 1.15));
+}
+
+function scPlayRoar() {
+  try {
+    if (!actx) actx = createGameAudioContext();
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime, dur = 3.4;
+    const n = Math.floor(actx.sampleRate * dur);
+    const buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(90, t); lp.frequency.exponentialRampToValueAtTime(900, t + dur);
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.02, t); g.gain.linearRampToValueAtTime(0.32, t + dur * 0.9); g.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(lp); lp.connect(g); g.connect(audioOut()); src.start(t);
+  } catch (e) {}
+}
+function scPlayAlarm(hi) {
+  try {
+    if (!actx) return;
+    const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(hi ? 880 : 660, t);
+    g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(g); g.connect(audioOut()); o.start(t); o.stop(t + 0.2);
+  } catch (e) {}
+}
+function scPlaySizzle(dur, vol) {
+  try {
+    if (!actx) return;
+    const t = actx.currentTime, n = Math.floor(actx.sampleRate * dur);
+    const buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (Math.random() < 0.15 ? 1 : 0.3) * (1 - i / n);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.setValueAtTime(2600, t);
+    const g = actx.createGain(); g.gain.setValueAtTime(vol, t);
+    src.connect(hp); hp.connect(g); g.connect(audioOut()); src.start(t);
+  } catch (e) {}
+}
+
+function triggerSunDeathCutscene(title, desc) {
+  if (isSunCutscenePlaying || isDeathCutscenePlaying || isFuelCutscenePlaying || gameOver) return;
+  isSunCutscenePlaying = true;
+  Object.assign(scState, { timer: 0, shake: 0.3, flash: 0.35, msgAlpha: 0, readyForModal: false, title, desc, heat: 0, meltX: 60, alarmT: 0 });
+  Object.assign(scShip, { x: Math.round(V_WIDTH * 0.3), y: Math.round(V_HEIGHT / 2) + 14, vx: 6, bank: -0.04, antennaLost: false, cracked: false, canopyBlown: false, alive: true });
+  scPilot.active = false; scPilot.burn = 0;
+  scEmbers.length = 0; scDrips.length = 0; scBlood.length = 0;
+  dcDebris.length = 0; dcFireballs.length = 0; dcShockwaves.length = 0; dcBloodDroplets.length = 0;
+  dcAstronaut.active = false;
+
+  ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  if (typeof actx !== 'undefined' && actx) {
+    if (afterburnerGain) afterburnerGain.gain.setTargetAtTime(0.0, actx.currentTime, 0.15);
+    if (tractorGain) tractorGain.gain.setTargetAtTime(0.0, actx.currentTime, 0.15);
+  }
+  scPlayRoar();
+  dcPlayBoom(220, 0.5, 0.25);
+}
+
+function scEmit(list, x, y, vx, vy, life, color, sz) { list.push({ x, y, vx, vy, life, max: life, color, sz }); }
+
+function updateSunCutscene(dt) {
+  const prevT = scState.timer;
+  scState.timer += dt;
+  const t = scState.timer;
+  const at = (k) => t >= k && prevT < k;
+  const S = 1.25;
+
+  if (scState.shake > 0) scState.shake = Math.max(0, scState.shake - dt * 1.4);
+  if (scState.flash > 0) scState.flash = Math.max(0, scState.flash - dt * 2.4);
+  scState.heat = Math.min(1, Math.pow(Math.min(1, t / 3.0), 1.3));
+  scState.shake = Math.max(scState.shake, scState.heat * 0.22 * (t < 4.6 ? 1 : 0));
+
+  // dragged toward the star
+  if (scShip.alive) {
+    scShip.vx += (5 + scState.heat * 12) * dt;
+    scShip.x += scShip.vx * dt;
+    scShip.y += Math.sin(t * 3) * 3 * dt;
+    scShip.bank += (0.03 + scState.heat * 0.05) * dt;
+  }
+
+  // klaxon until the canopy goes
+  if (t < 3.1) {
+    scState.alarmT -= dt;
+    if (scState.alarmT <= 0) { scState.alarmT = 0.42 - scState.heat * 0.18; scPlayAlarm(Math.floor(t * 5) % 2 === 0); }
+  }
+
+  // embers peeling off the hot hull, pulled into the sun
+  if (scShip.alive && scState.heat > 0.25) {
+    const n = Math.floor(1 + scState.heat * 4);
+    for (let i = 0; i < n; i++) {
+      const hx = scShip.x + (-50 + Math.random() * Math.min(95, scState.meltX + 50)) * S, hy = scShip.y + (-30 + Math.random() * 18) * S;
+      scEmit(scEmbers, hx, hy, 10 + Math.random() * 30, -6 + Math.random() * 12, 0.5 + Math.random() * 0.7, Math.random() < 0.5 ? "#fb923c" : (Math.random() < 0.5 ? "#fde047" : "#fef3c7"), Math.random() < 0.3 ? 2 : 1);
+    }
+  }
+
+  if (at(1.5)) {        // antenna turret burns off
+    scShip.antennaLost = true;
+    scState.shake = 0.5; scState.flash = 0.2;
+    dcSpawnPixelFireball(scShip.x, scShip.y - 32 * S, 12, 0.5);
+    dcSpawnDebrisBatch(scShip.x, scShip.y - 32 * S, 1, 1.3, ["#ea580c"], true);
+    dcSpawnDebrisBatch(scShip.x, scShip.y - 30 * S, 8, 0.9, ["#ea580c", "#fde047", "#7f1d1d"]);
+    dcPlayBoom(320, 0.4, 0.3);
+  }
+  if (at(1.95)) { scShip.cracked = true; scPlaySizzle(0.35, 0.18); playSfx('shield'); }
+  if (at(2.6)) {        // solar flare whips the ship
+    scState.shake = 0.9; scState.flash = 0.55;
+    dcSpawnSquareShockwave(scShip.x + 30 * S, scShip.y - 20 * S, 40, 0.5, "#fde047");
+    dcPlayBoom(200, 0.8, 0.45);
+  }
+  if (at(3.1)) {        // canopy blows - pilot thrown clear
+    scShip.canopyBlown = true;
+    scState.shake = 1.2; scState.flash = 0.85;
+    const cx = scShip.x + 30 * S, cy = scShip.y - 21 * S;
+    dcSpawnPixelFireball(cx, cy, 34, 0.9);
+    dcSpawnSquareShockwave(cx, cy, 56, 0.7, "#ffffff");
+    dcSpawnDebrisBatch(cx, cy, 18, 1.6, ["#38bdf8", "#e0f2fe", "#fb923c", "#fde047"]);
+    Object.assign(scPilot, { active: true, x: cx - 6, y: cy + 6, vx: -30 - Math.random() * 5, vy: 34 + Math.random() * 6, rot: 0.3, vRot: -1.1, burn: 0.05 });
+    dcPlayBoom(130, 1.1, 0.7);
+    scPlaySizzle(1.6, 0.2);
+  }
+  // hull melts away from the nose back
+  if (t >= 3.1 && scShip.alive) {
+    const prevMelt = scState.meltX;
+    scState.meltX = 55 - Math.min(1, (t - 3.1) / 1.4) * 117;
+    for (let k = 0; k < 3; k++) {
+      const my = -28 + Math.random() * 16;
+      scEmit(scDrips, scShip.x + (scState.meltX + Math.random() * 3) * S, scShip.y + my * S, 25 + Math.random() * 35, -8 + Math.random() * 16, 0.9 + Math.random() * 0.6, Math.random() < 0.5 ? "#fde047" : "#fb923c", 2 + Math.floor(Math.random() * 2));
+    }
+    if (prevMelt > -22 && scState.meltX <= -22) {   // rear pod pops
+      dcSpawnPixelFireball(scShip.x - 34 * S, scShip.y - 20 * S, 30, 0.8);
+      dcSpawnSquareShockwave(scShip.x - 34 * S, scShip.y - 20 * S, 46, 0.6, "#fb923c");
+      dcSpawnDebrisBatch(scShip.x - 34 * S, scShip.y - 20 * S, 16, 1.4, ["#ea580c", "#7f1d1d", "#fde047", "#292524"]);
+      scState.shake = 1.0; scState.flash = 0.5;
+      dcPlayBoom(160, 0.9, 0.6);
+    }
+    if (scState.meltX <= -60) scShip.alive = false;
+  }
+
+  // pilot: thrown clear, slowly dragged back, cooked
+  if (scPilot.active) {
+    const p = scPilot;
+    p.vx += 24 * dt; p.vy *= Math.pow(0.35, dt);   // thrown clear below the wreck, then dragged back toward the star
+    p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vRot * dt;
+    p.burn += dt * 0.42;
+    if (p.burn > 0.25 && p.burn < 0.85 && Math.random() < 0.6) {   // boiling blood flashing to steam
+      const a = Math.random() * Math.PI * 2;
+      scEmit(scBlood, p.x + Math.cos(a) * 6, p.y + Math.sin(a) * 8 - 4, Math.cos(a) * 10 + 8, Math.sin(a) * 10 - 6, 0.6 + Math.random() * 0.5, Math.random() < 0.6 ? "#dc2626" : "#7f1d1d", Math.random() < 0.4 ? 2 : 1);
+    }
+    for (let i = 0; i < 2; i++) scEmit(scEmbers, p.x + (Math.random() - 0.5) * 16, p.y + (Math.random() - 0.5) * 24, 8 + Math.random() * 20, -12 - Math.random() * 10, 0.4 + Math.random() * 0.3, Math.random() < 0.5 ? "#f97316" : "#fde047", 1);
+    if (p.burn >= 1.05) {                                           // crumbles to ash
+      p.active = false;
+      for (let i = 0; i < 55; i++) {
+        const a = Math.random() * Math.PI * 2, sp = Math.random() * 14;
+        scEmit(scEmbers, p.x + (Math.random() - 0.5) * 16, p.y + (Math.random() - 0.5) * 28, 18 + Math.cos(a) * sp + Math.random() * 30, Math.sin(a) * sp, 1.2 + Math.random() * 1.2,
+          ["#78716c", "#44403c", "#292524", "#a8a29e", "#f97316"][Math.floor(Math.random() * 5)], Math.random() < 0.3 ? 2 : 1);
+      }
+      dcDebris.push({ lx: p.x, ly: p.y - 6, vx: 30, vy: -6, rot: 0, vRot: 3.2, w: 4, h: 4, color: "#e7e5e4", isTurret: false, life: 6, maxLife: 6, skull: true });
+      scPlaySizzle(0.6, 0.15);
+    }
+  }
+
+  if (at(4.9)) dcPlayBlewItTone();
+  if (t >= 4.9 && t < 6.7) {
+    if (t < 5.4) scState.msgAlpha = (t - 4.9) / 0.5;
+    else if (t < 6.2) scState.msgAlpha = 1.0;
+    else scState.msgAlpha = 1.0 - (t - 6.2) / 0.5;
+  } else if (t >= 6.7) {
+    scState.msgAlpha = 0.0;
+    scState.readyForModal = true;
+  }
+
+  const sun = scSun();
+  for (const list of [scEmbers, scDrips, scBlood]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i];
+      e.vx += (list === scDrips ? 40 : 26) * dt;
+      if (list === scBlood) { e.vy -= 12 * dt; }
+      e.x += e.vx * dt; e.y += e.vy * dt; e.life -= dt;
+      if (e.life <= 0 || Math.hypot(e.x - sun.x, e.y - sun.y) < sun.r * 0.96) list.splice(i, 1);
+    }
+  }
+  for (let i = dcFireballs.length - 1; i >= 0; i--) {
+    const fb = dcFireballs[i];
+    fb.life -= dt; fb.r = fb.maxR * (1.0 - (fb.life / fb.maxLife));
+    if (fb.life <= 0) dcFireballs.splice(i, 1);
+  }
+  for (let i = dcShockwaves.length - 1; i >= 0; i--) {
+    const sw = dcShockwaves[i];
+    sw.life -= dt; sw.r = sw.maxR * (1.0 - (sw.life / sw.maxLife));
+    if (sw.life <= 0) dcShockwaves.splice(i, 1);
+  }
+  for (let i = dcDebris.length - 1; i >= 0; i--) {
+    const d = dcDebris[i];
+    d.life -= dt; d.vx += 18 * dt; d.lx += d.vx * dt; d.ly += d.vy * dt; d.rot += d.vRot * dt;
+    if (d.life <= 0 || Math.hypot(d.lx - sun.x, d.ly - sun.y) < sun.r * 0.97) dcDebris.splice(i, 1);
+  }
+}
+
+function scDrawSun(time) {
+  const s = scSun();
+  const corona = ctx.createRadialGradient(s.x, s.y, s.r * 0.8, s.x, s.y, s.r * 2.0);
+  corona.addColorStop(0, "rgba(251, 146, 60, 0.55)"); corona.addColorStop(0.45, "rgba(239, 68, 68, 0.2)"); corona.addColorStop(1, "rgba(239, 68, 68, 0)");
+  ctx.fillStyle = corona; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+  // prominences looping off the visible limb
+  for (let k = 0; k < 4; k++) {
+    const mid = Math.PI + (k - 1.5) * 0.42 + Math.sin(time * 0.4 + k) * 0.04;
+    const span = 0.1 + 0.03 * k, h = s.r * (0.1 + 0.05 * Math.sin(time * 1.3 + k * 2));
+    for (let j = 0; j <= 22; j++) {
+      const u = j / 22, ang = mid - span + 2 * span * u, rad = s.r + Math.sin(u * Math.PI) * h;
+      const px = s.x + Math.cos(ang) * rad, py = s.y + Math.sin(ang) * rad;
+      ctx.fillStyle = (j + Math.floor(time * 8)) % 3 === 0 ? "#fde047" : "#f97316";
+      ctx.fillRect(Math.round(px) - 2, Math.round(py) - 2, 4, 4);
+    }
+  }
+  const disk = ctx.createRadialGradient(s.x - s.r * 0.35, s.y - s.r * 0.1, s.r * 0.1, s.x, s.y, s.r);
+  disk.addColorStop(0, "#fffbeb"); disk.addColorStop(0.45, "#fde047"); disk.addColorStop(0.85, "#f97316"); disk.addColorStop(1, "#dc2626");
+  ctx.fillStyle = disk; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  // boiling granulation
+  for (const g of scGran) {
+    const px = s.x + Math.cos(g.a) * g.r * s.r * 0.94, py = s.y + Math.sin(g.a) * g.r * s.r * 0.94;
+    if (px > V_WIDTH + 4 || py < -4 || py > V_HEIGHT + 4) continue;
+    const f = Math.sin(time * 2.2 + g.ph);
+    if (f > 0.35) ctx.fillStyle = "#fef3c7"; else if (f < -0.45) ctx.fillStyle = g.r > 0.7 ? "#b91c1c" : "#ea580c"; else continue;
+    ctx.fillRect(Math.round(px), Math.round(py), g.sz, g.sz);
+  }
+  // the flare that whips the ship
+  const ft = scState.timer - 2.45;
+  if (ft > 0 && ft < 1.1) {
+    const reach = Math.min(1, ft / 0.2), fade = ft < 0.5 ? 1 : 1 - (ft - 0.5) / 0.6;
+    const tx = scShip.x + 34, ty = scShip.y - 24;
+    const a0 = Math.atan2(ty - s.y, tx - s.x) - 0.12;
+    const x0 = s.x + Math.cos(a0) * s.r, y0 = s.y + Math.sin(a0) * s.r;
+    ctx.globalAlpha = Math.max(0, fade);
+    for (let j = 0; j <= 30 * reach; j++) {
+      const u = j / 30, w = 9 * (1 - u * 0.75);
+      const px = x0 + (tx - x0) * u, py = y0 + (ty - y0) * u - Math.sin(u * Math.PI) * 26 + Math.sin(u * 18 + time * 30) * 2;
+      ctx.fillStyle = "#f97316"; ctx.fillRect(Math.round(px - w / 2), Math.round(py - w / 2), Math.ceil(w), Math.ceil(w));
+      ctx.fillStyle = "#fef3c7"; ctx.fillRect(Math.round(px - w / 4), Math.round(py - w / 4), Math.ceil(w / 2), Math.ceil(w / 2));
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function scDrawChimera(cx, cy, scale, heat, meltX, time) {
+  if (!scShip.alive) return;
+  const H = (c) => scHeatCol(c, heat);
+  const jit = heat * 0.8;
+  ctx.save();
+  ctx.translate(cx + (Math.random() - 0.5) * jit, cy + (Math.random() - 0.5) * jit);
+  ctx.rotate(scShip.bank);
+  ctx.scale(scale, scale);
+  if (heat > 0.15) {
+    const g = ctx.createRadialGradient(0, -20, 4, 0, -20, 70);
+    g.addColorStop(0, `rgba(251, 146, 60, ${0.38 * heat})`); g.addColorStop(1, "rgba(251, 146, 60, 0)");
+    ctx.fillStyle = g; ctx.fillRect(-70, -90, 140, 140);
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-70, -45, Math.max(0, meltX + 70), 60); ctx.clip();
+  const flash = Math.floor(time * 4) % 2 === 0;
+  // rear pod + engines
+  ctx.fillStyle = H("#0f172a"); ctx.fillRect(-46, -28, 26, 16);
+  ctx.fillStyle = H("#1e293b"); ctx.fillRect(-44, -26, 23, 12);
+  ctx.strokeStyle = H("#334155"); ctx.lineWidth = 1; ctx.strokeRect(-44, -26, 23, 12);
+  [-24, -17.5].forEach(ey => {
+    ctx.fillStyle = H("#0f172a"); ctx.fillRect(-51, ey - 2.5, 6, 5);
+    ctx.fillStyle = Math.random() < 0.5 ? "#f97316" : "#7c2d12"; ctx.fillRect(-53, ey - 1.5, 2.5, 3);
+  });
+  for (let rx = -41; rx <= -26; rx += 3.5) {
+    ctx.fillStyle = H("#0f172a"); ctx.fillRect(rx, -24, 2, 8);
+    ctx.fillStyle = flash ? "#ef4444" : "#450a0a"; ctx.fillRect(rx + 0.5, -23, 1, 6);
+  }
+  // mid section, belly, antenna turret
+  ctx.fillStyle = H("#1e293b"); ctx.fillRect(-20, -25, 34, 13);
+  ctx.strokeStyle = H("#475569"); ctx.strokeRect(-20, -25, 34, 13);
+  ctx.fillStyle = H("#0f172a"); ctx.fillRect(-20, -27, 26, 2);
+  ctx.fillStyle = H("#0f172a"); ctx.fillRect(-7, -14, 14, 3.5);
+  ctx.fillStyle = flash ? "#ef4444" : "#450a0a"; ctx.fillRect(-4, -13, 2, 1.2); ctx.fillRect(2, -13, 2, 1.2);
+  if (!scShip.antennaLost) {
+    ctx.fillStyle = H("#0f172a"); ctx.fillRect(-5, -31, 10, 4);
+    ctx.fillStyle = H("#64748b"); ctx.fillRect(-3, -35, 2, 4); ctx.fillRect(1, -35, 2, 4);
+  } else {
+    ctx.fillStyle = "#fb923c"; ctx.fillRect(-4, -28, 8, 1);           // glowing stump
+  }
+  ctx.fillStyle = H("#0284c7"); ctx.fillRect(-20, -17, 32, 2);
+  // nose + canopy
+  ctx.fillStyle = H("#0f172a");
+  ctx.beginPath(); ctx.moveTo(14, -14); ctx.lineTo(14, -26); ctx.lineTo(33, -26); ctx.lineTo(43, -18); ctx.lineTo(43, -14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = H("#1e293b");
+  ctx.beginPath(); ctx.moveTo(15, -15); ctx.lineTo(15, -25); ctx.lineTo(32, -25); ctx.lineTo(41.5, -17.5); ctx.lineTo(41.5, -15); ctx.closePath(); ctx.fill();
+  if (!scShip.canopyBlown) {
+    ctx.fillStyle = scMix("#0369a1", "#fb923c", heat * 0.6);
+    ctx.beginPath(); ctx.moveTo(22, -24); ctx.lineTo(32, -24); ctx.lineTo(39, -19.5); ctx.lineTo(22, -19.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = scMix("#38bdf8", "#fef3c7", heat); ctx.fillRect(23, -23, 7, 2);
+    if (scShip.cracked) {
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(29, -24); ctx.lineTo(27, -21.5); ctx.lineTo(30, -20); ctx.moveTo(27, -21.5); ctx.lineTo(24, -20.5); ctx.moveTo(33, -23.5); ctx.lineTo(31.5, -21); ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = "#1c1917";
+    ctx.beginPath(); ctx.moveTo(22, -24); ctx.lineTo(32, -24); ctx.lineTo(39, -19.5); ctx.lineTo(22, -19.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = Math.random() < 0.5 ? "#f97316" : "#fde047"; ctx.fillRect(24, -23 + Math.random() * 2, 12, 1.5);   // fire inside
+  }
+  ctx.fillStyle = H("#64748b"); ctx.fillRect(42, -17, 6, 2);
+  ctx.restore();
+  // molten melt front
+  if (meltX < 52) {
+    for (let y = -28; y <= -12; y += 2) {
+      ctx.fillStyle = ["#fef3c7", "#fde047", "#fb923c"][Math.floor(Math.random() * 3)];
+      ctx.fillRect(meltX - 1 + (Math.random() - 0.5) * 2, y, 2 + Math.random() * 3, 2);
+    }
+  }
+  ctx.restore();
+}
+
+function scDrawPilot(time) {
+  const p = scPilot;
+  if (!p.active) return;
+  const b = Math.min(1, p.burn);
+  const C = (c) => scMix(c, "#1c1917", Math.min(1, b * 1.35));
+  ctx.save();
+  ctx.translate(Math.round(p.x), Math.round(p.y));
+  ctx.rotate(p.rot);
+  ctx.scale(2, 2);   // big enough to read the charring + skeleton
+  if (b < 0.72) {
+    // suit scorching black
+    ctx.fillStyle = C("#e2e8f0"); ctx.fillRect(-3, -2, 6, 7);
+    ctx.fillStyle = C("#94a3b8"); ctx.fillRect(1, -2, 2, 7);
+    ctx.fillStyle = C("#334155"); ctx.fillRect(-4, -1, 1.5, 5);
+    ctx.fillStyle = C("#f8fafc"); ctx.fillRect(-4, -9, 8, 7);
+    ctx.fillStyle = b > 0.3 ? "#1c1917" : "#0284c7"; ctx.fillRect(-1, -7, 4, 3);       // visor bursts
+    if (b > 0.3) { ctx.fillStyle = "#dc2626"; ctx.fillRect(0, -6, 2, 2); }
+    ctx.fillStyle = C("#f8fafc"); ctx.fillRect(-6, -4, 3, 2.5); ctx.fillRect(-8, -7, 2.5, 3.5);
+    ctx.fillStyle = C("#e2e8f0"); ctx.fillRect(3, 0, 3, 2.5); ctx.fillRect(5, 2, 2.5, 4);
+    ctx.fillRect(-3, 5, 2.8, 4); ctx.fillRect(-5, 9, 2.8, 3.5); ctx.fillRect(0.5, 5, 2.8, 4); ctx.fillRect(2, 9, 2.8, 3.5);
+    if (b > 0.45) { ctx.fillStyle = "#7f1d1d"; ctx.fillRect(-2, 0, 2, 2); ctx.fillRect(1, 6, 2, 2); }    // burnt-through patches
+  } else {
+    // charred to the bone
+    ctx.globalAlpha = Math.max(0.25, 1 - (b - 0.72) * 2);
+    ctx.fillStyle = "#1c1917"; ctx.fillRect(-4, -9, 8, 7); ctx.fillRect(-3, -2, 6, 7); ctx.fillRect(-3, 5, 6, 7);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#e7e5e4";
+    ctx.fillRect(-3, -9, 6, 5); ctx.fillRect(-2, -4, 4, 1.2);               // skull + jaw
+    ctx.fillStyle = "#0c0a09"; ctx.fillRect(-2, -7.5, 1.5, 1.5); ctx.fillRect(0.5, -7.5, 1.5, 1.5); ctx.fillRect(-0.4, -5.5, 0.8, 1);
+    ctx.fillStyle = "#d6d3d1";
+    ctx.fillRect(-0.5, -2.5, 1, 8);                                          // spine
+    for (let r = 0; r < 3; r++) ctx.fillRect(-2.5, -1.5 + r * 1.8, 5, 0.8);  // ribs
+    ctx.fillRect(-2.5, 5, 5, 1.2);                                           // pelvis
+    ctx.fillRect(-2, 6, 0.9, 6); ctx.fillRect(1.1, 6, 0.9, 6);               // legs
+    ctx.fillRect(-5, -1, 2, 0.8); ctx.fillRect(-6, -3.5, 0.8, 2.6);          // arms
+    ctx.fillRect(3, -1, 2.5, 0.8); ctx.fillRect(5, -1, 0.8, 3);
+  }
+  // flames licking off the body
+  for (let i = 0; i < 7; i++) {
+    const fx = (Math.random() - 0.5) * 9, fy = -10 + Math.random() * 20, fh = 1 + Math.random() * 3;
+    ctx.fillStyle = Math.random() < 0.55 ? "#f97316" : "#fde047";
+    ctx.fillRect(fx, fy - fh, 1.5, fh);
+  }
+  ctx.restore();
+}
+
+function scDrawMessage(alpha) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1.0, alpha);
+  const textX = Math.round(V_WIDTH / 2), textY = 65, msg = "WELL DONE, PILOT";
+  ctx.font = "bold 22px monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = "#000000"; ctx.fillText(msg, textX + 2, textY + 2);
+  ctx.fillStyle = "#dc2626"; ctx.fillText(msg, textX - 1, textY - 1); ctx.fillText(msg, textX + 1, textY - 1);
+  ctx.fillStyle = "#fde047"; ctx.fillText(msg, textX, textY);
+  ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace";
+  ctx.fillText("SLOW ROASTED BY SOL-PRIME", textX, textY + 16);
+  ctx.restore();
+}
+
+function renderSunCutscene() {
+  const now = Date.now(), time = scState.timer;
+  ctx.save();
+  if (scState.shake > 0) { const a = scState.shake * 7; ctx.translate((Math.random() - 0.5) * a, (Math.random() - 0.5) * a); }
+  // hot red-black space
+  ctx.fillStyle = "#0a0204"; ctx.fillRect(-10, -10, V_WIDTH + 20, V_HEIGHT + 20);
+  ctx.fillStyle = "#fed7aa";
+  for (const st of dcStars) {
+    st.x -= st.speed * 0.25; if (st.x < 0) st.x = V_WIDTH;
+    if (st.x < V_WIDTH * 0.7) ctx.fillRect(Math.round(st.x), Math.round(st.y), st.size, st.size);
+  }
+  scDrawSun(time);
+  for (const d of scDrips) { ctx.fillStyle = d.life / d.max > 0.5 ? d.color : "#ea580c"; ctx.fillRect(Math.round(d.x), Math.round(d.y), d.sz, d.sz); }
+  scDrawChimera(scShip.x, scShip.y, 1.25, scState.heat, scState.meltX, time);
+  for (const d of dcDebris) {
+    if (d.life <= 0) continue;
+    ctx.save(); ctx.translate(d.lx, d.ly); ctx.rotate(d.rot);
+    if (d.skull) {
+      ctx.scale(2, 2);
+      ctx.fillStyle = "#e7e5e4"; ctx.fillRect(-3, -3, 6, 5); ctx.fillRect(-2, 2, 4, 1.2);
+      ctx.fillStyle = "#0c0a09"; ctx.fillRect(-2, -1.5, 1.5, 1.5); ctx.fillRect(0.5, -1.5, 1.5, 1.5); ctx.fillRect(-0.4, 0.6, 0.8, 0.8);
+    } else {
+      ctx.fillStyle = d.color; ctx.fillRect(-d.w / 2, -d.h / 2, d.w, d.h);
+      if (d.isTurret) { ctx.fillStyle = "#fb923c"; ctx.fillRect(-1.5, -6, 1.5, 4); ctx.fillRect(0.5, -6, 1.5, 4); }
+    }
+    ctx.restore();
+  }
+  scDrawPilot(time);
+  for (const bl of scBlood) {
+    const k = bl.life / bl.max;
+    ctx.fillStyle = k > 0.45 ? bl.color : `rgba(214, 211, 209, ${k * 1.4})`;   // blood flashes to steam
+    ctx.fillRect(Math.round(bl.x), Math.round(bl.y), bl.sz, bl.sz);
+  }
+  for (const e of scEmbers) {
+    ctx.globalAlpha = Math.min(1, e.life / e.max * 1.5);
+    ctx.fillStyle = e.color; ctx.fillRect(Math.round(e.x), Math.round(e.y), e.sz, e.sz);
+  }
+  ctx.globalAlpha = 1;
+  dcShockwaves.forEach(dcDrawSquareShockwave);
+  dcFireballs.forEach(dcDrawPixelFireball);
+  // heat wash over everything
+  ctx.fillStyle = `rgba(234, 88, 12, ${0.05 + 0.12 * scState.heat})`; ctx.fillRect(-10, -10, V_WIDTH + 20, V_HEIGHT + 20);
+  if (scState.flash > 0) {
+    ctx.fillStyle = `rgba(255, 251, 235, ${scState.flash * 0.8})`; ctx.fillRect(-10, -10, V_WIDTH + 20, V_HEIGHT + 20);
+  }
+  ctx.restore();
+  if (scState.msgAlpha > 0.01) scDrawMessage(scState.msgAlpha);
+  if (scState.readyForModal) dcDrawDriftPrompt(now);
+}
+
+function dismissSunCutsceneToModal() {
+  if (!isSunCutscenePlaying || !scState.readyForModal) return;
+  isSunCutscenePlaying = false;
+  triggerGameOver(scState.title, scState.desc);
+}
+
 /* ==========================================================================
    MOTHERSHIP VICTORY CUTSCENE (plays before the "GALAXY LIBERATED" stats
    modal) - reuses the real MOTHERSHIP_SPRITE and the same dc/fc cutscene
@@ -4289,7 +4757,7 @@ function vcPlayVictoryFanfare() {
 }
 
 function triggerVictoryCutscene(title, desc) {
-  if (isVictoryCutscenePlaying || isDeathCutscenePlaying || isFuelCutscenePlaying || gameOver) return;
+  if (isVictoryCutscenePlaying || isDeathCutscenePlaying || isFuelCutscenePlaying || isSunCutscenePlaying || gameOver) return;
   isVictoryCutscenePlaying = true;
   vcState.phase = 'EXPLODING';
   vcState.timer = 0.0;
@@ -4782,6 +5250,7 @@ function initGame() {
   gameOver = false; isDocked = false; gameMode = 'SPACE'; landedPlanet = null;
   isDeathCutscenePlaying = false;
   isFuelCutscenePlaying = false;
+  isSunCutscenePlaying = false;
   isVictoryCutscenePlaying = false;
   // Only reveal the HUD here if the title screen has already been dismissed once
   // (i.e. this is a restart-after-death, not the very first page-load call) -
@@ -6431,6 +6900,10 @@ function spawnSentinelGore(sent) {
 let cabin = null;
 let worldOnlyPass = false;
 const CAB = { eye: -10, seatEye: -11, seatZ: 18.5, worldLift: -6 };
+// Cargo room half-width (was 12). The cockpit section stays 12 wide; everything on the
+// port/starboard walls of the cargo room (airlock, crates, CRT, vents) is placed off this.
+const CAB_HW = 18;
+const CAB_PO = -(CAB_HW - 12); // port-wall shift for fixtures originally built against x = -12
 
 function cabinSfx(type) {
   try {
@@ -6512,14 +6985,14 @@ function stopCabinHum() {
 }
 
 const SPARK_SPOTS = [
-  { p: [-11.7, -12.5, -6], n: [1, 0, 0] },    // port wall panel
-  { p: [11.7, -10.5, 9], n: [-1, 0, 0] },     // starboard wall by the cockpit
+  { p: [-CAB_HW + 0.3, -12.5, 8], n: [1, 0, 0] },    // port wall panel
+  { p: [CAB_HW - 0.3, -10.5, 9], n: [-1, 0, 0] },     // starboard wall by the cockpit
   { p: [0.5, -17.9, -24], n: [0, 1, 0] },     // ceiling junction
 ];
 function updateCabinAmbience(c, dt) {
   if (!c.fx) {
     c.fx = []; c.motes = []; c.steamT = 1.5; c.sparkT = 0.8; c.alarmT = 1;
-    for (let i = 0; i < 45; i++) c.motes.push({ x: (Math.random() - 0.5) * 22, y: -2 - Math.random() * 15, z: -42 + Math.random() * 54, ph: Math.random() * 6.28, sp: 0.2 + Math.random() * 0.4 });
+    for (let i = 0; i < 45; i++) c.motes.push({ x: (Math.random() - 0.5) * (CAB_HW * 2 - 2), y: -2 - Math.random() * 15, z: -42 + Math.random() * 54, ph: Math.random() * 6.28, sp: 0.2 + Math.random() * 0.4 });
   }
   if (!cabinHum) startCabinHum();
   // hum swells as you walk aft toward the engine bulkhead
@@ -6599,7 +7072,7 @@ function enterCabinLanded() {
 }
 
 function enterCabinFromSurface() {
-  cabin = makeCabin({ x: 22, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 0, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
+  cabin = makeCabin({ x: AL.cx0 + 10, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 0, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
   playerFoot.yaw = -Math.PI / 2; playerFoot.pitch = 0;
   miningLaserState.active = false; touchFire = false; touchJetpack = false;
   landingFade = 0.45;
@@ -6630,17 +7103,20 @@ function cabinTween(to, dur, done) {
 
 function cabinCollide(x, z) {
   const R = 2.4;
-  x = Math.max(-12 + R, Math.min(12 - R, x));
+  x = Math.max(-CAB_HW + R, Math.min(CAB_HW - R, x));
   z = Math.max(-41.2 + R, Math.min(12.5, z));                                 // EVA rack + engine bulkhead aft
-  if ((z > -42 && z < -27.9) || (z > -16.4 && z < 3.8)) x = Math.min(x, 5 - R); // cargo crates, starboard
-  if (z > -27.5 && z < -17.8) x = Math.max(x, -8.4 + R);                       // CRT scan terminal, port
+  if ((z > -42 && z < -27.9) || (z > -16.4 && z < 3.8)) x = Math.min(x, CAB_HW - 7 - R); // cargo crates, starboard
+  if (z > -27.5 && z < -17.8) x = Math.max(x, -8.4 + CAB_PO + R);             // CRT scan terminal, port
+  if (z > SHELF.z0 - 0.4 && z < SHELF.z1 + 0.4) x = Math.max(x, SHELF.x0 + SHELF.depth + R); // trophy shelf, port
+  if (z > LAVA.z - 2 - R && z < LAVA.z + 2 + R && x < LAVA.x + 2 + R) x = LAVA.x + 2 + R;  // lava lamp table
+  if (x > PDESK.x0 - R && x < PDESK.x1 + R && z > PDESK.z0 - R) z = PDESK.z0 - R;          // camera desk
   return [x, z];
 }
 
 function getCabinAction() {
   const c = cabin;
   const nearRack = c.z < -32 && Math.abs(c.x) < 8;
-  const nearDoor = c.x > 3 && c.z > AL.z0 - 1 && c.z < AL.z1 + 1;
+  const nearDoor = c.x > CAB_HW - 9 && c.z > AL.z0 - 1 && c.z < AL.z1 + 1;
   const nearSeat = c.z > 4 && Math.abs(c.x) < 8;
   if (nearRack) {
     if (c.dir === 'in' && (c.hasLaser || c.hasHelmet)) {
@@ -6665,6 +7141,32 @@ function getCabinAction() {
     const geared = c.hasHelmet && c.hasLaser;
     return { label: "AIRLOCK", banner: geared ? ">> AIRLOCK READY: TAP AIRLOCK <<" : ">> SUIT UP AT THE AFT RACK BEFORE EVA <<", enabled: geared,
       hint: "GRAB YOUR HELMET & LASER FROM THE RACK FIRST!", run: startAirlockOut };
+  }
+  if (c.x > 4 && c.x < 16 && c.z > 6.5) {
+    return { label: "LIGHTS", banner: `>> CABIN LIGHTS: TAP TO SWITCH ${cabinLightsOn ? 'OFF' : 'ON'} <<`, enabled: true, run: toggleCabinLights };
+  }
+  if (c.x < PDESK.x1 + 2.5 && c.z > PDESK.z0 - 7) {
+    return { label: "SNAP!", banner: `>> POLAROID WALL: ${photosTaken.size}/${PHOTOS.length} SNAPSHOTS - TAP THE CAMERA <<`, enabled: true, run: () => {
+      cameraFlash = 1; cabinSfx('servo'); playSfx('targetLock'); vibrateGamepad(80, 0.3, 0.3);
+      const next = PHOTOS.find(p => !photosTaken.has(p.id));
+      addPopup(`📸 CAPTAIN'S LOG: ${photosTaken.size}/${PHOTOS.length} SNAPSHOTS`, "#f472b6");
+      addPopup(next ? `NEXT SNAPSHOT: ${next.hint.toUpperCase()}` : "EVERY SNAPSHOT TAKEN. WHAT A TRIP.", next ? "#38bdf8" : "#facc15");
+    } };
+  }
+  if (Math.hypot(c.x - LAVA.x, c.z - LAVA.z) < 7.5) {
+    return { label: "LAVA LAMP", banner: `>> LAVA LAMP: TAP TO SWITCH ${lavaLampOn ? 'OFF' : 'ON'} <<`, enabled: true, run: () => {
+      lavaLampOn = !lavaLampOn; playSfx('targetLock'); vibrateGamepad(60, 0.2, 0.2);
+      addPopup(lavaLampOn ? "GROOVY. LAVA LAMP ON" : "LAVA LAMP OFF", lavaLampOn ? "#ff2bd6" : "#94a3b8");
+    } };
+  }
+  if (c.x < SHELF.x0 + 8 && c.z > SHELF.z0 - 1.5 && c.z < SHELF.z1 + 1.5) {
+    return { label: "TROPHIES", banner: `>> TROPHY SHELF: ${trophiesEarned.size}/${TROPHIES.length} EARNED - TAP TO INSPECT <<`, enabled: true, run: () => {
+      playSfx('commChirp');
+      const got = TROPHIES.filter(t => trophiesEarned.has(t.id));
+      addPopup(got.length ? `🏆 ${got.map(t => t.name).join(' · ')}` : "NO TROPHIES YET - GET OUT THERE, PILOT", "#facc15");
+      const next = TROPHIES.find(t => !trophiesEarned.has(t.id));
+      addPopup(next ? `NEXT TROPHY: ${next.desc.toUpperCase()}` : "EVERY TROPHY EARNED. LEGEND.", next ? "#38bdf8" : "#f472b6");
+    } };
   }
   if (nearSeat) {
     const clear = !c.hasHelmet && !c.hasLaser;
@@ -6716,7 +7218,7 @@ function stepCabinSeq(dt) {
       }
     }
   } else if (s.type === 'airlockOut') {
-    once('walk', 0.35, () => cabinTween({ x: 22, z: AL.zc, eyeY: CAB.eye, yaw: Math.PI / 2, pitch: 0 }, 1.3, null));
+    once('walk', 0.35, () => cabinTween({ x: AL.cx0 + 10, z: AL.zc, eyeY: CAB.eye, yaw: Math.PI / 2, pitch: 0 }, 1.3, null));
     once('close', 1.75, () => { c.doorTarget = 0; cabinSfx('servo'); });
     once('red', 2.3, () => { c.lights = 'red'; cabinSfx('hiss'); playSfx('commChirp'); c.mist = 1; });
     once('green', 3.9, () => { c.lights = 'green'; playSfx('targetLock'); });
@@ -6727,7 +7229,7 @@ function stepCabinSeq(dt) {
     once('hiss', 0.7, () => { cabinSfx('hiss'); c.mist = 1; });
     once('green', 2.2, () => { c.lights = 'green'; playSfx('commChirp'); });
     once('open', 2.4, () => { c.doorTarget = 1; cabinSfx('servo'); });
-    once('walk', 2.9, () => cabinTween({ x: 5, z: AL.zc, eyeY: CAB.eye, yaw: -Math.PI / 2, pitch: 0 }, 1.0, () => {
+    once('walk', 2.9, () => cabinTween({ x: CAB_HW - 7, z: AL.zc, eyeY: CAB.eye, yaw: -Math.PI / 2, pitch: 0 }, 1.0, () => {
       c.seq = null; c.lights = 'normal'; c.doorTarget = 0; cabinSfx('servo');
       addPopup("RACK YOUR GEAR, THEN TAKE THE PILOT SEAT", "#facc15");
     }));
@@ -6740,6 +7242,7 @@ function updateCabin(dt, walkX, walkZ, interact) {
   c.door += Math.sign(c.doorTarget - c.door) * Math.min(Math.abs(c.doorTarget - c.door), dt * 2.2);
   c.hatch += Math.sign(c.hatchTarget - c.hatch) * Math.min(Math.abs(c.hatchTarget - c.hatch), dt * 1.6);
   c.mist = Math.max(0, c.mist - dt * 0.6);
+  stepCabinLights(dt);
   updateCabinAmbience(c, dt);
   if (c.lights === 'red' && c.seq && c.seq.type === 'airlockIn' && c.seq.t < 2.2) {} // held red while repressurising
 
@@ -6804,6 +7307,374 @@ function cabinInteract() {
   else { addPopup(act.hint, "#facc15"); playSfx('commChirp'); }
 }
 
+
+/* ==========================================================================
+   RETRO CABIN DECOR: TROPHY SHELF + LAVA LAMP
+   Trophies are career unlocks saved in localStorage, so they stay on the shelf
+   across runs. The lava lamp sits on a side table in the aft-port corner and
+   can be switched on/off from the cabin.
+   ========================================================================== */
+const TROPHIES = [
+  { id: 'stronghold', name: 'STRONGHOLD BREAKER', desc: 'Destroy a pirate stronghold',      shape: 'tower',   col: '#cbd5e1' },
+  { id: 'ace',        name: 'VOID ACE',           desc: 'Down 25 pirates in one run',       shape: 'star',    col: '#facc15' },
+  { id: 'sentinel',   name: 'SENTINEL HUNTER',    desc: 'Destroy 10 sentinels in one run',  shape: 'invader', col: '#c084fc' },
+  { id: 'tycoon',     name: 'ORE TYCOON',         desc: 'Earn $50,000 in one run',          shape: 'gem',     col: '#4ade80' },
+  { id: 'maxed',      name: 'FULLY LOADED',       desc: 'Max every ship upgrade',           shape: 'ship',    col: '#38bdf8' },
+  { id: 'et',         name: 'FAR FROM HOME',      desc: 'Befriend E.T.',                    shape: 'heart',   col: '#f472b6' },
+  { id: 'mothership', name: 'GALAXY SAVIOUR',     desc: 'Destroy the alien mothership',     shape: 'cup',     col: '#facc15' },
+  { id: 'loop3',      name: 'ROGUE LEGEND',       desc: 'Reach galaxy loop 3',              shape: 'cup',     col: '#f472b6' }
+];
+const trophiesEarned = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('vp3d_trophies') || '[]')); } catch (e) { return new Set(); }
+})();
+function awardTrophy(id) {
+  if (trophiesEarned.has(id)) return;
+  const t = TROPHIES.find(tr => tr.id === id);
+  if (!t) return;
+  trophiesEarned.add(id);
+  try { localStorage.setItem('vp3d_trophies', JSON.stringify([...trophiesEarned])); } catch (e) {}
+  addPopup(`🏆 TROPHY UNLOCKED: ${t.name} - ON DISPLAY IN YOUR CARGO ROOM`, "#facc15");
+  playSfx('upgrade');
+}
+function checkTrophies() {
+  if (!ship || gameOver) return;
+  if (runStats.piratesKilled >= 25) awardTrophy('ace');
+  if (runStats.sentinelsKilled >= 10) awardTrophy('sentinel');
+  if (runStats.creditsEarned >= 50000) awardTrophy('tycoon');
+  if (et.befriended) awardTrophy('et');
+  if (bossState.defeated) awardTrophy('mothership');
+  if (galaxyLoop >= 2) awardTrophy('loop3');
+  if (!trophiesEarned.has('maxed') && areAllUpgradesMaxed()) awardTrophy('maxed');
+}
+
+// Placement (cabin local coords)
+const SHELF = { x0: -CAB_HW, z0: -15.5, z1: 1.5, ys: [-5.4, -11.3], depth: 2.0 };
+const TROPHY_SLOTS = (() => {
+  const out = [];
+  SHELF.ys.forEach((y, row) => [-13.4, -9.4, -5.4, -1.4].forEach(z => out.push({ x: SHELF.x0 + 1.3, y: y - 0.45 - 1.45, z, row })));
+  return out;
+})();
+const LAVA = { x: -CAB_HW + 3, z: -36.5, tableTop: -4.4 };
+let lavaLampOn = true;
+
+function drawTrophy(t, earned, x, y, s, time, idx) {
+  if (s < 1.2) return;
+  const u = Math.max(0.35, s * 0.28);
+  const R = (cx, cy, w, h, col) => { ctx.fillStyle = litCol(col); ctx.fillRect(Math.round(x + cx * u), Math.round(y + cy * u), Math.max(1, Math.ceil(w * u)), Math.max(1, Math.ceil(h * u))); };
+  ctx.save();
+  if (earned) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(getGlow([t.col + "40", t.col + "00"]), x - 6 * u, y - 6 * u, 12 * u, 12 * u);
+    ctx.globalCompositeOperation = "source-over";
+  }
+  const c = earned ? t.col : "#1e293b";
+  const hi = earned ? "#ffffff" : "#334155";
+  switch (t.shape) {
+    case 'cup':
+      R(-3, -4.6, 6, 0.9, c); R(-2.6, -3.7, 5.2, 2.8, c); R(-1.6, -0.9, 3.2, 1, c);
+      R(-4, -4.2, 1, 2.6, c); R(3, -4.2, 1, 2.6, c); R(-3.6, -1.8, 0.8, 0.8, c); R(2.8, -1.8, 0.8, 0.8, c);
+      R(-0.5, 0.1, 1, 1.6, c); R(-2, 1.7, 4, 1, c); R(-1.9, -3.6, 0.8, 2.2, hi); break;
+    case 'star':
+      R(-0.6, -5, 1.2, 1.8, c); R(-4.2, -3.2, 8.4, 1.4, c); R(-2.6, -2, 5.2, 2.2, c);
+      R(-3, 0.2, 1.8, 1.6, c); R(1.2, 0.2, 1.8, 1.6, c); R(-0.4, 1.4, 0.8, 1.6, "#94a3b8"); R(-0.4, -4.6, 0.6, 1.2, hi); break;
+    case 'tower':
+      R(-2, -4, 4, 6.6, c); R(-2.6, -5, 1.2, 1.2, c); R(-0.6, -5, 1.2, 1.2, c); R(1.4, -5, 1.2, 1.2, c);
+      R(-0.6, -2.4, 1.2, 1.6, earned ? "#ef4444" : "#0f172a"); R(-1.8, -3.8, 0.6, 5.6, hi); break;
+    case 'invader': {
+      const m = INVADER_SPRITES[Math.floor(time * 2 + idx) % 2], v = 0.62;
+      for (let r = 0; r < m.length; r++) for (let k = 0; k < m[r].length; k++) if (m[r][k] === '#') R(-3.4 + k * v, -4.6 + r * v, v, v, c);
+      R(-0.4, 0.4, 0.8, 2.2, "#94a3b8"); break;
+    }
+    case 'gem':
+      R(-1, -5, 2, 1, c); R(-2, -4, 4, 1, c); R(-3, -3, 6, 1.4, c); R(-2, -1.6, 4, 1.1, c);
+      R(-1, -0.5, 2, 1.1, c); R(-0.4, 0.6, 0.8, 0.8, c); R(-0.4, 1.4, 0.8, 1.2, "#94a3b8"); R(-1.6, -3.8, 0.8, 1.6, hi); break;
+    case 'ship':
+      R(-0.5, -5, 1, 1.6, c); R(-1.1, -3.4, 2.2, 3.8, c); R(-3.6, -0.8, 7.2, 1.4, c); R(-3.6, -2, 1, 1.2, c); R(2.6, -2, 1, 1.2, c);
+      R(-0.6, -3, 1.2, 1, earned ? "#e0f2fe" : "#0f172a"); R(-0.9, 0.6, 1.8, 0.7, earned ? "#f97316" : "#0f172a"); R(-0.3, 1.3, 0.6, 1.3, "#94a3b8"); break;
+    case 'heart': {
+      const b = earned ? 1 + 0.08 * Math.sin(time * 5) : 1;
+      const H = (cx, cy, w, h) => R(cx * b, cy * b - 1, w * b, h * b, c);
+      H(-3, -4, 2.4, 1); H(0.6, -4, 2.4, 1); H(-3.5, -3, 7, 2); H(-2.5, -1, 5, 1); H(-1.5, 0, 3, 1); H(-0.5, 1, 1, 0.8);
+      R(-0.3, 1, 0.6, 1.6, "#94a3b8"); break;
+    }
+  }
+  // plinth + name plate
+  R(-2.6, 2.6, 5.2, 1.4, "#1c1917"); R(-1.8, 3.0, 3.6, 0.5, earned ? "#ca8a04" : "#292524");
+  if (earned && Math.sin(time * 1.7 + idx * 2.3) > 0.97) { R(1.2, -4.4, 0.6, 0.6, "#ffffff"); R(0.8, -4.0, 1.4, 0.3, "#ffffff"); }
+  ctx.restore();
+}
+
+function drawTrophySign(x, y, s, time) {
+  if (s < 2) return;
+  const fs = Math.max(5, Math.min(13, s * 0.78));
+  const flick = Math.sin(time * 23) > 0.92 ? 0.55 : 1;
+  ctx.save();
+  ctx.font = `bold ${fs}px monospace`; ctx.textAlign = "center";
+  ctx.globalAlpha = 0.35 * flick; ctx.fillStyle = "#f472b6";
+  ctx.fillText("TROPHIES", x + 1, y + 1); ctx.fillText("TROPHIES", x - 1, y - 1);
+  ctx.globalAlpha = flick; ctx.fillStyle = "#fbcfe8"; ctx.fillText("TROPHIES", x, y);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#86efac"; ctx.font = `bold ${Math.max(4, fs * 0.55)}px monospace`;
+  ctx.fillText(`${trophiesEarned.size}/${TROPHIES.length}`, x, y + fs * 0.85);
+  ctx.restore();
+}
+
+// Fluoro green lava, hot pink wax blobs. Drawn as a billboard (it is round anyway).
+function drawLavaLamp(x, y, s, time) {
+  if (s < 1) return;
+  const on = lavaLampOn;
+  const P = (px, py) => [x + px * s, y + py * s];
+  const poly = (pts, fill) => { ctx.fillStyle = fill; ctx.beginPath(); pts.forEach(([a, b], i) => { const q = P(a, b); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.fill(); };
+  ctx.save();
+  if (on) {
+    const pul = 0.85 + 0.15 * Math.sin(time * 1.3);
+    ctx.globalCompositeOperation = "lighter";
+    const dk = 1 - cabinLightLevel, GR = (7.5 + 9 * dk) * s;
+    ctx.globalAlpha = Math.min(1, (0.42 + 0.58 * dk) * pul);
+    ctx.drawImage(getGlow(["rgba(57,255,20,0.38)", "rgba(255,43,214,0.26)", "rgba(255,43,214,0)"]), x - GR, y - 0.4 * s - GR, GR * 2, GR * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+  // base (chrome cone) and cap
+  poly([[-1.15, 3.0], [1.15, 3.0], [0.7, 1.15], [-0.7, 1.15]], "#94a3b8");
+  poly([[0.35, 3.0], [1.15, 3.0], [0.7, 1.15], [0.25, 1.15]], "#64748b");
+  poly([[-1.15, 3.0], [1.15, 3.0], [1.15, 2.75], [-1.15, 2.75]], "#475569");
+  poly([[-0.42, -2.65], [0.42, -2.65], [0.25, -3.25], [-0.25, -3.25]], "#94a3b8");
+  // glass
+  const glass = [[-0.72, 1.15], [0.72, 1.15], [0.95, 0.2], [0.46, -2.65], [-0.46, -2.65], [-0.95, 0.2]];
+  const top = P(0, -2.65), bot = P(0, 1.15);
+  const lg = ctx.createLinearGradient(top[0], top[1], bot[0], bot[1]);
+  if (on) { lg.addColorStop(0, "#22c55e"); lg.addColorStop(0.6, "#39ff14"); lg.addColorStop(1, "#bef264"); }
+  else { lg.addColorStop(0, "#052e16"); lg.addColorStop(1, "#14532d"); }
+  poly(glass, lg);
+  ctx.save();
+  ctx.beginPath(); glass.forEach(([a, b], i) => { const q = P(a, b); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = on ? "#ff2bd6" : "#831843";
+  const T = on ? time : 0;
+  // molten pool at the bottom
+  ctx.beginPath(); ctx.ellipse(x, y + 1.05 * s, 0.85 * s, 0.32 * s, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 4; i++) {
+    const ph = i * 1.9, sp = 0.16 + i * 0.045;
+    const k = 0.5 - 0.5 * Math.cos(T * sp * Math.PI + ph);          // 0 = bottom, 1 = top
+    const by = 0.9 - k * 3.2;
+    const bx = Math.sin(T * 0.7 + ph * 2) * 0.22;
+    const r = (0.2 + 0.08 * i) * (1 - 0.25 * k);
+    const stretch = 1 + 0.5 * Math.abs(Math.sin(T * sp * Math.PI + ph));
+    ctx.beginPath(); ctx.ellipse(x + bx * s, y + by * s, r * s, r * s * stretch, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // glass sheen
+  ctx.fillStyle = "rgba(255, 255, 255, 0.28)"; ctx.fillRect(x - 0.55 * s, y - 2.3 * s, Math.max(1, 0.14 * s), 3.1 * s);
+  ctx.restore();
+  ctx.restore();
+}
+
+
+/* ==========================================================================
+   POLAROID WALL + INSTANT CAMERA DESK
+   A corkboard on the port side of the cockpit bulkhead. Each place you visit
+   develops a snapshot that stays pinned between runs (localStorage). The desk
+   underneath matches the lava lamp table and holds a retro instant camera -
+   tap it near the desk for a flash and a photo count.
+   ========================================================================== */
+const PHOTOS = [
+  { id: 'home',     cap: 'HOME WORLD',  hint: 'Land on the Home World' },
+  { id: 'iron',     cap: 'IRON WORLD',  hint: 'Land on an Iron world' },
+  { id: 'titanium', cap: 'TITANIUM',    hint: 'Land on a Titanium world' },
+  { id: 'plasma',   cap: 'PLASMA',      hint: 'Land on a Plasma Crystal world' },
+  { id: 'dark',     cap: 'DARK MATTER', hint: 'Land on a Dark Matter world' },
+  { id: 'cryo',     cap: 'CRYO WORLD',  hint: 'Land on a Cryo world' },
+  { id: 'monolith', cap: 'MONOLITH!',   hint: 'Destroy a Monolith' },
+  { id: 'et',       cap: 'E.T. + ME',   hint: 'Befriend E.T.' }
+];
+const photosTaken = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('vp3d_photos') || '[]')); } catch (e) { return new Set(); }
+})();
+let photoWallDirty = true, photoWallVersion = 0;
+function awardPhoto(id) {
+  if (!id || photosTaken.has(id)) return;
+  const ph = PHOTOS.find(p => p.id === id);
+  if (!ph) return;
+  photosTaken.add(id); photoWallDirty = true;
+  try { localStorage.setItem('vp3d_photos', JSON.stringify([...photosTaken])); } catch (e) {}
+  addPopup(`📸 SNAPSHOT: ${ph.cap} - PINNED TO YOUR POLAROID WALL`, "#f472b6");
+}
+function planetPhotoId(pl) {
+  if (!pl) return null;
+  if (pl.isHomeWorld || pl.name === "Home World") return 'home';
+  const ore = pl.ore && pl.ore.name;
+  return { "Iron": 'iron', "Titanium": 'titanium', "Plasma Crystal": 'plasma', "Dark Matter": 'dark', "Cryo Crystal": 'cryo' }[ore] || null;
+}
+function checkPhotos() {
+  if (!ship || gameOver) return;
+  if (gameMode === 'SURFACE' && landedPlanet && !surfacePassActive) awardPhoto(planetPhotoId(landedPlanet));
+  if (et.befriended) awardPhoto('et');
+}
+
+// Placement: port half of the cockpit bulkhead (z = 14), facing aft
+const PWALL = { x0: -16.6, x1: -8.4, yTop: -14.8, yBot: -7.4, z: 13.9 };
+const PDESK = { x0: -15.6, x1: -9.4, z0: 10.2, z1: 13.8, top: -4.4 };
+let cameraFlash = 0;
+
+const photoWallTex = document.createElement("canvas");
+photoWallTex.width = 240; photoWallTex.height = 216;
+function paintPhotoScene(g, id, x, y, w, h, t) {
+  const R = (a, b, c, d, col) => { g.fillStyle = col; g.fillRect(x + a, y + b, c, d); };
+  const sky = { home: ["#38bdf8", "#bae6fd"], iron: ["#475569", "#94a3b8"], titanium: ["#0c4a6e", "#38bdf8"], plasma: ["#3b0764", "#a855f7"],
+    dark: ["#1c0306", "#7f1d1d"], cryo: ["#a5f3fc", "#ecfeff"], monolith: ["#1e1b4b", "#6d28d9"], et: ["#020617", "#1e3a8a"] }[id];
+  const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, sky[0]); gr.addColorStop(1, sky[1]);
+  g.fillStyle = gr; g.fillRect(x, y, w, h);
+  const hz = Math.round(h * 0.62);
+  if (id === 'home') { R(w - 11, 4, 6, 6, "#fde047"); R(0, hz, w, h - hz, "#16a34a"); R(0, hz, w, 2, "#4ade80"); R(6, hz - 6, 3, 6, "#166534"); R(4, hz - 9, 7, 4, "#22c55e"); }
+  else if (id === 'iron') { R(0, hz, w, h - hz, "#64748b"); for (let i = 0; i < 4; i++) R(3 + i * 9, hz - 3 - (i % 2) * 3, 6, 4 + (i % 2) * 3, "#334155"); R(w - 10, 5, 5, 5, "#e2e8f0"); }
+  else if (id === 'titanium') { R(0, hz, w, h - hz, "#0369a1"); R(8, hz - 8, 4, 8, "#7dd3fc"); R(22, hz - 5, 3, 5, "#bae6fd"); R(4, 5, 3, 3, "#ffffff"); }
+  else if (id === 'plasma') { R(0, hz, w, h - hz, "#581c87"); for (let i = 0; i < 3; i++) { R(5 + i * 11, hz - 7 - i * 2, 4, 7 + i * 2, "#e879f9"); R(6 + i * 11, hz - 6 - i * 2, 1, 4, "#fae8ff"); } }
+  else if (id === 'dark') { R(0, hz, w, h - hz, "#0a0a0a"); R(w / 2 - 4, 4, 8, 8, "#f43f5e"); R(w / 2 - 2, 6, 4, 4, "#1c0306"); R(4, hz - 4, 8, 4, "#3f0d12"); R(w - 14, hz - 6, 9, 6, "#3f0d12"); }
+  else if (id === 'cryo') { R(0, hz, w, h - hz, "#f0f9ff"); R(6, hz - 10, 7, 10, "#67e8f9"); R(8, hz - 13, 3, 3, "#cffafe"); R(24, hz - 6, 6, 6, "#22d3ee"); for (let i = 0; i < 6; i++) R((i * 13 + 3) % w, 3 + (i * 7) % 12, 1, 1, "#ffffff"); }
+  else if (id === 'monolith') { R(0, hz, w, h - hz, "#2e1065"); R(w / 2 - 3, hz - 15, 6, 15, "#020617"); R(w / 2 - 2, hz - 14, 1, 13, "#a78bfa"); R(w / 2 - 6, hz - 1, 12, 1, "#c4b5fd"); }
+  else if (id === 'et') {
+    for (let i = 0; i < 7; i++) R((i * 11 + 2) % w, 2 + (i * 5) % 10, 1, 1, "#ffffff");
+    R(w - 12, 3, 8, 8, "#fef9c3");
+    R(0, hz + 4, w, h - hz - 4, "#14532d");
+    const spr = ET_FRONT_1, px = 1;
+    const ox = Math.round(w / 2 - 5), oy = hz + 6 - spr.length * px;
+    for (let r = 0; r < spr.length; r++) for (let k = 0; k < spr[r].length; k++) {
+      const ch = spr[r][k]; if (ch === ' ') continue;
+      R(ox + k * px, oy + r * px, px, px, ch === '.' ? "#fef08a" : (ch === '*' ? "#ef4444" : "#a16207"));
+    }
+  }
+}
+function updatePhotoWallTex(t) {
+  if (!photoWallDirty) return;
+  photoWallDirty = false; photoWallVersion++;
+  const g = photoWallTex.getContext("2d"), W = photoWallTex.width, H = photoWallTex.height;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // cork board with a wood frame
+  g.fillStyle = "#5b3415"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#b07a44"; g.fillRect(6, 6, W - 12, H - 12);
+  for (let i = 0; i < 900; i++) { const v = (i * 7919) % 997 / 997; g.fillStyle = v > 0.5 ? "#9a6533" : "#c28f58"; g.fillRect(6 + (i * 37) % (W - 13), 6 + (i * 61) % (H - 13), 2, 1); }
+  // title strip
+  g.fillStyle = "#fef3c7"; g.save(); g.translate(W / 2, 19); g.rotate(-0.03); g.fillRect(-58, -9, 116, 16);
+  g.fillStyle = "#db2777"; g.font = "bold 11px monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("CAPTAIN'S LOG", 0, 0); g.restore();
+  const cols = 4, pw = 46, ph = 56, gapX = (W - 12 - cols * pw) / (cols + 1);
+  PHOTOS.forEach((pd, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const cx = 6 + gapX + col * (pw + gapX) + pw / 2, cy = 40 + row * (ph + 26) + ph / 2;
+    const rot = (((i * 37) % 9) - 4) * 0.025;
+    g.save(); g.translate(cx, cy); g.rotate(rot);
+    g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(-pw / 2 + 2, -ph / 2 + 3, pw, ph);           // drop shadow
+    const got = photosTaken.has(pd.id);
+    g.fillStyle = got ? "#fafaf9" : "#d6d3d1"; g.fillRect(-pw / 2, -ph / 2, pw, ph);         // white polaroid frame
+    const ix = -pw / 2 + 4, iy = -ph / 2 + 4, iw = pw - 8, ih = pw - 8;
+    if (got) paintPhotoScene(g, pd.id, ix, iy, iw, ih, t);
+    else { g.fillStyle = "#3f3a36"; g.fillRect(ix, iy, iw, ih); g.fillStyle = "#57514c"; g.font = "bold 14px monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", 0, iy + ih / 2); }
+    g.fillStyle = got ? "#1e293b" : "#78716c"; g.font = "bold 7px monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(got ? pd.cap : "UNDEVELOPED", 0, ph / 2 - 6);
+    g.fillStyle = ["#ef4444", "#22c55e", "#3b82f6", "#facc15", "#ec4899"][i % 5]; g.fillRect(-2, -ph / 2 - 2, 4, 4);  // push pin
+    g.fillStyle = "rgba(255,255,255,0.7)"; g.fillRect(-1, -ph / 2 - 2, 1, 1);
+    g.restore();
+  });
+}
+
+// Retro instant camera (billboard): chunky cream body, neon stripe, big lens, photo poking out
+function drawInstantCamera(x, y, s, time) {
+  if (s < 1) return;
+  const u = Math.max(0.4, s * 0.22);
+  const R = (cx, cy, w, h, col) => { ctx.fillStyle = litCol(col); ctx.fillRect(Math.round(x + cx * u), Math.round(y + cy * u), Math.max(1, Math.ceil(w * u)), Math.max(1, Math.ceil(h * u))); };
+  ctx.save();
+  R(-6, 3, 12, 1.4, "#e7e5e4");                     // photo sliding out the front
+  R(-5, 3, 10, 0.6, "#3f3a36");
+  R(-7.5, -4.6, 15, 8, "#1c1917");                  // outline
+  R(-7, -4, 14, 7, "#f5f5f4");                      // cream body
+  R(-7, -4, 14, 1.4, "#d6d3d1");                    // top shading
+  R(-7, -0.8, 14, 0.9, "#ff2bd6"); R(-7, 0.1, 14, 0.9, "#39ff14");   // neon stripe
+  R(3.4, -6, 3.6, 2.2, "#1c1917"); R(3.8, -5.6, 2.8, 1.5, "#44403c");  // viewfinder hump
+  R(-6.2, -3.4, 3, 1.6, "#a5f3fc");                 // flash window
+  R(-2.6, -3.2, 5.2, 5.2, "#1c1917");               // lens barrel
+  R(-1.8, -2.4, 3.6, 3.6, "#0c4a6e"); R(-0.9, -1.5, 1.4, 1.4, "#38bdf8"); R(-1.4, -2, 0.6, 0.6, "#ffffff");
+  R(4.2, -3.2, 1.6, 1.2, "#ef4444");                // shutter button
+  ctx.restore();
+}
+
+
+/* ==========================================================================
+   CABIN LIGHTS PANEL
+   A chunky toggle switch on the starboard side of the cockpit bulkhead.
+   Lights off drops the room to a dim ambient so the lava lamp, screens,
+   neon sign and status LEDs light it instead. Switching back on gives the
+   ceiling strips a fluorescent start-up flicker.
+   ========================================================================== */
+let cabinLightsOn = true, cabinLightLevel = 1, cabinLightFlicker = 0;
+const LPANEL = { x0: 8.6, x1: 11.8, yTop: -12.4, yBot: -6.4, z: 13.75 };
+const LAVA_GLOW = () => [LAVA.x, LAVA.tableTop - 3.5, LAVA.z];
+function toggleCabinLights() {
+  cabinLightsOn = !cabinLightsOn;
+  if (cabinLightsOn) cabinLightFlicker = 0.75;
+  playSfx('hullClang'); vibrateGamepad(70, 0.3, 0.2);
+  addPopup(cabinLightsOn ? "CABIN LIGHTS ON" : (lavaLampOn ? "LIGHTS OFF. MOOD: GROOVY" : "LIGHTS OFF"), cabinLightsOn ? "#e0f2fe" : "#ff2bd6");
+}
+function stepCabinLights(dt) {
+  const tgt = cabinLightsOn ? 1 : 0;
+  if (cabinLightFlicker > 0) {
+    cabinLightFlicker -= dt;
+    cabinLightLevel = Math.random() < 0.45 ? 1 : 0.15;
+    if (cabinLightFlicker <= 0) cabinLightLevel = tgt;
+  } else {
+    cabinLightLevel += (tgt - cabinLightLevel) * Math.min(1, dt * 9);
+  }
+}
+// Darken a billboard prop with the room lights (lit props like the lava lamp skip this)
+// (No canvas filters: they are very slow on phones. Props pass their colours through
+// litCol(), which darkens them from a small cache while spriteDimF < 1.)
+let spriteDimF = 1;
+// Soft glow blobs pre-rendered once per colour and reused with drawImage
+// (building radial gradients every frame is slow on mobile).
+const glowCache = new Map();
+function getGlow(stops) {
+  const key = stops.join('|');
+  let cv = glowCache.get(key);
+  if (!cv) {
+    cv = document.createElement("canvas"); cv.width = cv.height = 64;
+    const g = cv.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    glowCache.set(key, cv);
+  }
+  return cv;
+}
+const litColCache = new Map();
+function litCol(col) {
+  if (spriteDimF >= 0.99 || typeof col !== 'string' || col[0] !== '#') return col;
+  const key = col + spriteDimF;
+  let out = litColCache.get(key);
+  if (!out) {
+    let h = col.slice(1);
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h.slice(0, 6), 16);
+    out = `rgb(${Math.round(((n >> 16) & 255) * spriteDimF)},${Math.round(((n >> 8) & 255) * spriteDimF)},${Math.round((n & 255) * spriteDimF)})`;
+    if (litColCache.size > 600) litColCache.clear();
+    litColCache.set(key, out);
+  }
+  return out;
+}
+function dimSprite(draw) {
+  return (x, y, s) => {
+    if (cabinLightLevel > 0.98) return draw(x, y, s);
+    spriteDimF = Math.round((0.28 + 0.72 * cabinLightLevel) * 20) / 20;
+    try { draw(x, y, s); } finally { spriteDimF = 1; }
+  };
+}
+function drawLightPanelLabel(x, y, s) {
+  if (s < 2) return;
+  ctx.save();
+  ctx.font = `bold ${Math.max(4, Math.min(9, s * 0.5))}px monospace`; ctx.textAlign = "center";
+  ctx.fillStyle = cabinLightLevel > 0.5 ? "#cbd5e1" : "#7dd3fc";
+  ctx.fillText("CABIN LIGHTS", x, y);
+  ctx.font = `bold ${Math.max(3, Math.min(7, s * 0.38))}px monospace`;
+  ctx.fillStyle = cabinLightsOn ? "#4ade80" : "#475569"; ctx.fillText("ON", x + s * 1.3, y + s * 1.45);
+  ctx.fillStyle = cabinLightsOn ? "#475569" : "#f87171"; ctx.fillText("OFF", x + s * 1.3, y + s * 3.2);
+  ctx.restore();
+}
+
 // ---------- Geometry ----------
 let cabinStaticFaces = null;
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -6840,30 +7711,31 @@ function cabBox(faces, x0, x1, y0, y1, z0, z1, col, opts) {
 // Layout: cockpit forward (+z), engine bulkhead aft (z=-44) with the EVA rack
 // against it, scan terminal on the port wall, airlock straight across from it
 // in the starboard wall (x=+12) leading out to a side chamber and hatch.
-const AL = { z0: -27.5, z1: -17.5, zc: -22.5, cx0: 12, cx1: 28 }; // airlock door span + chamber extent
+const AL = { z0: -27.5, z1: -17.5, zc: -22.5, cx0: CAB_HW, cx1: CAB_HW + 16 }; // airlock door span + chamber extent
 function buildCabinStatic() {
   const F = [];
   const WALL = "#1e293b", WALL2 = "#24324a", TRIM = "#0f172a", FLOOR = "#334155", FLOOR2 = "#2a3648", CEIL = "#162033";
   // floor (cabin + cockpit), ceiling
-  cabRect(F, 'y', 0, -12, 12, -44, 30, [0, -1, 0], FLOOR, 6, { alt: FLOOR2, layer: 0 });
-  cabRect(F, 'y', -18, -12, 12, -44, 14, [0, 1, 0], CEIL, 8, { layer: 0 });
+  cabRect(F, 'y', 0, -CAB_HW, CAB_HW, -44, 14, [0, -1, 0], FLOOR, 6, { alt: FLOOR2, layer: 0 });
+  cabRect(F, 'y', 0, -12, 12, 14, 30, [0, -1, 0], FLOOR, 6, { alt: FLOOR2, layer: 0 });
+  cabRect(F, 'y', -18, -CAB_HW, CAB_HW, -44, 14, [0, 1, 0], CEIL, 8, { layer: 0 });
   cabRect(F, 'y', -18, -12, 12, 14, 30, [0, 1, 0], CEIL, 8, { layer: 0 });
   // hazard stripes in front of the starboard airlock
-  for (let i = 0; i < 5; i++) cabRect(F, 'y', -0.05, 8.5, 12, AL.z0 + i * 2, AL.z0 + 2 + i * 2, [0, -1, 0], i % 2 ? "#111827" : "#eab308", null, { layer: 1 });
+  for (let i = 0; i < 5; i++) cabRect(F, 'y', -0.05, CAB_HW - 3.5, CAB_HW, AL.z0 + i * 2, AL.z0 + 2 + i * 2, [0, -1, 0], i % 2 ? "#111827" : "#eab308", null, { layer: 1 });
   // port wall (full) and starboard wall (with the airlock opening), kick + crown trim
   const sideWall = (sx, z0, z1) => {
-    cabRect(F, 'x', 12 * sx, z0, z1, -16, -2, [-sx, 0, 0], WALL, 7, { alt: WALL2, layer: 0 });
-    cabRect(F, 'x', 12 * sx, z0, z1, -2, 0, [-sx, 0, 0], TRIM, 7, { layer: 0 });
-    cabRect(F, 'x', 12 * sx, z0, z1, -18, -16, [-sx, 0, 0], TRIM, 7, { layer: 0 });
+    cabRect(F, 'x', CAB_HW * sx, z0, z1, -16, -2, [-sx, 0, 0], WALL, 7, { alt: WALL2, layer: 0 });
+    cabRect(F, 'x', CAB_HW * sx, z0, z1, -2, 0, [-sx, 0, 0], TRIM, 7, { layer: 0 });
+    cabRect(F, 'x', CAB_HW * sx, z0, z1, -18, -16, [-sx, 0, 0], TRIM, 7, { layer: 0 });
   };
   sideWall(-1, -44, 14);
   sideWall(1, -44, AL.z0 - 0.8);
   sideWall(1, AL.z1 + 0.8, 14);
-  cabRect(F, 'x', 12, AL.z0 - 0.8, AL.z1 + 0.8, -18, -14, [-1, 0, 0], TRIM, 5, { layer: 0 });
+  cabRect(F, 'x', CAB_HW, AL.z0 - 0.8, AL.z1 + 0.8, -18, -14, [-1, 0, 0], TRIM, 5, { layer: 0 });
   // chunky airlock door frame on the cabin side
-  cabBox(F, 11.2, 12, -14.8, 0, AL.z0 - 0.8, AL.z0, "#52525b", { edge: "#71717a" });
-  cabBox(F, 11.2, 12, -14.8, 0, AL.z1, AL.z1 + 0.8, "#52525b", { edge: "#71717a" });
-  cabBox(F, 11.2, 12, -14, -14.8, AL.z0, AL.z1, "#52525b", { edge: "#71717a" });
+  cabBox(F, CAB_HW - 0.8, CAB_HW, -14.8, 0, AL.z0 - 0.8, AL.z0, "#52525b", { edge: "#71717a" });
+  cabBox(F, CAB_HW - 0.8, CAB_HW, -14.8, 0, AL.z1, AL.z1 + 0.8, "#52525b", { edge: "#71717a" });
+  cabBox(F, CAB_HW - 0.8, CAB_HW, -14, -14.8, AL.z0, AL.z1, "#52525b", { edge: "#71717a" });
   // cockpit side walls: low wall, side windows, roof strip, with a strut
   for (const sx of [-1, 1]) {
     cabRect(F, 'x', 12 * sx, 14, 30, -6, 0, [-sx, 0, 0], WALL, 6, { layer: 0 });
@@ -6879,16 +7751,24 @@ function buildCabinStatic() {
   }
   cabBox(F, -4.3, -3.4, -14.5, -15.4, 29.2, 29.85, "#334155");   // dice mount on the arch
   // bulkhead between cabin and cockpit (double sided, wide doorway)
-  cabRect(F, 'z', 14, -12, -7, -18, 0, null, WALL2, 6);
-  cabRect(F, 'z', 14, 7, 12, -18, 0, null, WALL2, 6);
+  // port half has a cut-out the polaroid board is framed into, so the board never has to
+  // depth-fight the wall behind it (and the wall still hides the cockpit as normal)
+  {
+    const hx0 = PWALL.x0 - 0.3, hx1 = PWALL.x1 + 0.3, hy0 = PWALL.yTop - 0.3, hy1 = PWALL.yBot + 0.3;
+    cabRect(F, 'z', 14, -CAB_HW, hx0, -18, 0, null, WALL2, 6);
+    cabRect(F, 'z', 14, hx1, -7, -18, 0, null, WALL2, 6);
+    cabRect(F, 'z', 14, hx0, hx1, -18, hy0, null, WALL2, 6);
+    cabRect(F, 'z', 14, hx0, hx1, hy1, 0, null, WALL2, 6);
+  }
+  cabRect(F, 'z', 14, 7, CAB_HW, -18, 0, null, WALL2, 6);
   cabRect(F, 'z', 14, -7, 7, -18, -15.5, null, TRIM, 7);
   // aft engine bulkhead: solid, heavy plating, coolant pipes, warning lamps
-  cabRect(F, 'z', -44, -12, 12, -18, 0, [0, 0, 1], "#1a2433", 6, { alt: "#202c3e", layer: 0 });
-  for (const px of [-9.8, 8.2]) {
+  cabRect(F, 'z', -44, -CAB_HW, CAB_HW, -18, 0, [0, 0, 1], "#1a2433", 6, { alt: "#202c3e", layer: 0 });
+  for (const px of [-9.8, 8.2, -CAB_HW + 2.2, CAB_HW - 3.8]) {
     cabBox(F, px, px + 1.6, 0, -18, -44, -42.6, "#7c2d12", { front: "#9a3412", edge: "#c2410c" });
     for (let y = -3; y > -17; y -= 4.5) cabBox(F, px - 0.2, px + 1.8, y, y - 0.6, -44, -42.4, "#57534e");
   }
-  for (let x = -12; x < 12; x += 6) cabBox(F, x, x + 6, -17.2, -18, -44, -43, "#57534e", { edge: "#78716c" });
+  for (let x = -CAB_HW; x < CAB_HW; x += 6) cabBox(F, x, x + 6, -17.2, -18, -44, -43, "#57534e", { edge: "#78716c" });
   // airlock chamber off the starboard side
   for (const sz of [AL.z0 - 1, AL.z1 + 1]) cabRect(F, 'z', sz, AL.cx0, AL.cx1, -15, 0, [0, 0, sz < AL.zc ? 1 : -1], "#27272a", 5, { alt: "#303036" });
   cabRect(F, 'y', -15, AL.cx0, AL.cx1, AL.z0 - 1, AL.z1 + 1, [0, 1, 0], "#18181b", 6, { layer: 0 });
@@ -6896,11 +7776,11 @@ function buildCabinStatic() {
   cabRect(F, 'x', AL.cx1, AL.z0 - 1, AL.z0 + 0.5, -15, 0, null, "#52525b", null);
   cabRect(F, 'x', AL.cx1, AL.z1 - 0.5, AL.z1 + 1, -15, 0, null, "#52525b", null);
   cabRect(F, 'x', AL.cx1, AL.z0 + 0.5, AL.z1 - 0.5, -15, -13, null, "#52525b", null);
-  cabRect(F, 'y', -14.97, 17, 23, AL.zc - 1, AL.zc + 1, [0, 1, 0], "#e0f2fe", null, { emissive: true, layer: 1 });
+  cabRect(F, 'y', -14.97, AL.cx0 + 5, AL.cx0 + 11, AL.zc - 1, AL.zc + 1, [0, 1, 0], "#e0f2fe", null, { emissive: true, layer: 1 });
   // chamber side of the starboard wall around the inner door (seen while cycling)
-  cabRect(F, 'x', 12.02, AL.z0 - 1, AL.z0, -15, 0, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
-  cabRect(F, 'x', 12.02, AL.z1, AL.z1 + 1, -15, 0, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
-  cabRect(F, 'x', 12.02, AL.z0, AL.z1, -15, -14, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
+  cabRect(F, 'x', CAB_HW + 0.02, AL.z0 - 1, AL.z0, -15, 0, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
+  cabRect(F, 'x', CAB_HW + 0.02, AL.z1, AL.z1 + 1, -15, 0, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
+  cabRect(F, 'x', CAB_HW + 0.02, AL.z0, AL.z1, -15, -14, [1, 0, 0], "#3f3f46", null, { zone: "ch", layer: 0 });
   // pilot seat swivel pedestal (the seat itself is dynamic so it can turn)
   cabBox(F, -0.9, 0.9, 0, -2.2, CAB.seatZ - 0.9, CAB.seatZ + 0.9, "#475569", { edge: "#64748b" });
   cabBox(F, -2.4, 2.4, 0, -0.4, CAB.seatZ - 2.4, CAB.seatZ + 2.4, "#1f2937");
@@ -6909,14 +7789,15 @@ function buildCabinStatic() {
   // EVA suit rack against the engine bulkhead: slatted back panel, hazard posts,
   // header, helmet shelf, laser holster pegs, O2 tanks, power conduit
   const RK = "#374151", RKE = "#6b7280", RZ = -41.2;
-  cabBox(F, -5.8, 5.8, -0.5, -17, -44, -43.4, "#1f2937", { edge: "#4b5563" });
-  for (let x = -5; x < 5; x += 1.6) cabBox(F, x, x + 0.5, -1, -15.6, -43.4, -43.2, "#2b3544");
+  cabBox(F, -5.8, 5.8, -0.5, -17, -44, -43.4, "#1f2937", { edge: "#4b5563", bias: -2 });   // rack layering: back panel < gear < posts/header
+  for (let x = -5; x < 5; x += 1.6) cabBox(F, x, x + 0.5, -1, -15.6, -43.4, -43.2, "#2b3544", { bias: -1.5 });
   for (const x0 of [-5.8, 5.1]) {
-    cabBox(F, x0, x0 + 0.7, 0, -17, -44, RZ, RK, { edge: RKE });
-    for (let k = 0; k < 8; k++) cabRect(F, 'z', RZ + 0.05, x0, x0 + 0.7, -1 - k * 2, -2 - k * 2, [0, 0, 1], k % 2 ? "#111827" : "#eab308", null, { bias: 1 });
+    cabBox(F, x0, x0 + 0.7, 0, -17, -44, RZ, RK, { edge: RKE, bias: 1.5 });
+    // stripes sort from the post's own centre, so the top ones never drop behind the post
+    for (let k = 0; k < 8; k++) cabRect(F, 'z', RZ + 0.05, x0, x0 + 0.7, -1 - k * 2, -2 - k * 2, [0, 0, 1], k % 2 ? "#111827" : "#eab308", null, { bias: 1.8, anchor: [x0 + 0.35, -8.5, RZ] });
   }
-  cabBox(F, -5.8, 5.8, -15.6, -17, -44, RZ, RK, { edge: RKE });
-  cabRect(F, 'z', RZ + 0.05, -5.1, 5.1, -15.75, -16.85, [0, 0, 1], "#0f172a", null, { edge: "#334155", bias: 1 });
+  cabBox(F, -5.8, 5.8, -15.6, -17, -44, RZ, RK, { edge: RKE, bias: 1.5 });
+  cabRect(F, 'z', RZ + 0.05, -5.1, 5.1, -15.75, -16.85, [0, 0, 1], "#0f172a", null, { edge: "#334155", bias: 1.8, anchor: [0, -16.3, RZ] });
   cabBox(F, 0.2, 4.8, -10.6, -11.1, -43.4, -41.6, "#4b5563", { edge: RKE });       // helmet shelf
   cabBox(F, 0.4, 1.0, -11.1, -12, -43.4, -42.6, "#4b5563");                      // shelf brackets
   cabBox(F, 4.0, 4.6, -11.1, -12, -43.4, -42.6, "#4b5563");
@@ -6926,32 +7807,68 @@ function buildCabinStatic() {
   }
   cabBox(F, -4.9, -3.8, -1.2, -7.2, -43.4, -42.3, "#ea580c", { top: "#f8fafc" }); // O2 tanks
   cabBox(F, -4.9, -3.8, -1.2, -6.4, -42.2, -41.6, "#c2410c", { top: "#f8fafc" });
-  cabBox(F, 4.5, 4.8, -7.4, -15.4, -43.4, -43.0, "#facc15");                    // power conduit
+  cabBox(F, 4.5, 4.8, -7.4, -15.4, -43.4, -43.0, "#facc15", { bias: -1 });                    // power conduit
   // CRT scan terminal on the port wall, straight across from the airlock
-  cabBox(F, -12, -9.6, -5.4, -14.6, -27.2, -18.2, "#27272a", { edge: "#52525b" });
-  cabBox(F, -12, -8.4, -4.6, -5.4, -26.6, -18.8, "#3f3f46", { top: "#52525b", edge: "#71717a" });
-  for (let k = 0; k < 10; k++) cabBox(F, -9.6, -8.8, -5.4, -5.6, -26 + k * 0.72, -25.5 + k * 0.72, "#18181b");
-  cabRect(F, 'x', -9.55, -26.4, -19.0, -13.9, -6.2, [1, 0, 0], "#000000", null, { emissive: true, tex: cabinCrt, grid: [7, 5], crt: true, anchor: [-9.6, -10, -22.7], bias: 0.05 });
-  cabBox(F, -9.6, -9.3, -6.0, -5.6, -19.8, -19.2, "#22c55e", { emissive: true, blink: { rate: 0.5, phase: 1 } });
+  const P = CAB_PO;
+  cabBox(F, -12 + P, -9.6 + P, -5.4, -14.6, -27.2, -18.2, "#27272a", { edge: "#52525b" });
+  cabBox(F, -12 + P, -8.4 + P, -4.6, -5.4, -26.6, -18.8, "#3f3f46", { top: "#52525b", edge: "#71717a" });
+  for (let k = 0; k < 10; k++) cabBox(F, -9.6 + P, -8.8 + P, -5.4, -5.6, -26 + k * 0.72, -25.5 + k * 0.72, "#18181b");
+  cabRect(F, 'x', -9.55 + P, -26.4, -19.0, -13.9, -6.2, [1, 0, 0], "#000000", null, { emissive: true, tex: cabinCrt, grid: [7, 5], crt: true, anchor: [-9.6 + P, -10, -22.7], bias: 0.05 });
+  cabBox(F, -9.6 + P, -9.3 + P, -6.0, -5.6, -19.8, -19.2, "#22c55e", { emissive: true, blink: { rate: 0.5, phase: 1 } });
+  // TROPHY SHELF: walnut back panel, two boards on chrome brackets
+  // back panel sits flat on the wall: drawn in the decal layer so trophies/sign never sort behind it
+  cabBox(F, SHELF.x0, SHELF.x0 + 0.35, -2.6, -16.4, SHELF.z0 - 0.4, SHELF.z1 + 0.4, "#4a2a12", { edge: "#7c4a21", layer: 1 });
+  for (const sy of SHELF.ys) {
+    // Board faces are tiled so each tile sorts against the trophy right above it. The top
+    // is biased back (plinths always paint over it); the underside and front lip are biased
+    // forward so, seen from below or level, they correctly hide the plinths behind them.
+    const bx0 = SHELF.x0 + 0.35, bx1 = SHELF.x0 + SHELF.depth, bt = sy - 0.45, bb = sy + 0.15, T = 4.25;
+    cabRect(F, 'y', bt, bx0, bx1, SHELF.z0, SHELF.z1, [0, -1, 0], "#a8703c", T, { bias: -1.2 });
+    cabRect(F, 'y', bb, bx0, bx1, SHELF.z0, SHELF.z1, [0, 1, 0], "#5c3a1a", T, { bias: 0.6 });
+    cabRect(F, 'x', bx1, SHELF.z0, SHELF.z1, bt, bb, [1, 0, 0], "#6b3f1d", T, { edge: "#c08457", bias: 0.4 });
+    cabRect(F, 'z', SHELF.z0, bx0, bx1, bt, bb, [0, 0, -1], "#6b3f1d", null, { edge: "#c08457" });
+    cabRect(F, 'z', SHELF.z1, bx0, bx1, bt, bb, [0, 0, 1], "#6b3f1d", null, { edge: "#c08457" });
+    for (const bz of [SHELF.z0 + 1, SHELF.z1 - 1.2]) cabBox(F, SHELF.x0 + 0.35, SHELF.x0 + 1.1, sy + 0.9, sy + 0.15, bz, bz + 0.25, "#64748b");
+  }
+  // LAVA LAMP side table: chrome legs, retro teal top with a gold edge
+  for (const [lx, lz] of [[-1.7, -1.7], [1.4, -1.7], [-1.7, 1.4], [1.4, 1.4]]) cabBox(F, LAVA.x + lx, LAVA.x + lx + 0.3, 0, LAVA.tableTop, LAVA.z + lz, LAVA.z + lz + 0.3, "#94a3b8");
+  cabBox(F, LAVA.x - 2, LAVA.x + 2, LAVA.tableTop, LAVA.tableTop - 0.5, LAVA.z - 2, LAVA.z + 2, "#0d9488", { top: "#14b8a6", edge: "#facc15" });
+  cabBox(F, LAVA.x - 1.6, LAVA.x + 1.6, -1.2, -1.5, LAVA.z - 1.6, LAVA.z + 1.6, "#0f766e");
+  // POLAROID WALL: cork board (live texture) on the port half of the cockpit bulkhead
+  cabBox(F, PWALL.x0 - 0.3, PWALL.x1 + 0.3, PWALL.yTop - 0.3, PWALL.yBot + 0.3, PWALL.z + 0.02, 14, "#5b3415", { front: WALL2 });
+  cabRect(F, 'z', PWALL.z, PWALL.x0, PWALL.x1, PWALL.yTop, PWALL.yBot, [0, 0, -1], "#b07a44", null, { tex: photoWallTex, grid: [8, 6], seam: 1.3, dim: true, anchor: [(PWALL.x0 + PWALL.x1) / 2, (PWALL.yTop + PWALL.yBot) / 2, PWALL.z], bias: 0.6 });
+  // CABIN LIGHTS PANEL: brushed plate with a recessed switch slot (biased forward so the
+  // bulkhead tiles behind it never paint over it)
+  cabBox(F, LPANEL.x0, LPANEL.x1, LPANEL.yTop, LPANEL.yBot, LPANEL.z, 14, "#334155", { front: "#3f4b5f", edge: "#64748b", bias: 1.5 });
+  cabBox(F, LPANEL.x0 + 1.1, LPANEL.x1 - 1.1, LPANEL.yTop + 1.6, LPANEL.yBot - 1.4, LPANEL.z - 0.08, LPANEL.z, "#0f172a", { bias: 1.6 });
+  for (const sx of [LPANEL.x0 + 0.35, LPANEL.x1 - 0.65]) for (const sy of [LPANEL.yTop + 0.35, LPANEL.yBot - 0.65])
+    cabBox(F, sx, sx + 0.3, sy, sy + 0.3, LPANEL.z - 0.06, LPANEL.z, "#94a3b8", { bias: 1.6 });   // screws
+  // CAMERA DESK: same retro style as the lava lamp table (chrome legs, teal top, gold edge)
+  for (const lx of [PDESK.x0 + 0.3, PDESK.x1 - 0.6]) for (const lz of [PDESK.z0 + 0.3, PDESK.z1 - 0.6])
+    cabBox(F, lx, lx + 0.3, 0, PDESK.top, lz, lz + 0.3, "#94a3b8");
+  cabBox(F, PDESK.x0, PDESK.x1, PDESK.top, PDESK.top - 0.5, PDESK.z0, PDESK.z1, "#0d9488", { top: "#14b8a6", edge: "#facc15" });
+  cabBox(F, PDESK.x0 + 0.4, PDESK.x1 - 0.4, -1.2, -1.5, PDESK.z0 + 0.4, PDESK.z1 - 0.4, "#0f766e");
   // ceiling light strips (emissive)
   for (let z = -40; z < 12; z += 10) {
-    cabRect(F, 'y', -17.98, -1.8, 1.8, z - 0.6, z + 6.6, [0, 1, 0], "#334155", null, { layer: 1 });
-    cabRect(F, 'y', -17.97, -1.2, 1.2, z, z + 6, [0, 1, 0], "#e0f2fe", null, { emissive: true, layer: 1, bias: 0.2, strip: Math.round((z + 40) / 10) });
+    for (const lx of [0, -CAB_HW * 0.55, CAB_HW * 0.55]) {   // centre strip + port/starboard strips for the wider hold
+      cabRect(F, 'y', -17.98, lx - 1.8, lx + 1.8, z - 0.6, z + 6.6, [0, 1, 0], "#334155", null, { layer: 1 });
+      cabRect(F, 'y', -17.97, lx - 1.2, lx + 1.2, z, z + 6, [0, 1, 0], "#e0f2fe", null, { emissive: true, layer: 1, bias: 0.2, strip: Math.round((z + 40) / 10) });
+    }
   }
   // wall greeble: vents + crown pipes
   for (let z = -40; z < 12; z += 13) {
-    cabBox(F, -12, -11.5, -14, -15.5, z, z + 6, "#475569");
-    if (z + 9 < AL.z0 - 1 || z + 3 > AL.z1 + 1) cabBox(F, 11.5, 12, -14, -15.5, z + 3, z + 9, "#475569");
+    if (z + 6 < SHELF.z0 - 0.5 || z > SHELF.z1 + 0.5) cabBox(F, -CAB_HW, -CAB_HW + 0.5, -14, -15.5, z, z + 6, "#475569"); // no vents behind the trophy shelf
+    if (z + 9 < AL.z0 - 1 || z + 3 > AL.z1 + 1) cabBox(F, CAB_HW - 0.5, CAB_HW, -14, -15.5, z + 3, z + 9, "#475569");
   }
   for (let z = -44; z < 14; z += 5.8) {
-    cabBox(F, -12, -11.3, -16.6, -17.3, z, Math.min(14, z + 5.8), "#64748b");
-    cabBox(F, 11.3, 12, -16.6, -17.3, z, Math.min(14, z + 5.8), "#64748b");
+    cabBox(F, -CAB_HW, -CAB_HW + 0.7, -16.6, -17.3, z, Math.min(14, z + 5.8), "#64748b");
+    cabBox(F, CAB_HW - 0.7, CAB_HW, -16.6, -17.3, z, Math.min(14, z + 5.8), "#64748b");
   }
   // blinking status lights
   const blink = [["#22c55e", 1.3], ["#f59e0b", 0.7], ["#38bdf8", 2.1], ["#ef4444", 0.9]];
   blink.forEach(([colr, rate], i) => {
-    cabBox(F, -12, -11.6, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 4 + i * 2, 5 + i * 2, colr, { emissive: true, blink: { rate, phase: i } });
-    cabBox(F, 11.6, 12, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 6 + i * 2, 7 + i * 2, blink[(i + 2) % 4][0], { emissive: true, blink: { rate: rate * 1.3, phase: i + 2 } });
+    cabBox(F, -CAB_HW, -CAB_HW + 0.4, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 4 + i * 2, 5 + i * 2, colr, { emissive: true, blink: { rate, phase: i } });
+    cabBox(F, CAB_HW - 0.4, CAB_HW, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 6 + i * 2, 7 + i * 2, blink[(i + 2) % 4][0], { emissive: true, blink: { rate: rate * 1.3, phase: i + 2 } });
     cabBox(F, -10 + i * 6, -9 + i * 6, -16.2, -16.8, -44, -43.6, "#f59e0b", { emissive: true, blink: { rate: 0.4 + i * 0.15, phase: i } });
   });
   // dash screens: VDU 1, centre avionics, VDU 2
@@ -6987,11 +7904,11 @@ function buildCabinDynamic(c) {
   // inner airlock door (starboard wall): halves retract into the frame along z
   const d = c.door, half = (AL.z1 - AL.z0) / 2;
   if (d < 0.98) {
-    cabBox(F, 11.6, 12.4, -14, 0, AL.z0, AL.zc - half * d, "#64748b", { side: "#71717a", zone: "door" });
-    cabBox(F, 11.6, 12.4, -14, 0, AL.zc + half * d, AL.z1, "#64748b", { side: "#71717a", zone: "door" });
+    cabBox(F, CAB_HW - 0.4, CAB_HW + 0.4, -14, 0, AL.z0, AL.zc - half * d, "#64748b", { side: "#71717a", zone: "door" });
+    cabBox(F, CAB_HW - 0.4, CAB_HW + 0.4, -14, 0, AL.zc + half * d, AL.z1, "#64748b", { side: "#71717a", zone: "door" });
     if (d < 0.6) {
-      cabRect(F, 'x', 11.55, AL.z0 + 0.5, AL.zc - half * d - 0.3, -8.6, -7.6, [-1, 0, 0], "#eab308", null, { bias: 1, zone: "door" });
-      cabRect(F, 'x', 11.55, AL.zc + half * d + 0.3, AL.z1 - 0.5, -8.6, -7.6, [-1, 0, 0], "#eab308", null, { bias: 1, zone: "door" });
+      cabRect(F, 'x', CAB_HW - 0.45, AL.z0 + 0.5, AL.zc - half * d - 0.3, -8.6, -7.6, [-1, 0, 0], "#eab308", null, { bias: 1, zone: "door" });
+      cabRect(F, 'x', CAB_HW - 0.45, AL.zc + half * d + 0.3, AL.z1 - 0.5, -8.6, -7.6, [-1, 0, 0], "#eab308", null, { bias: 1, zone: "door" });
     }
   }
   // outer hatch at the far end of the chamber
@@ -7005,20 +7922,28 @@ function buildCabinDynamic(c) {
     cabBox(F, 0.8, 2.1, 0, -1.4, -43.2, -41.8, "#e2e8f0", { top: "#cbd5e1" });
     cabBox(F, 2.9, 4.2, 0, -1.4, -43.2, -41.8, "#e2e8f0", { top: "#cbd5e1" });
   }
+  // light switch lever: flipped up = on, down = off, plus a status LED
+  {
+    const lx0 = (LPANEL.x0 + LPANEL.x1) / 2 - 0.45, lx1 = lx0 + 0.9, mid = (LPANEL.yTop + LPANEL.yBot) / 2;
+    const ly = cabinLightsOn ? [mid - 1.6, mid] : [mid, mid + 1.6];
+    cabBox(F, lx0, lx1, ly[0], ly[1], LPANEL.z - 0.9, LPANEL.z - 0.08, "#e5e7eb", { top: "#f8fafc", side: "#cbd5e1", bias: 1.8 });
+    cabBox(F, lx0 - 0.15, lx1 + 0.15, cabinLightsOn ? ly[0] - 0.5 : ly[1], cabinLightsOn ? ly[0] : ly[1] + 0.5, LPANEL.z - 1.05, LPANEL.z - 0.08, "#ef4444", { bias: 1.9 });
+    cabBox(F, lx0 + 0.1, lx1 - 0.1, LPANEL.yTop + 0.5, LPANEL.yTop + 1.1, LPANEL.z - 0.12, LPANEL.z - 0.02, cabinLightsOn ? "#22c55e" : "#ef4444", { emissive: true, bias: 1.8 });
+  }
   const ledOn = (stored) => stored ? "#22c55e" : ((Math.floor(c.time * 3) % 2) ? "#ef4444" : "#450a0a");
-  cabBox(F, 2.1, 2.9, -16.0, -16.6, -41.2, -41.0, ledOn(!c.hasHelmet), { emissive: true });
-  cabBox(F, -2.0, -1.2, -16.0, -16.6, -41.2, -41.0, ledOn(!c.hasLaser), { emissive: true });
+  cabBox(F, 2.1, 2.9, -16.0, -16.6, -41.2, -41.0, ledOn(!c.hasHelmet), { emissive: true, bias: 2 });
+  cabBox(F, -2.0, -1.2, -16.0, -16.6, -41.2, -41.0, ledOn(!c.hasLaser), { emissive: true, bias: 2 });
   // scorch marks around the sparking panels once the hull is damaged
   if (c.damaged) {
-    cabRect(F, 'x', -11.95, -7.6, -4.4, -14.2, -10.8, [1, 0, 0], "#0b0b0d", null, { layer: 1 });
-    cabRect(F, 'x', 11.95, 7.6, 10.4, -12.2, -8.8, [-1, 0, 0], "#0b0b0d", null, { layer: 1 });
+    cabRect(F, 'x', -CAB_HW + 0.05, 6.4, 9.6, -14.2, -10.8, [1, 0, 0], "#0b0b0d", null, { layer: 1 });
+    cabRect(F, 'x', CAB_HW - 0.05, 7.6, 10.4, -12.2, -8.8, [-1, 0, 0], "#0b0b0d", null, { layer: 1 });
     cabRect(F, 'y', -17.96, -1.2, 2.2, -25.6, -22.4, [0, 1, 0], "#0b0b0d", null, { layer: 1 });
   }
 
   // airlock status lamps: cabin side over the door frame + inside the chamber
   const lampCol = c.lights === 'red' ? ((Math.floor(c.time * 4) % 2) ? "#ef4444" : "#7f1d1d") : (c.lights === 'green' ? "#22c55e" : "#38bdf8");
-  cabBox(F, 11.0, 11.4, -15.2, -16.2, AL.z0 - 2.2, AL.z0 - 1.2, lampCol, { emissive: true });
-  cabBox(F, 11.0, 11.4, -15.2, -16.2, AL.z1 + 1.2, AL.z1 + 2.2, lampCol, { emissive: true });
+  cabBox(F, CAB_HW - 1, CAB_HW - 0.6, -15.2, -16.2, AL.z0 - 2.2, AL.z0 - 1.2, lampCol, { emissive: true });
+  cabBox(F, CAB_HW - 1, CAB_HW - 0.6, -15.2, -16.2, AL.z1 + 1.2, AL.z1 + 2.2, lampCol, { emissive: true });
   // outer hatch lamps mounted on the solid frame either side of the opening
   cabBox(F, AL.cx1 - 0.35, AL.cx1 - 0.02, -11, -12.2, AL.z0 - 0.75, AL.z0 + 0.25, lampCol, { emissive: true, zone: "ch" });
   cabBox(F, AL.cx1 - 0.35, AL.cx1 - 0.02, -11, -12.2, AL.z1 - 0.25, AL.z1 + 0.75, lampCol, { emissive: true, zone: "ch" });
@@ -7039,7 +7964,7 @@ function buildCabinDynamic(c) {
     const r = RESOURCE_TYPES.find(rt => rt.name === main);
     const oc = r ? r.color : "#a3a3a3";
     const full = chunk.length / 20;
-    const s2 = slots[i], y0 = -s2.lvl * 6, z0 = s2.z0, z1 = z0 + 6, x0 = 5.5, x1 = 11.5, yt = y0 - 5.6;
+    const s2 = slots[i], y0 = -s2.lvl * 6, z0 = s2.z0, z1 = z0 + 6, x0 = CAB_HW - 6.5, x1 = CAB_HW - 0.5, yt = y0 - 5.6;
     const STEEL = "#3f3f46", STE = "#71717a";
     // yellow industrial body with a darker lid
     cabBox(F, x0 + 0.2, x1 - 0.2, y0, yt + 0.2, z0 + 0.2, z1 - 0.2, "#ca8a04", { top: "#a16207" });
@@ -7080,6 +8005,7 @@ function renderCabin() {
   // 2) interior polygons, painter-sorted, near-plane clipped
   if (!cabinStaticFaces) cabinStaticFaces = buildCabinStatic();
   updateCabinCrt(c);
+  updatePhotoWallTex(c.time);
   const faces = cabinStaticFaces.concat(buildCabinDynamic(c));
   const cyw = Math.cos(playerFoot.yaw), syw = Math.sin(playerFoot.yaw);
   const cp = Math.cos(playerFoot.pitch), sp = Math.sin(playerFoot.pitch);
@@ -7092,7 +8018,7 @@ function renderCabin() {
   const now = c.time;
   const redPulse = c.lights === 'red' ? 0.5 + 0.5 * Math.sin(now * 8) : 0;
   const drawList = [];
-  const inChamber = c.x > 12;
+  const inChamber = c.x > CAB_HW;
   for (const f of faces) {
     const vx = c.x - f.c[0], vy = c.eyeY - f.c[1], vz = c.z - f.c[2];
     if (f.n && f.n[0] * vx + f.n[1] * vy + f.n[2] * vz <= 0) continue;
@@ -7122,18 +8048,33 @@ function renderCabin() {
         r *= 0.15; g *= 0.15; b *= 0.15;
       }
       if (f.screen !== undefined) { const fl = 0.8 + 0.2 * Math.sin(now * 3 + f.screen * 2); r *= fl; g *= fl; b *= fl; }
+      if (f.strip !== undefined) { const lv = 0.08 + 0.92 * cabinLightLevel; r *= lv; g *= lv; b *= lv; }
     } else {
       const n = f.n || [0, 0, 0];
       let lit = 0.8 - n[1] * 0.3 + n[0] * 0.06 + n[2] * 0.04;
       const fog = Math.max(0.5, Math.min(1, 1.1 - depth / 140));
       lit *= fog;
       // airlock chamber floods red while cycling
-      if (redPulse > 0 && f.c[0] > 11.5 && f.c[2] > AL.z0 - 1.5 && f.c[2] < AL.z1 + 1.5) { r = r * lit + 90 * redPulse; g = g * lit * (1 - 0.5 * redPulse); b = b * lit * (1 - 0.5 * redPulse); }
+      if (redPulse > 0 && f.c[0] > CAB_HW - 0.5 && f.c[2] > AL.z0 - 1.5 && f.c[2] < AL.z1 + 1.5) { r = r * lit + 90 * redPulse; g = g * lit * (1 - 0.5 * redPulse); b = b * lit * (1 - 0.5 * redPulse); }
+      else if (cabinLightLevel < 0.999 && f.c[0] <= CAB_HW + 0.3) {
+        // lights down: dim ambient, then the lava lamp (green low, pink high) and the CRT pool light the room
+        const amb = 0.16 + 0.84 * cabinLightLevel, dark = 1 - cabinLightLevel;
+        r *= lit * amb; g *= lit * amb; b *= lit * amb;
+        if (lavaLampOn) {
+          const L = LAVA_GLOW(), d = Math.hypot(f.c[0] - L[0], f.c[1] - L[1], f.c[2] - L[2]);
+          const k = Math.pow(Math.max(0, 1 - d / 30), 1.6) * dark * (0.85 + 0.15 * Math.sin(now * 1.3));
+          const hp = Math.max(0, Math.min(1, (-f.c[1] - 3) / 12));        // 0 near the floor, 1 near the ceiling
+          r += (57 + (255 - 57) * hp) * k * 0.6; g += (255 + (43 - 255) * hp) * k * 0.5; b += (20 + (214 - 20) * hp) * k * 0.6;
+        }
+        const dc = Math.hypot(f.c[0] - (-9.6 + CAB_PO), f.c[1] + 10, f.c[2] + 22.7);
+        const kc = Math.pow(Math.max(0, 1 - dc / 11), 2) * dark;
+        g += 120 * kc; b += 40 * kc; r += 20 * kc;
+      }
       else { r *= lit; g *= lit; b *= lit; }
     }
-    const zone = f.zone || (f.c[0] > 12.3 ? "ch" : "cab");
+    const zone = f.zone || (f.c[0] > CAB_HW + 0.3 ? "ch" : "cab");
     const grp = inChamber ? (zone === "cab" ? 0 : 1) : (zone === "ch" ? 0 : 1);
-    if (f.tex) { drawList.push({ texFace: f, depth, layer: 2, grp }); continue; }
+    if (f.tex) { drawList.push({ texFace: f, depth, layer: f.layer === undefined ? 2 : f.layer, grp }); continue; }
     drawList.push({ scr, depth, grp, layer: f.layer === undefined ? 2 : f.layer, col: `rgb(${Math.round(Math.min(255, r))},${Math.round(Math.min(255, g))},${Math.round(Math.min(255, b))})`, glow: f.emissive, edge: f.edge });
   }
 
@@ -7162,10 +8103,15 @@ function renderCabin() {
     draw(x, y, s);
     ctx.restore();
   };
-  if (!c.hasHelmet) { addSprite(2.5, -7.3, -42.6, inRack(drawRackSuit)); addSprite(2.5, -13.2, -42.3, inRack(drawRackHelmet)); }
-  if (!c.hasLaser) addSprite(-1.65, -7.9, -41.9, inRack(drawRackLaser));
+  if (!c.hasHelmet) { addSprite(2.5, -7.3, -42.6, dimSprite(inRack(drawRackSuit))); addSprite(2.5, -13.2, -42.3, dimSprite(inRack(drawRackHelmet))); }
+  if (!c.hasLaser) addSprite(-1.65, -7.9, -41.9, dimSprite(inRack(drawRackLaser)));
   addSprite(0, -16.3, -41.1, drawRackSign);
-  addSprite(-9.0, -14.9, -22.7, drawCrtLabel);
+  addSprite(-9.0 + CAB_PO, -14.9, -22.7, drawCrtLabel);
+  TROPHY_SLOTS.forEach((sl, i) => { const t = TROPHIES[i]; if (t) addSprite(sl.x, sl.y, sl.z, dimSprite((x, y, s) => drawTrophy(t, trophiesEarned.has(t.id), x, y, s, c.time, i))); });
+  addSprite(SHELF.x0 + 0.6, -15.9, (SHELF.z0 + SHELF.z1) / 2, (x, y, s) => drawTrophySign(x, y, s, c.time));
+  addSprite(LAVA.x, LAVA.tableTop - 0.5 - 3.0, LAVA.z, (x, y, s) => drawLavaLamp(x, y, s, c.time));
+  addSprite(PDESK.x0 + 2.4, PDESK.top - 0.5 - 1.0, (PDESK.z0 + PDESK.z1) / 2, dimSprite((x, y, s) => drawInstantCamera(x, y, s, c.time)));
+  addSprite((LPANEL.x0 + LPANEL.x1) / 2 - 0.4, LPANEL.yTop - 0.5, LPANEL.z - 0.3, drawLightPanelLabel);
   addSprite(DICE_ANCHOR[0], DICE_ANCHOR[1], DICE_ANCHOR[2], drawCabinDice);
   addSprite(0, -16.4, 29.6, drawCabinNameplate);
   // dust motes, steam puffs and sparks
@@ -7211,7 +8157,8 @@ function renderCabin() {
     ctx.fillStyle = `rgba(220, 38, 38, ${0.05 + 0.09 * pul})`;
     ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
   }
-  if (redPulse > 0 && c.x > 11) { ctx.fillStyle = `rgba(239, 68, 68, ${0.12 * redPulse})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+  if (cameraFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, cameraFlash) * 0.9})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); cameraFlash = Math.max(0, cameraFlash - 0.06); }
+  if (redPulse > 0 && c.x > CAB_HW - 1) { ctx.fillStyle = `rgba(239, 68, 68, ${0.12 * redPulse})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
   if (c.mist > 0) {
     ctx.save();
     for (let i = 0; i < 14; i++) {
@@ -7345,8 +8292,24 @@ function updateRackTex(c) {
 // Draws a canvas onto a world-space quad (TL, TR, BR, BL) by splitting it into
 // small cells and mapping each one affinely - near enough perspective-correct
 // that text and pixel art stay flat on the surface from any viewing angle.
+// Darkened copy of a texture for lights-off, rebuilt only when the level step or the
+// source (version counter) changes - one cheap overlay instead of per-tile filters.
+const dimTexCache = new WeakMap();
+function getDimTex(src, version) {
+  const f = Math.round((0.25 + 0.75 * cabinLightLevel) * 20) / 20;
+  if (f >= 0.99) return src;
+  let e = dimTexCache.get(src);
+  if (!e) { const cv = document.createElement("canvas"); cv.width = src.width; cv.height = src.height; e = { cv, f: -1, v: -1 }; dimTexCache.set(src, e); }
+  if (e.f !== f || e.v !== version) {
+    const g = e.cv.getContext("2d");
+    g.globalCompositeOperation = "copy"; g.drawImage(src, 0, 0);
+    g.globalCompositeOperation = "source-over"; g.fillStyle = `rgba(0,0,0,${(1 - f).toFixed(2)})`; g.fillRect(0, 0, e.cv.width, e.cv.height);
+    e.f = f; e.v = version;
+  }
+  return e.cv;
+}
 function drawTexturedQuad(f, tx, NEAR, fov) {
-  const tex = f.tex, [cols, rows] = f.grid || [4, 4];
+  const tex = f.dim ? getDimTex(f.tex, photoWallVersion) : f.tex, [cols, rows] = f.grid || [4, 4];
   const [A, B, C, D] = f.pts;
   const W = tex.width, H = tex.height;
   const pts = [];
@@ -7374,7 +8337,7 @@ function drawTexturedQuad(f, tx, NEAR, fov) {
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const s00 = pts[j][i], s10 = pts[j][i + 1], s01 = pts[j + 1][i], s11 = pts[j + 1][i + 1];
     const mx = (s00[0] + s10[0] + s01[0] + s11[0]) / 4, my = (s00[1] + s10[1] + s01[1] + s11[1]) / 4;
-    const grow = (p) => { const dx = p[0] - mx, dy = p[1] - my, l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * 0.6, p[1] + dy / l * 0.6]; };
+    const sg = f.seam || 0.6, grow = (p) => { const dx = p[0] - mx, dy = p[1] - my, l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * sg, p[1] + dy / l * sg]; };
     const q = [grow(s00), grow(s10), grow(s11), grow(s01)];
     ctx.save();
     ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); ctx.lineTo(q[1][0], q[1][1]); ctx.lineTo(q[2][0], q[2][1]); ctx.lineTo(q[3][0], q[3][1]); ctx.closePath();
@@ -7397,7 +8360,7 @@ function drawTexturedQuad(f, tx, NEAR, fov) {
 function drawRackSuit(x, y, s, g) {
   g = g || ctx;
   const u = Math.max(0.5, s * 0.55);
-  const R = (cx, cy, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x + cx * u), Math.round(y + cy * u), Math.ceil(w * u), Math.ceil(h * u)); };
+  const R = (cx, cy, w, h, col) => { g.fillStyle = litCol(col); g.fillRect(Math.round(x + cx * u), Math.round(y + cy * u), Math.ceil(w * u), Math.ceil(h * u)); };
   g.save();
   R(-0.6, -6.3, 1.2, 1, "#94a3b8");                       // hanger hook
   R(-3.5, -5.5, 7, 6.5, "#0f172a");                       // outline
@@ -7420,7 +8383,7 @@ function drawRackHelmet(x, y, s, g) {
   g = g || ctx;
   const u = Math.max(0.6, s * 0.6);
   const ox = Math.round(x - 4 * u), oy = Math.round(y - 3.5 * u);
-  const R = (cx, cy, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(ox + cx * u), Math.round(oy + cy * u), Math.ceil(w * u), Math.ceil(h * u)); };
+  const R = (cx, cy, w, h, col) => { g.fillStyle = litCol(col); g.fillRect(Math.round(ox + cx * u), Math.round(oy + cy * u), Math.ceil(w * u), Math.ceil(h * u)); };
   g.save();
   R(-0.5, -0.5, 9, 8, "#0f172a");        // dark outline so it pops off the rack
   R(0, 0, 8, 7, "#f8fafc");              // shell
@@ -7435,10 +8398,10 @@ function drawRackLaser(x, y, s, g) {
   const u = 0.9 * s;
   if (u < 0.4) return;
   g.save();
-  g.fillStyle = "#1e293b"; g.fillRect(x - 3 * u, y - 0.9 * u, 5.4 * u, 1.8 * u);
-  g.fillStyle = "#64748b"; g.fillRect(x - 2.6 * u, y + 0.9 * u, 1.2 * u, 2 * u);
-  g.fillStyle = "#38bdf8"; g.fillRect(x - 1.6 * u, y - 0.55 * u, 2.6 * u, 0.7 * u);
-  g.fillStyle = "#e0f2fe"; g.fillRect(x + 2.4 * u, y - 0.4 * u, 0.6 * u, 0.8 * u);
+  g.fillStyle = litCol("#1e293b"); g.fillRect(x - 3 * u, y - 0.9 * u, 5.4 * u, 1.8 * u);
+  g.fillStyle = litCol("#64748b"); g.fillRect(x - 2.6 * u, y + 0.9 * u, 1.2 * u, 2 * u);
+  g.fillStyle = litCol("#38bdf8"); g.fillRect(x - 1.6 * u, y - 0.55 * u, 2.6 * u, 0.7 * u);
+  g.fillStyle = litCol("#e0f2fe"); g.fillRect(x + 2.4 * u, y - 0.4 * u, 0.6 * u, 0.8 * u);
   g.strokeStyle = "#000"; g.lineWidth = Math.max(0.5, u * 0.15); g.strokeRect(x - 3 * u, y - 0.9 * u, 5.4 * u, 1.8 * u);
   g.restore();
 }
@@ -8245,6 +9208,13 @@ function pollGamepadState() {
     return;
   }
 
+  if (isSunCutscenePlaying) {
+    if (scState.readyForModal && currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) {
+      dismissSunCutsceneToModal();
+    }
+    return;
+  }
+
   if (isVictoryCutscenePlaying) {
     if (vcState.readyForModal && currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) {
       dismissVictoryCutsceneToModal();
@@ -8487,6 +9457,14 @@ function update(dt) {
 
   if (isFuelCutscenePlaying) {
     updateFuelCutscene(dt);
+    pollGamepadState();
+    for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
+    for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
+    return;
+  }
+
+  if (isSunCutscenePlaying) {
+    updateSunCutscene(dt);
     pollGamepadState();
     for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
     for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
@@ -9168,7 +10146,7 @@ function update(dt) {
       ship.shield = 0; ship.hull = 0;
       playSfx('explosion');
       vibrateGamepad(700, 1.0, 1.0);
-      triggerGameOver("INCINERATED BY STAR", "Vessel vaporized inside the solar core.");
+      triggerSunDeathCutscene("INCINERATED BY STAR", "Vessel vaporized inside the solar core.");
       return;
     } else if (distToSun < centralSun.heatRadius) {
       const heatFactor = 1 - ((distToSun - centralSun.killRadius) / (centralSun.heatRadius - centralSun.killRadius));
@@ -9190,7 +10168,7 @@ function update(dt) {
           ship.hull = 0;
           playSfx('explosion');
           vibrateGamepad(700, 1.0, 1.0);
-          triggerGameOver("THERMAL HULL FAILURE", "Hull melted in the extreme solar corona.");
+          triggerSunDeathCutscene("THERMAL HULL FAILURE", "Hull melted in the extreme solar corona.");
           return;
         }
       }
@@ -9963,6 +10941,7 @@ function update(dt) {
             if (typeof vibrateGamepad === 'function') vibrateGamepad(600, 1.0, 1.0);
             screenShake = 1.0; flashEffect = 0.8;
 
+            awardPhoto('monolith');
             ship.credits += 2500;
             if (typeof runStats !== 'undefined') runStats.creditsEarned += 2500;
 
@@ -10467,7 +11446,7 @@ function update(dt) {
     prevHostileCount = currentAlertCount;
 
     // 4.5 Hz Magnetic Tractor Beam Sound
-    if (tractorGain && gameMode === 'SPACE' && ship && !isDeathCutscenePlaying && !gameOver) {
+    if (tractorGain && gameMode === 'SPACE' && ship && !isDeathCutscenePlaying && !isSunCutscenePlaying && !gameOver) {
       let nearestLootDist = Infinity;
       for (let drop of lootDrops) {
         const d = Math.hypot(ship.x - drop.x, ship.y - drop.y, ship.z - drop.z);
@@ -10483,7 +11462,7 @@ function update(dt) {
     }
 
     // Afterburner Turbine Sound
-    if (afterburnerGain && gameMode === 'SPACE' && ship && !isDeathCutscenePlaying && !gameOver) {
+    if (afterburnerGain && gameMode === 'SPACE' && ship && !isDeathCutscenePlaying && !isSunCutscenePlaying && !gameOver) {
       const isBoosting = wantsThrust || wantsReverse;
       const speedRatio = Math.min(1.2, Math.abs(ship.speed) / (ship.maxSpeed || 135));
       const targetGain = isBoosting ? 0.14 : Math.max(0.008, speedRatio * 0.035);
@@ -10558,6 +11537,8 @@ function update(dt) {
   for (let k in keys) prevKeys[k] = keys[k];
 
   document.getElementById("stat-cred").innerText = `$${ship.credits.toLocaleString()}`;
+  checkTrophies();
+  checkPhotos();
   document.getElementById("stat-cargo").innerText = `${getCargoTotal()}/${ship.maxCargo}`;
 
   const isSurface = (gameMode === 'SURFACE');
@@ -11569,6 +12550,11 @@ function render() {
 
   if (isFuelCutscenePlaying) {
     renderFuelCutscene();
+    return;
+  }
+
+  if (isSunCutscenePlaying) {
+    renderSunCutscene();
     return;
   }
 
@@ -14059,6 +15045,10 @@ window.addEventListener("keydown", (e) => {
     if (fcState.readyForModal) dismissFuelCutsceneToModal();
     return;
   }
+  if (isSunCutscenePlaying) {
+    if (scState.readyForModal) dismissSunCutsceneToModal();
+    return;
+  }
   if (isVictoryCutscenePlaying) {
     if (vcState.readyForModal) dismissVictoryCutsceneToModal();
     return;
@@ -14074,6 +15064,7 @@ window.addEventListener("keydown", (e) => {
 canvas.addEventListener("pointerdown", () => {
   if (isDeathCutscenePlaying && dcState.readyForModal) dismissDeathCutsceneToModal();
   if (isFuelCutscenePlaying && fcState.readyForModal) dismissFuelCutsceneToModal();
+  if (isSunCutscenePlaying && scState.readyForModal) dismissSunCutsceneToModal();
   if (isVictoryCutscenePlaying && vcState.readyForModal) dismissVictoryCutsceneToModal();
 });
 
