@@ -10643,8 +10643,10 @@ function update(dt) {
       playerFoot.isWarm = warm;
       playerFoot.cold = Math.max(0, Math.min(1, (playerFoot.cold || 0) + (warm ? -dt / 6 : dt / 40)));
       if (playerFoot.cold >= 1 && !gameOver) {
-        // Cold bypasses the shield and slowly eats the suit, but only once fully exposed
-        playerFoot.suitHp -= 3.2 * dt;
+        // Cold bypasses the shield and eats the suit once fully exposed - starting fast and
+        // speeding up the longer you stay frozen (~8s from a full base suit, ~11s fully upgraded)
+        playerFoot.frozenFor = (playerFoot.frozenFor || 0) + dt;
+        playerFoot.suitHp -= Math.min(32, 9 + playerFoot.frozenFor * 3.5) * dt;
         if (playerFoot.suitHp <= 0) {
           playerFoot.suitHp = 0;
           triggerGameOver("SUIT FROZEN", "Suit heaters failed. You froze solid on a Cryo world.", "#67e8f9");
@@ -10653,6 +10655,7 @@ function update(dt) {
     } else {
       playerFoot.cold = 0; playerFoot.isWarm = false;
     }
+    if (!(playerFoot.cold >= 1)) playerFoot.frozenFor = 0;   // warming up resets the accelerating drain
 
     // Surface Sentinels
     let anySentinelAlert = false;
@@ -16656,5 +16659,521 @@ requestAnimationFrame(gameLoop);
   };
 })();
 </script>
+<!-- COLD EXPOSURE DEATH CUTSCENE ("FROZEN STIFF") -->
+<script>
+(function() {
+  // Act 1: blizzard wide shot - the pilot trudges toward the ship's warm lights,
+  //        heater warning blinking, drops to their knees and slumps into a drift.
+  // Act 2: white-out cut to a slow push-in on the frozen face inside the helmet
+  //        (visor up, frost streaks, icicles, locked glare) - then an icicle snaps.
+  let isColdCutscenePlaying = false;
+  // Close-up style: 'visor' = visor down, frozen blue glass (no face)
+  //                 'face'  = visor up, the frozen stare
+  const COLD_CLOSEUP_STYLE = 'visor';
+  const cz = { t: 0, ready: false, title: "", desc: "", color: "#67e8f9", state: 'WALK', px: 0, snow: 0, frost: 0, beepT: 0, flash: 0, icicleDrop: null, wind: null };
+  const czFlakes = [];
+  for (let i = 0; i < 320; i++) czFlakes.push({ x: Math.random() * 900, y: Math.random() * 260, s: 0.5 + Math.random() * 1.5, z: Math.random() });
+  const czFrost = [];
+  for (let i = 0; i < 260; i++) czFrost.push({ c: Math.random() * 22, r: Math.random() * 26, w: Math.random() < 0.3 ? 2 : 1 });
+
+  // Frost crystals for the frozen visor: branching fractal lines that grow in from the
+  // glass edges. Each point carries a 0..1 'grow' value so they creep in over time.
+  const VIS_W = 144, VIS_H = 170;
+  const czFernSegs = [];
+  (function buildFrost() {
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const branch = (x, y, ang, len, depth, t0) => {
+      const steps = Math.max(3, Math.round(len / 4));
+      let px = x, py = y;
+      for (let i = 1; i <= steps; i++) {
+        ang += (rnd() - 0.5) * 0.35;
+        const nx = px + Math.cos(ang) * 4, ny = py + Math.sin(ang) * 4;
+        if (nx < 0 || nx > VIS_W || ny < 0 || ny > VIS_H) return;
+        const t = t0 + (i / steps) * (1 - t0) * (0.55 + depth * 0.1);
+        czFernSegs.push({ x0: px, y0: py, x: nx, y: ny, t: Math.min(1, t), d: depth });
+        if (depth < 2 && rnd() < 0.22) branch(nx, ny, ang + (rnd() < 0.5 ? 1 : -1) * (0.6 + rnd() * 0.5), len * 0.5, depth + 1, t);
+        px = nx; py = ny;
+      }
+    };
+    for (let i = 0; i < 22; i++) {
+      const side = i % 4, u = rnd();
+      let x, y, a;
+      if (side === 0) { x = u * VIS_W; y = 0; a = Math.PI / 2; }
+      else if (side === 1) { x = VIS_W; y = u * VIS_H; a = Math.PI; }
+      else if (side === 2) { x = u * VIS_W; y = VIS_H; a = -Math.PI / 2; }
+      else { x = 0; y = u * VIS_H; a = 0; }
+      branch(x, y, a + (rnd() - 0.5) * 0.9, 40 + rnd() * 60, 0, rnd() * 0.25);
+    }
+  })();
+
+  function hex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function mix(a, b, k) {
+    k = Math.max(0, Math.min(1, k)); const A = hex(a), B = hex(b);
+    return `rgb(${Math.round(A[0] + (B[0] - A[0]) * k)},${Math.round(A[1] + (B[1] - A[1]) * k)},${Math.round(A[2] + (B[2] - A[2]) * k)})`;
+  }
+
+  // ---------- audio ----------
+  function czWindStart() {
+    try {
+      if (!actx) return;
+      const t = actx.currentTime, n = actx.sampleRate * 2;
+      const buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4; bp.frequency.value = 500;
+      const lfo = actx.createOscillator(), lg = actx.createGain(); lfo.frequency.value = 0.35; lg.gain.value = 260;
+      lfo.connect(lg); lg.connect(bp.frequency);
+      const g = actx.createGain(); g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.22, t + 0.8);
+      src.connect(bp); bp.connect(g); g.connect(audioOut());
+      src.start(t); lfo.start(t);
+      cz.wind = { src, lfo, g };
+    } catch (e) {}
+  }
+  function czWindLevel(v, tc) { try { if (cz.wind) cz.wind.g.gain.setTargetAtTime(v, actx.currentTime, tc || 0.4); } catch (e) {} }
+  function czWindStop() {
+    try { if (cz.wind) { const t = actx.currentTime; cz.wind.g.gain.setTargetAtTime(0, t, 0.15); cz.wind.src.stop(t + 0.8); cz.wind.lfo.stop(t + 0.8); } } catch (e) {}
+    cz.wind = null;
+  }
+  function czTone(freq, dur, vol, type) {
+    try {
+      if (!actx) return;
+      const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || 'square'; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(audioOut()); o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) {}
+  }
+  function czSting() {   // eerie icy chord
+    try {
+      if (!actx) return;
+      const t = actx.currentTime;
+      [196, 233.1, 277.2, 415.3].forEach((f, i) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = i === 3 ? 'sine' : 'triangle'; o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * 0.97, t + 2.4);
+        g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.07, t + 0.4); g.gain.linearRampToValueAtTime(0.001, t + 2.6);
+        o.connect(g); g.connect(audioOut()); o.start(t); o.stop(t + 2.7);
+      });
+    } catch (e) {}
+  }
+
+  // ---------- trigger / dismiss ----------
+  const prevTriggerGameOver = window.triggerGameOver;
+  window.triggerGameOver = function(title, desc, color) {
+    if (title === "SUIT FROZEN" && !isColdCutscenePlaying && !gameOver) { startColdCutscene(title, desc, color); return; }
+    return prevTriggerGameOver.apply(this, arguments);
+  };
+  function startColdCutscene(title, desc, color) {
+    isColdCutscenePlaying = true;
+    Object.assign(cz, { t: 0, ready: false, title, desc, color: color || "#67e8f9", state: 'WALK', px: V_WIDTH * 0.4, snow: 0, frost: 0, beepT: 0, flash: 0, icicleDrop: null });
+    ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    if (typeof actx !== 'undefined' && actx) {
+      if (typeof windGain !== 'undefined' && windGain) windGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+      if (typeof baseAmbientGain !== 'undefined' && baseAmbientGain) baseAmbientGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
+    }
+    czWindStart();
+  }
+  function dismissColdCutscene() {
+    if (!isColdCutscenePlaying || !cz.ready) return;
+    isColdCutscenePlaying = false;
+    czWindStop();
+    prevTriggerGameOver(cz.title, cz.desc, cz.color);
+  }
+  window.addEventListener("pointerdown", () => { if (isColdCutscenePlaying) dismissColdCutscene(); });
+  window.addEventListener("keydown", () => { if (isColdCutscenePlaying) dismissColdCutscene(); });
+
+  // ---------- update ----------
+  function updateColdCutscene(dt) {
+    const prev = cz.t; cz.t += dt; const t = cz.t;
+    const at = (k) => t >= k && prev < k;
+    if (cz.flash > 0) cz.flash = Math.max(0, cz.flash - dt * 0.9);
+    // act 1
+    if (cz.state === 'WALK') cz.px += (14 - t * 5) * dt;
+    if (at(1.5)) { cz.state = 'KNEEL'; czTone(150, 0.25, 0.12, 'triangle'); }
+    if (at(2.3)) { cz.state = 'SLUMP'; czTone(1000, 1.1, 0.05, 'square'); }   // heater flatline
+    if (t < 2.3) {
+      cz.beepT -= dt;
+      if (cz.beepT <= 0) { cz.beepT = 0.35 + t * 0.25; czTone(1000, 0.09, 0.05, 'square'); }
+    }
+    if (t > 2.3) cz.snow = Math.min(1, (t - 2.3) / 1.0);
+    if (at(3.0)) cz.flash = 1;                       // white-out cut
+    if (at(3.35)) czWindLevel(0.08, 0.6);
+    // act 2
+    if (t > 3.5) cz.frost = Math.min(1, (t - 3.5) / 1.3);
+    if (at(5.0)) czSting();
+    if (at(6.15)) { cz.icicleDrop = { y: 0, vy: 0 }; }
+    if (cz.icicleDrop) { cz.icicleDrop.vy += 220 * dt; cz.icicleDrop.y += cz.icicleDrop.vy * dt; }
+    if (at(6.5)) czTone(2600, 0.12, 0.06, 'sine');   // tink
+    if (t >= 7.2) cz.ready = true;
+    for (const f of czFlakes) {
+      f.x += (act2() ? 70 : 120) * f.s * dt; f.y += (act2() ? 30 : 45) * f.s * dt;
+      if (f.x > V_WIDTH + 10) f.x -= V_WIDTH + 20; if (f.y > V_HEIGHT + 5) f.y -= V_HEIGHT + 10;
+    }
+  }
+  const act2 = () => cz.t >= 3.0;
+
+  // ---------- drawing: act 1 ----------
+  function drawWideScene(time) {
+    const hz = 150;
+    const sky = ctx.createLinearGradient(0, 0, 0, hz);
+    sky.addColorStop(0, "#020617"); sky.addColorStop(0.6, "#0c2340"); sky.addColorStop(1, "#1e4a6e");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, V_WIDTH, hz);
+    ctx.fillStyle = "#28557a";
+    ctx.beginPath(); ctx.moveTo(0, hz);
+    for (let x = 0; x <= V_WIDTH; x += 12) ctx.lineTo(x, hz - 10 - Math.abs(Math.sin(x * 0.031)) * 26 - Math.sin(x * 0.11) * 4);
+    ctx.lineTo(V_WIDTH, hz); ctx.fill();
+    const gr = ctx.createLinearGradient(0, hz, 0, V_HEIGHT);
+    gr.addColorStop(0, "#9cc3dd"); gr.addColorStop(0.5, "#cfe4f2"); gr.addColorStop(1, "#e8f3fa");
+    ctx.fillStyle = gr; ctx.fillRect(0, hz, V_WIDTH, V_HEIGHT - hz);
+    // the ship, far away, warm and unreachable
+    const sx = Math.round(V_WIDTH * 0.84), sy = hz + 6;
+    ctx.fillStyle = "#1e293b"; ctx.fillRect(sx - 16, sy - 8, 32, 7); ctx.fillRect(sx - 6, sy - 12, 14, 5);
+    ctx.fillStyle = "#334155"; ctx.fillRect(sx - 14, sy - 1, 3, 3); ctx.fillRect(sx + 11, sy - 1, 3, 3);
+    const glowA = 0.55 + 0.15 * Math.sin(time * 2);
+    const g = ctx.createRadialGradient(sx, sy - 6, 1, sx, sy - 6, 34);
+    g.addColorStop(0, `rgba(251, 191, 36, ${0.45 * glowA})`); g.addColorStop(1, "rgba(251, 191, 36, 0)");
+    ctx.fillStyle = g; ctx.fillRect(sx - 34, sy - 40, 68, 68);
+    ctx.fillStyle = "#fbbf24"; ctx.fillRect(sx - 3, sy - 6, 2, 2); ctx.fillRect(sx + 1, sy - 6, 2, 2); ctx.fillRect(sx + 5, sy - 10, 2, 2);
+    // snowdrift the pilot ends up in
+    const dx = Math.round(cz.px - 16);
+    ctx.fillStyle = "#f0f7fc";
+    ctx.beginPath(); ctx.ellipse(dx, 196, 40, 20, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#c9dfee"; ctx.fillRect(dx - 40, 194, 80, 3);
+  }
+  function drawPilotWide(x, y, sc, time) {
+    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(sc, sc);
+    ctx.fillStyle = "rgba(15, 35, 60, 0.35)"; ctx.fillRect(-8, -1, 16, 2);
+    const ice = Math.min(1, cz.t / 2.3);
+    const W = mix("#e2e8f0", "#f8fafc", ice), Sh = mix("#94a3b8", "#bfdbfe", ice), D = mix("#334155", "#64748b", ice);
+    const led = cz.t < 2.3 ? (Math.floor(time * 4) % 2 ? "#ef4444" : "#450a0a") : "#1e293b";
+    if (cz.state === 'WALK') {
+      const ph = Math.sin(time * 7), sway = Math.sin(time * 3.5) * 0.08;
+      ctx.rotate(0.12 + sway);
+      ctx.fillStyle = W; ctx.fillRect(-3.5, -8 + Math.max(0, ph) * 1.5, 3, 8 - Math.max(0, ph) * 1.5); ctx.fillRect(0.5, -8 + Math.max(0, -ph) * 1.5, 3, 8 - Math.max(0, -ph) * 1.5);
+      ctx.fillStyle = D; ctx.fillRect(-4.5, -2, 3.5, 2); ctx.fillRect(0.5, -2, 3.5, 2);
+      ctx.fillStyle = W; ctx.fillRect(-3, -15, 6, 7);
+      ctx.fillStyle = Sh; ctx.fillRect(1, -15, 2, 7);
+      ctx.fillStyle = D; ctx.fillRect(-4.5, -14, 1.5, 5);
+      ctx.fillStyle = led; ctx.fillRect(-2, -14, 2, 2);
+      ctx.fillStyle = W; ctx.fillRect(-5.5, -15, 2.5, 6); ctx.fillRect(3, -15 + ph, 2.5, 6);   // arms hugging in
+      ctx.fillStyle = "#f8fafc"; ctx.fillRect(-4, -23, 8, 7);
+      ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-4, -23, 2, 7);
+      ctx.fillStyle = mix("#0284c7", "#bae6fd", ice); ctx.fillRect(-1, -21, 4, 3);              // visor fogging over
+    } else if (cz.state === 'KNEEL') {
+      ctx.rotate(0.1);
+      ctx.fillStyle = D; ctx.fillRect(-5, -3, 10, 3);
+      ctx.fillStyle = W; ctx.fillRect(-3, -10, 6, 7);
+      ctx.fillStyle = Sh; ctx.fillRect(1, -10, 2, 7);
+      ctx.fillStyle = led; ctx.fillRect(-2, -9, 2, 2);
+      ctx.fillStyle = W; ctx.fillRect(-5, -8, 2, 6); ctx.fillRect(3, -8, 2, 6);
+      ctx.fillStyle = "#f8fafc"; ctx.fillRect(-4, -17, 8, 7);
+      ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-4, -17, 2, 7);
+      ctx.fillStyle = "#bae6fd"; ctx.fillRect(-1, -15, 4, 3);
+    } else {
+      // slumped back against the drift, head lolled
+      ctx.fillStyle = W; ctx.fillRect(-1, -3, 9, 3);                 // legs out front
+      ctx.fillStyle = D; ctx.fillRect(7, -3, 2.5, 3);
+      ctx.fillStyle = W; ctx.fillRect(-4, -9, 6, 7);
+      ctx.fillStyle = Sh; ctx.fillRect(0, -9, 2, 7);
+      ctx.fillStyle = led; ctx.fillRect(-3, -8, 2, 2);
+      ctx.fillStyle = W; ctx.fillRect(1, -4, 4, 2);                  // arm in lap
+      ctx.fillStyle = "#f8fafc"; ctx.fillRect(-7, -16, 8, 7);
+      ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-7, -16, 2, 7);
+      ctx.fillStyle = "#e0f2fe"; ctx.fillRect(-4, -14, 4, 3);
+      // snow piling up on helmet, shoulders and legs
+      const s = cz.snow;
+      if (s > 0) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(-7.5, -16 - s * 2, 9, s * 2.5);
+        ctx.fillRect(-4.5, -9 - s * 1.5, 7, s * 1.8);
+        ctx.fillRect(-1, -3 - s * 1.5, 10, s * 1.8);
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---------- drawing: act 2 (the frozen stare) ----------
+  const FACE = [
+    "......RRRRRRRRRR......",
+    "....RRRrRRRRRrRRRR....",
+    "...RRRRRRrRRRRRRrRR...",
+    "..RRSSSSSSSSSSSSSSRR..",
+    "..RSSFSSSSSFSSSSFSSR..",
+    "..RSSFSSSSSFSSSSFSSRr.",
+    "..BBBFSSSSSSSSSSFBBBS.",
+    "..SBBBBBBSSSSSBBBBBBS.",
+    "..SkkkkkkSSSSSkkkkkkS.",
+    ".sSEEiwEESssSSEiwEEESs",
+    ".sSEEiiEESssSSEiiEEESs",
+    ".sSddddddSssSSddddddSs",
+    ".sSSSSSSSSsSSsSSSSSSSs",
+    "..SSSSSSSSsSSsSSSSSSS.",
+    "..SSSSSSSssSSssSSSSSS.",
+    "..SSSSSSSNdSSdNSSSSSS.",
+    "..sSSSSSFFFFFFFFSSSSs.",
+    "..sSSSSFFSSSSSSFFSSSs.",
+    "..sSSSSdMMMMMMMMdSSSs.",
+    "..sSSSSdMTTTTTTMdSSSs.",
+    "..sSSSSSdMMMMMMdSSSSs.",
+    "...sSSSSSFFFFFFSSSSs..",
+    "...sSSSSSSSSSSSSSSSs..",
+    "....ssSSSSSSSSSSSss...",
+    ".....sssSSSSSSSsss....",
+    "........ssssss........"
+  ];
+  // icicles: [col, row they hang from, max length in cells]
+  const ICICLES = [[2, 8, 2.2], [3, 8, 1.0], [8, 8, 0.8], [14, 8, 0.8], [19, 8, 1.2], [20, 8, 2.4],
+                   [8, 18, 1.6], [10, 18, 2.4], [12, 18, 1.8], [14, 18, 2.6], [9, 22, 2.0], [11, 22, 2.8], [13, 22, 1.8]];
+  function faceColor(ch, f) {
+    switch (ch) {
+      case 'R': return mix("#2b1d14", "#1f2937", f);
+      case 'r': return mix("#3a2a1e", "#e2e8f0", f);
+      case 'S': return mix("#e3b896", "#d3dde9", f);
+      case 's': return mix("#b98a6a", "#9fb0c7", f);
+      case 'd': return mix("#9c6d52", "#7588a7", f);
+      case 'k': return mix("#7a5040", "#4b5a75", f);
+      case 'F': return mix("#d8a789", "#f8fafc", f);
+      case 'B': return mix("#3a2a1e", "#94a3b8", f);
+      case 'b': return mix("#c99878", "#f1f5f9", f);
+      case 'E': return mix("#f8fafc", "#f2e3d8", f);   // bloodshot whites stand out from the frozen skin
+      case 'i': return "#0f172a";
+      case 'w': return "#e2e8f0";
+      case 'N': return "#2a2230";
+      case 'M': return "#1c1520";
+      case 'T': return mix("#f5f5f4", "#cbd5e1", f);
+    }
+    return null;
+  }
+  function drawCloseUp(time) {
+    // night blizzard backdrop
+    const bg = ctx.createLinearGradient(0, 0, 0, V_HEIGHT);
+    bg.addColorStop(0, "#0b1a2e"); bg.addColorStop(1, "#264a68");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+    const P = 5.5, cols = 22, rows = 26;
+    const k = Math.min(1, Math.max(0, (cz.t - 3.0) / 4.5));
+    const zoom = 1 + 0.2 * (k * k * (3 - 2 * k));                 // slow push-in
+    const cx = V_WIDTH / 2, cy = 138;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(zoom, zoom); ctx.translate(-cx, -cy);
+    // Classic square pixel-spaceman helmet, same palette as the in-game sprite:
+    // white shell, grey side shade, blue visor + glint (slid up), dark accents.
+    const U = 6;
+    const block = (x0, y0, x1, y1, col, step) => {      // rectangle with stepped pixel corners
+      ctx.fillStyle = col; const st = step || U;
+      ctx.fillRect(x0 + st, y0, x1 - x0 - 2 * st, y1 - y0);
+      ctx.fillRect(x0, y0 + st, x1 - x0, y1 - y0 - 2 * st);
+    };
+    // suit shoulders + collar (square, like the sprite's torso)
+    block(cx - 132, cy + 84, cx + 132, cy + 170, "#e2e8f0");
+    ctx.fillStyle = "#94a3b8"; ctx.fillRect(cx + 40, cy + 84 + U, 92, 86);          // torso side shade
+    ctx.fillStyle = "#334155"; ctx.fillRect(cx - 132, cy + 120, 132 * 2, 6);         // belt seam
+    ctx.fillStyle = "#334155"; ctx.fillRect(cx - 60, cy + 96, 20, 16);               // chest unit
+    ctx.fillStyle = "#1e293b"; ctx.fillRect(cx - 55, cy + 100, 10, 8);               // dead heater light
+    // helmet shell
+    const hx0 = cx - 96, hx1 = cx + 96, hy0 = cy - 100, hy1 = cy + 100;
+    block(hx0, hy0, hx1, hy1, "#f8fafc");
+    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(hx0, hy0 + U, 30, hy1 - hy0 - 2 * U); ctx.fillRect(hx0 + U, hy0, 24, U); ctx.fillRect(hx0 + U, hy1 - U, 24, U);   // side shade
+    ctx.fillStyle = "#94a3b8"; ctx.fillRect(hx0 + U, hy1 - U, hx1 - hx0 - 2 * U, U);                                  // under-edge
+    ctx.fillStyle = "#334155";                                                                                            // side vents / bolts
+    for (let k = 0; k < 3; k++) { ctx.fillRect(hx0 + 8, cy - 20 + k * 14, 12, 6); ctx.fillRect(hx1 - 16, cy - 20 + k * 14, 8, 6); }
+    // face window (dark padding) with the visor slid up into the top of it
+    const wx0 = cx - 72, wx1 = cx + 72, wy0 = cy - 82, wy1 = cy + 88;
+    block(wx0 - U, wy0 - U, wx1 + U, wy1 + U, "#94a3b8");                            // window rim
+    block(wx0, wy0, wx1, wy1, "#0f172a");
+    if (COLD_CLOSEUP_STYLE === 'face') {
+      ctx.fillStyle = "#0284c7"; ctx.fillRect(wx0, wy0, wx1 - wx0, 20);              // visor (raised)
+      ctx.fillStyle = "#38bdf8"; ctx.fillRect(wx0 + 70, wy0 + 6, 36, 6);             // visor glint
+      ctx.fillStyle = "#0c4a6e"; ctx.fillRect(wx0, wy0 + 20, wx1 - wx0, 4);
+    }
+    const f = cz.frost;
+    if (COLD_CLOSEUP_STYLE === 'visor') {
+      drawFrozenVisor(wx0, wy0, wx1, wy1, f);
+    } else {
+    // the face
+    const ox = Math.round(cx - cols * P / 2), oy = Math.round(cy - rows * P / 2 + 10);
+    for (let r = 0; r < rows; r++) {
+      const row = FACE[r];
+      for (let c = 0; c < cols; c++) {
+        const col = faceColor(row[c], f);
+        if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(ox + Math.round(c * P), oy + Math.round(r * P), Math.ceil(P) + 1, Math.ceil(P) + 1);
+      }
+    }
+    // frost crust creeping over skin and hair
+    const n = Math.floor(czFrost.length * f);
+    for (let i = 0; i < n; i++) {
+      const q = czFrost[i], ch = (FACE[Math.floor(q.r)] || "")[Math.floor(q.c)];
+      if (!ch || '.iMEkwT'.includes(ch)) continue;
+      ctx.fillStyle = i % 3 ? "#ffffff" : "#e0f2fe";
+      ctx.fillRect(ox + Math.round(q.c * P), oy + Math.round(q.r * P), q.w * 2, q.w * 2);
+    }
+    // icicles hanging from brows, moustache and chin
+    ICICLES.forEach(([c, r, L], idx) => {
+      let len = L * f * P;
+      if (len < 1) return;
+      let yOff = 0;
+      if (idx === 4 && cz.icicleDrop) { yOff = cz.icicleDrop.y; if (yOff > 120) return; }     // the one that snaps
+      const x0 = ox + Math.round(c * P), y0 = oy + Math.round(r * P) + yOff;
+      for (let s2 = 0; s2 < len; s2 += 2) {
+        const w = Math.max(1, Math.round(P * 0.8 * (1 - s2 / len)));
+        ctx.fillStyle = s2 % 4 ? "#e0f2fe" : "#ffffff"; ctx.fillRect(x0 + Math.round((P - w) / 2), y0 + s2, w, 2);
+      }
+      ctx.fillStyle = "#7dd3fc"; ctx.fillRect(x0 + Math.round(P / 2), y0, 1, Math.max(1, len * 0.7));
+    });
+    }
+    // chunky snow caked on the helmet top, shoulders and visor, plus frost specks on the shell
+    ctx.fillStyle = "#ffffff";
+    const capH = [10, 14, 18, 16, 20, 18, 14, 16, 12, 8];
+    capH.forEach((h0, i) => { const h = Math.round(h0 * (0.6 + 0.4 * f)); ctx.fillRect(cx - 90 + i * 18, cy - 100 - h + 6, 18, h); });
+    for (let i = 0; i < 14; i++) { const h = 6 + ((i * 7) % 9); ctx.fillRect(cx - 132 + i * 19, cy + 84 - h + 4, 19, h); }
+    ctx.fillStyle = "#e0f2fe"; for (let i = 0; i < 8; i++) ctx.fillRect(cx - 72 + i * 18 + (i % 2) * 4, cy - 82, 10, 3 + (i % 3) * 2);
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 26; i++) {
+      const fx = cx - 92 + ((i * 37) % 184), fy = cy - 94 + ((i * 53) % 190);
+      if (fx > cx - 78 && fx < cx + 78 && fy > cy - 88 && fy < cy + 94) continue;   // keep the face window clear
+      ctx.fillRect(fx, fy, 3, 3);
+    }
+    ctx.restore();
+    // vignette
+    const vg = ctx.createRadialGradient(cx, cy, 70, cx, cy, V_WIDTH * 0.62);
+    vg.addColorStop(0, "rgba(2, 6, 23, 0)"); vg.addColorStop(1, "rgba(2, 6, 23, 0.7)");
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+  }
+
+  function drawFrozenVisor(wx0, wy0, wx1, wy1, f) {
+    const W = wx1 - wx0, H = wy1 - wy0, t = cz.t;
+    const sx = W / VIS_W, sy = H / VIS_H;
+    // glass: deep blue, banded like the sprite visor, icing paler as it freezes
+    const bands = ["#0369a1", "#0284c7", "#0284c7", "#0ea5e9", "#0284c7", "#075985"];
+    const bh = Math.ceil(H / bands.length);
+    bands.forEach((c, i) => { ctx.fillStyle = mix(c, i % 2 ? "#7dd3fc" : "#38bdf8", f * 0.3); ctx.fillRect(wx0, wy0 + i * bh, W, Math.min(bh, wy1 - (wy0 + i * bh))); });
+    // warm reflection of the ship's lights - fades as the glass ices over
+    const refl = Math.max(0, 1 - f * 1.3);
+    if (refl > 0.02) {
+      ctx.globalAlpha = refl * (0.7 + 0.2 * Math.sin(t * 2));
+      ctx.fillStyle = "#f59e0b"; ctx.fillRect(wx1 - 46, wy0 + 30, 6, 4); ctx.fillRect(wx1 - 38, wy0 + 30, 6, 4); ctx.fillRect(wx1 - 30, wy0 + 26, 6, 4);
+      ctx.fillStyle = "rgba(251, 191, 36, 0.35)"; ctx.fillRect(wx1 - 54, wy0 + 20, 34, 20);
+      ctx.globalAlpha = 1;
+    }
+    // classic sprite glint: two stepped diagonal bars
+    ctx.fillStyle = mix("#38bdf8", "#e0f2fe", f);
+    for (let i = 0; i < 6; i++) { ctx.fillRect(wx0 + 18 + i * 6, wy0 + 52 - i * 7, 6, 7); }
+    for (let i = 0; i < 4; i++) { ctx.fillRect(wx0 + 34 + i * 6, wy0 + 56 - i * 7, 4, 7); }
+    // last breath: fogs the inside of the glass, then freezes in place
+    const fogA = Math.min(1, Math.max(0, (t - 3.3) / 0.6));
+    if (fogA > 0) {
+      const fx = wx0 + W * 0.5, fy = wy0 + H * 0.66;
+      ctx.fillStyle = `rgba(224, 242, 254, ${0.4 * fogA})`;
+      [30, 52, 64, 66, 58, 40].forEach((w, r) => ctx.fillRect(Math.round(fx - w / 2), Math.round(fy - 24 + r * 8), w, 8));
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.3 * fogA})`;
+      [18, 34, 38, 26].forEach((w, r) => ctx.fillRect(Math.round(fx - w / 2), Math.round(fy - 16 + r * 8), w, 8));
+    }
+    // frost haze thickening at the edges
+    const edge = Math.round(4 + 26 * f);
+    ctx.fillStyle = `rgba(240, 249, 255, ${0.2 + 0.35 * f})`;
+    ctx.fillRect(wx0, wy0, W, edge); ctx.fillRect(wx0, wy1 - edge, W, edge);
+    ctx.fillRect(wx0, wy0 + edge, Math.round(edge * 0.8), H - 2 * edge); ctx.fillRect(wx1 - Math.round(edge * 0.8), wy0 + edge, Math.round(edge * 0.8), H - 2 * edge);
+    // fern-like frost crystals creeping in from the edges
+    for (const sg of czFernSegs) {
+      if (sg.t > f) continue;
+      ctx.fillStyle = sg.d === 0 ? "#ffffff" : (sg.d === 1 ? "#f0f9ff" : "#cffafe");
+      const s2 = sg.d === 0 ? 3 : 2;
+      const ax = wx0 + sg.x0 * sx, ay = wy0 + sg.y0 * sy, bx = wx0 + sg.x * sx, by = wy0 + sg.y * sy;
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 1.5));
+      for (let k = 0; k <= n; k++) ctx.fillRect(Math.round(ax + (bx - ax) * k / n), Math.round(ay + (by - ay) * k / n), s2, s2);   // solid stroke
+    }
+    // a hairline crack once it's frozen through
+    if (f > 0.85) {
+      ctx.fillStyle = "#f8fafc";
+      const pts = [[0.62, 0.18], [0.58, 0.3], [0.66, 0.38], [0.6, 0.5], [0.7, 0.58]];
+      pts.forEach(([u, v]) => ctx.fillRect(Math.round(wx0 + u * W), Math.round(wy0 + v * H), 3, Math.round(H * 0.11)));
+    }
+    // icicles hanging off the bottom of the window rim; the 3rd one snaps later
+    const ic = [[0.12, 14], [0.24, 22], [0.38, 12], [0.52, 26], [0.66, 16], [0.8, 24], [0.9, 10]];
+    ic.forEach(([u, L], idx) => {
+      const len = L * f; if (len < 1) return;
+      let yOff = 0;
+      if (idx === 3 && cz.icicleDrop) { yOff = cz.icicleDrop.y; if (yOff > 140) return; }
+      const x0 = Math.round(wx0 + u * W), y0 = wy1 + 6 + yOff;
+      for (let s2 = 0; s2 < len; s2 += 3) {
+        const w = Math.max(2, Math.round(7 * (1 - s2 / len)));
+        ctx.fillStyle = s2 % 6 ? "#e0f2fe" : "#ffffff"; ctx.fillRect(x0 - Math.round(w / 2), y0 + s2, w, 3);
+      }
+      ctx.fillStyle = "#7dd3fc"; ctx.fillRect(x0, y0, 1, Math.max(1, len * 0.7));
+    });
+  }
+
+  function drawFlakes() {
+    for (const fl of czFlakes) {
+      ctx.fillStyle = fl.z > 0.7 ? "#ffffff" : "rgba(226, 240, 252, 0.7)";
+      const s = fl.z > 0.85 ? 2 : 1;
+      if (!act2() && fl.z > 0.45) ctx.fillRect(Math.round(fl.x) - 3, Math.round(fl.y) - 1, 4, 1);   // wind streak
+      ctx.fillRect(Math.round(fl.x), Math.round(fl.y), s, s);
+    }
+  }
+  function drawMessage() {
+    const t = cz.t;
+    if (t < 5.0 || t > 7.2) return;
+    const a = t < 5.5 ? (t - 5.0) / 0.5 : (t > 6.7 ? (7.2 - t) / 0.5 : 1);
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    const x = Math.round(V_WIDTH / 2), y = 30, msg = "FROZEN STIFF";
+    ctx.fillStyle = "rgba(2, 6, 23, 0.55)"; ctx.fillRect(0, y - 20, V_WIDTH, 38);
+    ctx.font = "bold 22px monospace"; ctx.textAlign = "center";
+    ctx.fillStyle = "#000000"; ctx.fillText(msg, x + 2, y + 2);
+    ctx.fillStyle = "#0284c7"; ctx.fillText(msg, x - 1, y - 1); ctx.fillText(msg, x + 1, y - 1);
+    ctx.fillStyle = "#e0f2fe"; ctx.fillText(msg, x, y);
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace";
+    ctx.fillText("HEATERS DEAD. THE CRYO WORLD KEEPS YOU", x, y + 14);
+    ctx.restore();
+  }
+  function renderColdCutscene() {
+    const time = cz.t;
+    ctx.save();
+    if (!act2()) {
+      drawWideScene(time);
+      const px = cz.px;
+      drawPilotWide(px, 194, 2.6, time);
+      drawFlakes();
+      // blowing ground snow
+      ctx.fillStyle = "rgba(240, 249, 255, 0.35)";
+      for (let i = 0; i < 6; i++) { const gx = ((time * 90 + i * 97) % (V_WIDTH + 120)) - 60; ctx.fillRect(Math.round(gx), 182 + (i % 3) * 9, 60, 3); }
+      ctx.fillStyle = `rgba(186, 230, 253, ${0.08 + 0.25 * Math.min(1, time / 3)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);   // creeping white-out
+    } else {
+      drawCloseUp(time);
+      drawFlakes();
+    }
+    if (cz.flash > 0) { ctx.fillStyle = `rgba(240, 249, 255, ${Math.min(1, cz.flash * 1.4)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    ctx.restore();
+    drawMessage();
+    if (cz.ready && typeof dcDrawDriftPrompt === 'function') dcDrawDriftPrompt(Date.now());
+  }
+
+  // ---------- loop hooks ----------
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    if (isColdCutscenePlaying) {
+      updateColdCutscene(dt);
+      if (typeof pollGamepadState === 'function') {
+        pollGamepadState();
+        if (cz.ready && typeof currentGpButtons !== 'undefined' && currentGpButtons.some((b, i) => b && !prevGamepadButtons[i])) dismissColdCutscene();
+        if (typeof currentGpButtons !== 'undefined') {
+          for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
+          for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
+        }
+      }
+      return;
+    }
+    return prevUpdate.apply(this, arguments);
+  };
+  const prevRender = window.render;
+  window.render = function() {
+    if (isColdCutscenePlaying) { renderColdCutscene(); return; }
+    return prevRender.apply(this, arguments);
+  };
+  window.__coldCutscene = { state: cz, playing: () => isColdCutscenePlaying };
+})();
+</script>
+
 </body>
 </html>
