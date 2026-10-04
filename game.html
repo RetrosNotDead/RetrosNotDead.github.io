@@ -11,8 +11,8 @@
 <meta name="theme-color" content="#000000">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
-  body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
-  canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
+  body, html { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
+  canvas#game { display: block; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
 
   /* === LANDSCAPE TITLE SCREEN ===
      The title screen is now drawn entirely on the game canvas itself
@@ -336,6 +336,11 @@
 
 <div id="crt-overlay"></div>
 <canvas id="game"></canvas>
+<div id="rotate-prompt" style="display:none; position:fixed; inset:0; z-index:99999; background:#02040a; color:#38bdf8; font-family:'Courier New', monospace; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:24px;">
+  <div style="font-size:54px; transform:rotate(90deg);">📱</div>
+  <div style="font-size:18px; font-weight:bold; letter-spacing:2px;">ROTATE YOUR DEVICE</div>
+  <div style="font-size:12px; color:#94a3b8;">VOID PILOT 3D plays in landscape</div>
+</div>
 
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -386,6 +391,19 @@ let RENDER_SCALE = renderResMode === "HD" ? (1080 / V_HEIGHT) : 1;
 const joy = { active: false, pointerId: null, baseX: 60, baseY: V_HEIGHT - 55, dx: 0, dy: 0, radius: 28 };
 
 function resize() {
+  // Pin the canvas to exactly the visible area so nothing hides under the browser toolbar
+  // and touch coordinates (which use innerWidth/innerHeight) line up with what's drawn.
+  canvas.style.width = window.innerWidth + "px";
+  canvas.style.height = window.innerHeight + "px";
+  const rotateEl = document.getElementById("rotate-prompt");
+  if (rotateEl) rotateEl.style.display = window.innerHeight > window.innerWidth * 1.05 ? "flex" : "none";
+  // Scale the HTML HUD (stat panels, banners, touch buttons) with the screen so it keeps the
+  // same proportions as on a phone instead of shrinking on big tablet screens.
+  const hudZoom = Math.max(1, Math.min(2.4, window.innerHeight / 390));
+  ['hud', 'nav-banner', 'threat-banner', 'flight-cluster', 'btn-msl'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.zoom = hudZoom.toFixed(3);
+  });
   const aspect = window.innerWidth / window.innerHeight;
   V_WIDTH = Math.floor(V_HEIGHT * Math.max(1.33, aspect));
   canvas.width = Math.round(V_WIDTH * RENDER_SCALE);
@@ -395,6 +413,8 @@ function resize() {
   joy.baseY = V_HEIGHT - 55;
 }
 window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 250));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
 resize();
 
 function setRenderResMode(mode) {
