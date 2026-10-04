@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Void Pilot 3D - TIMER TEST</title>
+
+  <!-- Monetag Verification -->
+  
+
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap">
+
+  <style>
+    :root {
+      --bg: #05070d;
+      --card-bg: #0b1120;
+      --border: #1e293b;
+      --accent: #38bdf8;
+      --text: #94a3b8;
+      --dos-blue: #0000aa;
+      --dos-cyan: #00aaaa;
+      --dos-bright-cyan: #55ffff;
+      --dos-yellow: #ffff55;
+      --dos-white: #ffffff;
+      --dos-gray: #aaaaaa;
+      --dos-green: #55ff55;
+    }
+
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: 'Share Tech Mono', monospace; 
+      user-select: none !important; 
+      -webkit-user-select: none !important; 
+      -webkit-touch-callout: none !important; 
+    }
+
+    html, body { 
+      width: 100vw; 
+      height: 100vh; 
+      height: 100dvh; 
+      background-color: var(--bg); 
+      color: var(--text); 
+      overflow: hidden; 
+      display: flex;
+      flex-direction: column;
+      -webkit-touch-callout: none !important;
+    }
+
+    /* CLEAN MINIMAL TOP BAR */
+    header {
+      background: #080d1a;
+      border-bottom: 1px solid var(--border);
+      padding: 4px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 38px;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+    .logo { 
+      font-size: 0.88rem; 
+      font-weight: 900; 
+      color: #fff; 
+      letter-spacing: 1.5px; 
+      text-decoration: none; 
+      white-space: nowrap;
+    }
+    .logo span { color: var(--accent); }
+
+    .visits-badge { 
+      display: flex; 
+      align-items: center; 
+    }
+
+    /* THEATER WRAPPER */
+    .theater-wrapper {
+      position: relative;
+      width: 100vw;
+      height: calc(100dvh - 38px);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .game-theater {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    iframe#game-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      -webkit-touch-callout: none !important;
+    }
+
+    #fs-toggle-btn {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      background: rgba(11, 19, 41, 0.88);
+      border: 1.5px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 150;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35), 2px 2px 0 #000;
+    }
+    #fs-toggle-btn:active { transform: translate(1px, 1px); background: #0284c7; color: #fff; }
+
+    #demo-timer-badge {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(4, 9, 24, 0.92);
+      border: 1px solid #38bdf8;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      padding: 3px 10px;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1.2px;
+      z-index: 100;
+      pointer-events: none;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    /* DOS SHAREWARE SPLASH SCREEN */
+    #dos-splash-modal {
+      position: absolute;
+      inset: 0;
+      background: #020210;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+      padding: 8px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .dos-frame {
+      background: #000088;
+      border: 3px solid #55ffff;
+      box-shadow: 0 0 28px rgba(85, 255, 255, 0.45), inset 0 0 16px rgba(0, 0, 0, 0.7);
+      width: 100%;
+      max-width: 620px;
+      padding: 12px 14px;
+      color: var(--dos-white);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+
+    .dos-header-banner {
+      background: #000000;
+      border: 1px solid #55ffff;
+      padding: 6px;
+      text-align: center;
+    }
+    .dos-title {
+      font-family: 'VT323', monospace;
+      font-size: clamp(20px, 5vw, 28px);
+      color: #ffff55;
+      letter-spacing: 2px;
+      line-height: 1;
+      text-shadow: 2px 2px #000;
+    }
+    .dos-subtitle {
+      font-size: 10px;
+      color: #55ffff;
+      letter-spacing: 1.5px;
+      font-weight: bold;
+    }
+
+    .dos-box {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px dashed #55ffff;
+      padding: 8px 10px;
+      font-size: clamp(9.5px, 2.2vw, 11px);
+      line-height: 1.42;
+      color: #ffffff;
+    }
+    .dos-box b { color: #ffff55; }
+    .dos-box .highlight { color: #55ff55; font-weight: bold; }
+
+    .dos-roadmap {
+      background: #001133;
+      border: 1px solid #ffaa00;
+      padding: 6px 9px;
+      font-size: clamp(9px, 2vw, 10.5px);
+      color: #ffdd88;
+      line-height: 1.35;
+    }
+
+    .dos-menu-title {
+      color: #ffff55;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .dos-button-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .dos-btn {
+      background: #000055;
+      border: 2px solid #55ffff;
+      color: #ffffff;
+      padding: 8px 10px;
+      font-size: clamp(10px, 2.5vw, 12px);
+      font-weight: 900;
+      letter-spacing: 1px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-decoration: none;
+      transition: all 0.12s;
+    }
+    .dos-btn:hover, .dos-btn:active {
+      background: #55ffff;
+      color: #000000;
+      border-color: #ffffff;
+      transform: translate(1px, 1px);
+    }
+    .dos-btn-primary {
+      border-color: #55ff55;
+      background: #002200;
+      color: #55ff55;
+    }
+    .dos-btn-primary:hover, .dos-btn-primary:active {
+      background: #55ff55;
+      color: #000000;
+    }
+    .dos-btn-gold {
+      border-color: #ffff55;
+      background: #332200;
+      color: #ffff55;
+    }
+    .dos-btn-gold:hover, .dos-btn-gold:active {
+      background: #ffff55;
+      color: #000000;
+    }
+
+    .dos-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 12px;
+      background: #55ff55;
+      margin-left: 4px;
+      animation: dosBlink 0.8s infinite;
+      vertical-align: middle;
+    }
+    @keyframes dosBlink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    .dos-footer {
+      font-size: 8.5px;
+      color: #aaaaaa;
+      text-align: center;
+      border-top: 1px solid #0055aa;
+      padding-top: 4px;
+    }
+
+    /* DEMO EXPIRED MODAL */
+    #demo-expired-modal {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(11, 23, 56, 0.98) 0%, rgba(2, 5, 15, 0.99) 90%);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 15px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .demo-frame {
+      background: #080e1e;
+      border: 2px solid #facc15;
+      box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
+      padding: 18px;
+      max-width: 440px;
+      width: 92%;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn-action {
+      background: #22c55e;
+      border: 2px solid #fff;
+      color: #000;
+      font-weight: 900;
+      font-size: 11px;
+      padding: 9px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+      text-decoration: none;
+      display: inline-block;
+      text-align: center;
+    }
+    .btn-action:hover { background: #16a34a; color: #fff; }
+
+    /* 5,000 PLAYER UNLOCK CHALLENGE */
+    .unlock-goal {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid #55ff55;
+      color: #55ff55;
+      padding: 6px 9px;
+      font-size: clamp(9.5px, 2.2vw, 11px);
+      line-height: 1.4;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+    .unlock-goal b { color: #ffff55; }
+    #unlock-badge-slot {
+      display: flex;
+      justify-content: center;
+      margin-top: 5px;
+      min-height: 18px;
+    }
+
+    .btn-donate-modal {
+      background: linear-gradient(180deg, #b45309 0%, #78350f 100%);
+      border: 2px solid #facc15;
+      color: #fef08a;
+      font-weight: 900;
+      font-size: 11px;
+      padding: 9px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+      text-decoration: none;
+      display: inline-block;
+      text-align: center;
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- CLEAN TOP BAR -->
+  <header>
+    <a href="#" class="logo">⚡ VOID PILOT <span>3D</span></a>
+
+    <div class="visits-badge">
+      <img
+        id="visits-badge-img"
+        src="https://api.visitorbadge.io/api/visitors?path=retrosnotdead.github.io&label=VISITS&countColor=%2338bdf8&labelColor=%23111e38&style=flat" 
+        alt="Visits" 
+        style="vertical-align: middle; height: 18px; border-radius: 2px;"
+      />
+    </div>
+  </header>
+
+  <div class="theater-wrapper" id="theater-root">
+    <div class="game-theater">
+
+      <!-- DOS SHAREWARE SPLASH SCREEN -->
+      <div id="dos-splash-modal">
+        <div class="dos-frame">
+          <div class="dos-header-banner">
+            <div class="dos-title">VOID PILOT 3D: ROGUE GALAXY</div>
+            <div class="dos-subtitle">PILOT EDITION // 10-MINUTE SHAREWARE SORTIE</div>
+          </div>
+
+          <div class="dos-box">
+            <b>COMMANDER LOG &amp; ORIGIN STORY:</b><br>
+            Greetings! I am <b>Matthew MacLaine</b> (RetrosNotDeadStudio). 
+            <span class="highlight">I do not own a computer.</span> Over months of late nights, I coded this entire 3D retro space simulator—writing the 3D software rasterizer, physics, cockpit VDUs, and procedural Sound Blaster 16 synthwave audio—<b>line-by-line directly on an Android smartphone using a text editor (QuickEdit).</b>
+          </div>
+
+          <div class="dos-roadmap">
+            <b>★ THE SHAREWARE ROADMAP &amp; FUTURE EXPANSIONS:</b><br>
+            This 10-minute sortie is an authentic shareware evaluation flight. <b>MAJOR EXPANSIONS &amp; REGULAR UPDATES ARE IN ACTIVE DEVELOPMENT!</b> My mission is to earn enough from this demo to purchase my first real development PC and bring the complete, full-scale Rogue Galaxy universe to Steam!
+          </div>
+
+          <div class="unlock-goal">
+            🔓 <b>THE 5,000 PLAYER CHALLENGE:</b> When Void Pilot 3D hits <b>5,000 players</b>, the 10-minute limit is removed and the <b>FULL GAME GOES FREE</b> for everyone! Watch the counter climb ↑ top right.
+          </div>
+
+          <div class="dos-menu-title">-- SELECT MISSION PROTOCOL --<span class="dos-cursor"></span></div>
+
+          <div class="dos-button-grid">
+            <button id="dos-launch-btn" class="dos-btn dos-btn-primary">
+              <span>[ 1 ] INITIATE 10-MIN FLIGHT SORTIE</span>
+              <span>ENTER ➔</span>
+            </button>
+            <a href="guide.html" class="dos-btn">
+              <span>[ 2 ] CONFED FLIGHT MANUAL (16 CHAPTERS)</span>
+              <span>READ ➔</span>
+            </a>
+            <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="dos-btn dos-btn-gold">
+              <span>[ 3 ] BACK DEV PC FUND (PAYPAL.ME)</span>
+              <span>SUPPORT ★</span>
+            </a>
+          </div>
+
+          <div class="dos-footer">
+            PRESS 1, 2, OR 3 ON KEYBOARD OR TAP ANY BUTTON &bull; (C) 2026 RETROS NOT DEAD STUDIO
+          </div>
+        </div>
+      </div>
+
+      <button id="fs-toggle-btn">⛶ FULL</button>
+      <div id="demo-timer-badge">⏱️ DEMO TIME: 10:00</div>
+
+      <!-- DEMO EXPIRED MODAL -->
+      <div id="demo-expired-modal">
+        <div class="demo-frame">
+          <h2 style="color:#facc15; font-size:15px; letter-spacing:1px;">MISSION EVALUATION COMPLETE</h2>
+          <p style="font-size:10px; color:#cbd5e1; line-height:1.4;">
+            Your 10-minute flight trial has concluded. Flight systems have safe-parked.
+          </p>
+
+          <div class="unlock-goal" style="width:100%;">
+            🔓 <b>WANT MORE FLIGHT TIME?</b> At <b>5,000 players</b> the timer is removed and the full game goes free for everyone. Share Void Pilot 3D with a mate to get us there!
+            <div id="unlock-badge-slot"></div>
+          </div>
+
+          <p style="font-size:9.5px; color:#fef08a; background:rgba(180, 83, 9, 0.25); border:1px solid #b45309; padding:6px; border-radius:4px; line-height:1.35;">
+            💡 <b>Help Build the Full Game:</b> I coded this entire 3D space sim on an Android phone without a PC. If you enjoyed the flight, chip in a few dollars to help me buy my first development computer for the full release!
+          </p>
+
+          <a href="https://paypal.me/aussiedreadsgaming" target="_blank" rel="noopener" class="btn-donate-modal">
+            ☕ SUPPORT DEV PC FUND (PAYPAL)
+          </a>
+
+          <button id="restart-demo-btn" class="btn-action">
+            🚀 LAUNCH NEW 10-MIN MISSION
+          </button>
+        </div>
+      </div>
+
+      <iframe 
+        id="game-frame" 
+        src="game.html" 
+        allow="fullscreen; gamepad; autoplay; screen-wake-lock" 
+        allowfullscreen="true" 
+        webkitallowfullscreen="true" 
+        mozallowfullscreen="true">
+      </iframe>
+    </div>
+  </div>
+
+  <script>
+    // Kills Android long-press menus
+    window.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+    document.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { passive: false });
+
+    const gameFrame = document.getElementById("game-frame");
+    gameFrame.addEventListener("load", () => {
+      try {
+        const frameWin = gameFrame.contentWindow;
+        const frameDoc = gameFrame.contentDocument || frameWin.document;
+
+        frameWin.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+        frameDoc.addEventListener("contextmenu", e => { e.preventDefault(); return false; }, { capture: true, passive: false });
+
+        const killStyle = frameDoc.createElement("style");
+        killStyle.textContent = "* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }";
+        frameDoc.head.appendChild(killStyle);
+      } catch (err) {}
+    });
+
+    // Fullscreen Handler
+    const fsBtn = document.getElementById("fs-toggle-btn");
+    const theaterRoot = document.getElementById("theater-root");
+
+    function toggleFullscreen() {
+      const doc = window.document;
+      const docEl = theaterRoot;
+
+      const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+      const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+      if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+        if (requestFullScreen) requestFullScreen.call(docEl).catch(() => {});
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
+        fsBtn.innerText = "✕ EXIT";
+      } else {
+        if (cancelFullScreen) cancelFullScreen.call(doc).catch(() => {});
+        fsBtn.innerText = "⛶ FULL";
+      }
+    }
+
+    fsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+
+    // DOS Splash & Mission Launch
+    const dosSplash = document.getElementById("dos-splash-modal");
+    const dosLaunchBtn = document.getElementById("dos-launch-btn");
+    const timerBadge = document.getElementById("demo-timer-badge");
+    const expiredModal = document.getElementById("demo-expired-modal");
+
+    const visitsBadgeImg = document.getElementById("visits-badge-img");
+    const visitsBadgeHome = document.querySelector(".visits-badge");
+    const unlockBadgeSlot = document.getElementById("unlock-badge-slot");
+
+    const DEMO_SECONDS = 120; // TEST VERSION ONLY
+    let timeLeft = DEMO_SECONDS;
+    let timerActive = false;
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function startFlightMission() {
+      if (dosSplash) dosSplash.style.display = "none";
+      timerActive = true;
+      try {
+        if (gameFrame.contentWindow && gameFrame.contentWindow.focus) {
+          gameFrame.contentWindow.focus();
+        }
+      } catch(e) {}
+    }
+
+    dosLaunchBtn.addEventListener("click", startFlightMission);
+
+    window.addEventListener("keydown", (e) => {
+      if (dosSplash && dosSplash.style.display !== "none") {
+        if (e.key === "1" || e.code === "Enter" || e.code === "Space") {
+          e.preventDefault();
+          startFlightMission();
+        } else if (e.key === "2") {
+          window.location.href = "guide.html";
+        } else if (e.key === "3") {
+          window.open("https://paypal.me/aussiedreadsgaming", "_blank");
+        }
+      }
+    });
+
+    setInterval(() => {
+      if (!timerActive || timeLeft <= 0) return;
+
+      timeLeft--;
+      timerBadge.innerText = `⏱️ DEMO TIME: ${formatTime(timeLeft)}`;
+
+      if (timeLeft <= 30) {
+        timerBadge.style.color = "#ef4444";
+        timerBadge.style.borderColor = "#ef4444";
+        timerBadge.style.boxShadow = "0 0 14px rgba(239, 68, 68, 0.7)";
+      } else if (timeLeft <= 120) {
+        timerBadge.style.color = "#facc15";
+        timerBadge.style.borderColor = "#facc15";
+      }
+
+      if (timeLeft <= 0) {
+        expiredModal.style.display = "flex";
+        timerBadge.style.display = "none";
+        // Move (not copy) the live visit counter into the time-up screen,
+        // so it is never loaded twice and never double-counts a player.
+        if (visitsBadgeImg && unlockBadgeSlot) unlockBadgeSlot.appendChild(visitsBadgeImg);
+      }
+    }, 1000);
+
+    document.getElementById("restart-demo-btn").addEventListener("click", () => {
+      timeLeft = DEMO_SECONDS;
+      expiredModal.style.display = "none";
+      if (visitsBadgeImg && visitsBadgeHome) visitsBadgeHome.appendChild(visitsBadgeImg);
+      timerBadge.style.display = "block";
+      timerBadge.style.color = "#38bdf8";
+      timerBadge.style.borderColor = "#38bdf8";
+      timerBadge.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.4)";
+      gameFrame.src = gameFrame.src;
+    });
+  </script>
+</body>
+  </html>
