@@ -161,6 +161,7 @@
   <div class="hud-box">
     <div>CREDITS: <span id="stat-cred" style="color:#38bdf8">$100</span></div>
     <div>CARGO: <span id="stat-cargo" style="color:#facc15">0/20</span></div>
+    <div id="loop-row" style="display:none;">LOOP: <span id="stat-loop" style="color:#f472b6">1</span></div>
     <div>CONTROLLER: <span id="stat-gamepad" style="color:#94a3b8">OFFLINE</span></div>
     <div style="display:flex; gap:3px; margin-top:2px;">
       <button id="fs-btn" class="hud-btn">⛶ FULL</button>
@@ -330,6 +331,7 @@
       <div>NODES MINED: <span id="stat-run-nodes" style="color:#4ade80; font-weight:bold;">0</span></div>
       <div>SALVAGED: <span id="stat-run-derelicts" style="color:#f59e0b; font-weight:bold;">0</span></div>
     </div>
+    <button id="loop-btn" class="close-ctrl-btn" style="max-width:200px; display:none; margin-bottom:8px; border-color:#f472b6; color:#f472b6;">CONTINUE: LOOP 2</button>
     <button id="restart-btn" class="close-ctrl-btn" style="max-width:200px;">NEW GALAXY RUN</button>
   </div>
 </div>
@@ -442,7 +444,7 @@ function playFullscreenChime() {
     osc.frequency.setValueAtTime(880.00, t + 0.08);
     g.gain.setValueAtTime(0.15, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-    osc.connect(g); g.connect(actx.destination);
+    osc.connect(g); g.connect(audioOut());
     osc.start(t); osc.stop(t + 0.28);
   } catch (e) {}
 }
@@ -463,7 +465,7 @@ function playStartChord() {
       filt.frequency.exponentialRampToValueAtTime(3200, t + 1.2);
       g.gain.setValueAtTime(0.08, t + idx * 0.05);
       g.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
-      osc.connect(filt); filt.connect(g); g.connect(actx.destination);
+      osc.connect(filt); filt.connect(g); g.connect(audioOut());
       osc.start(t + idx * 0.05); osc.stop(t + 2.0);
     });
   } catch (e) {}
@@ -809,8 +811,30 @@ let tractorGain = null, tractorOsc1 = null, tractorOsc2 = null, tractorLfo = nul
 let afterburnerGain = null, abWhineOsc = null, abCombustSource = null, abFilter = null;
 let combatMasterGain = null, windGain = null, windFilter = null, windNoiseSource = null;
 
+// Larger audio buffer on phones = far fewer underrun pops/crackles when a frame runs long
+function createGameAudioContext() {
+  try { return new AudioCtx({ latencyHint: 'playback' }); } catch (e) { return new AudioCtx(); }
+}
+// Final output stage: a brick-wall-ish limiter so loud moments (explosions on top of music
+// and battle synth) can never clip the speakers - clipping is what turns into crackle.
+let masterLimiter = null;
+function audioOut() {
+  if (!actx) return null;
+  if (!masterLimiter) {
+    masterLimiter = actx.createDynamicsCompressor();
+    const t = actx.currentTime;
+    masterLimiter.threshold.setValueAtTime(-6, t);
+    masterLimiter.knee.setValueAtTime(4, t);
+    masterLimiter.ratio.setValueAtTime(14, t);
+    masterLimiter.attack.setValueAtTime(0.002, t);
+    masterLimiter.release.setValueAtTime(0.2, t);
+    masterLimiter.connect(actx.destination);
+  }
+  return masterLimiter;
+}
+
 function ensureAudio() {
-  if (!actx) actx = new AudioCtx();
+  if (!actx) actx = createGameAudioContext();
   if (actx.state === 'suspended') actx.resume();
   if (!ambientStarted && actx) {
     initAudioBusses();
@@ -824,7 +848,7 @@ function initAudioBusses() {
 
   privAudioMaster = actx.createGain();
   privAudioMaster.gain.setValueAtTime(1.0, actx.currentTime);
-  privAudioMaster.connect(actx.destination);
+  privAudioMaster.connect(audioOut());
 
   sfxBus = actx.createGain();
   sfxBus.gain.setValueAtTime(0.92, actx.currentTime);
@@ -1052,14 +1076,19 @@ const Music = (() => {
     node.connect(g); g.connect(dest);
     o.start(t); o.stop(t + dur + 0.05);
   }
+  let noiseBuf = null;
   function noise(dest, t, dur, vol, hp) {
-    const n = Math.floor(ctx.sampleRate * dur);
-    const buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.35));
-    const s = ctx.createBufferSource(); s.buffer = buf;
+    if (!noiseBuf) {
+      const n = Math.floor(ctx.sampleRate * 0.5);
+      noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.setValueAtTime(hp, t);
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t);
-    s.connect(f); f.connect(g); g.connect(dest); s.start(t);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);   // fade out, no click
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 0.4); s.stop(t + dur + 0.02);
   }
   function kick(t, v) { tone(bus.drums, 150, t, 0.22, 'sine', v, { glide: 42 }); }
   function snare(t) { noise(bus.drums, t, 0.16, 0.22, 1600); tone(bus.drums, 200, t, 0.09, 'triangle', 0.12, { glide: 120 }); }
@@ -1138,7 +1167,7 @@ const Music = (() => {
   function tick() {
     if (!ctx || ctx.state !== 'running') return;
     if (nextT < ctx.currentTime) nextT = ctx.currentTime + 0.02;
-    while (nextT < ctx.currentTime + 0.12) { scheduleStep(step, nextT); step++; nextT += STEP; }
+    while (nextT < ctx.currentTime + 0.3) { scheduleStep(step, nextT); step++; nextT += STEP; }
   }
 
   // one-off musical moments, played on the music bus so they honour the BGM toggle
@@ -1173,7 +1202,7 @@ function startAmbientMusic() {
   lfo.start();
 
   masterFilter.connect(musicMasterGain);
-  musicMasterGain.connect(actx.destination);
+  musicMasterGain.connect(audioOut());
   if (combatMasterGain) combatMasterGain.connect(musicMasterGain);
   Music.init(actx, musicMasterGain); // battle synth only - fades in for fights
 
@@ -1243,7 +1272,7 @@ function playSfx(type) {
       const popG = actx.createGain();
       popG.gain.setValueAtTime(isEnemy ? 0.08 : 0.15, t);
       popSrc.connect(popG);
-      popG.connect(sfxBus || actx.destination);
+      popG.connect(sfxBus || audioOut());
       popSrc.start(t);
 
       const osc = actx.createOscillator(), oscG = actx.createGain();
@@ -1258,7 +1287,7 @@ function playSfx(type) {
       oscG.gain.linearRampToValueAtTime(0.001, t + duration);
 
       osc.connect(oscG);
-      oscG.connect(sfxBus || actx.destination);
+      oscG.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + duration);
     } else if (type === 'shield') {
@@ -1281,7 +1310,7 @@ function playSfx(type) {
       nG.gain.linearRampToValueAtTime(0.001, t + dur);
       nSrc.connect(bp);
       bp.connect(nG);
-      nG.connect(sfxBus || actx.destination);
+      nG.connect(sfxBus || audioOut());
       nSrc.start(t);
 
       const osc = actx.createOscillator(), og = actx.createGain();
@@ -1291,7 +1320,7 @@ function playSfx(type) {
       og.gain.setValueAtTime(0.12, t);
       og.gain.linearRampToValueAtTime(0.001, t + dur);
       osc.connect(og);
-      og.connect(sfxBus || actx.destination);
+      og.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + dur);
     } else if (type === 'hullClang') {
@@ -1303,7 +1332,7 @@ function playSfx(type) {
         g.gain.setValueAtTime(0.08 / (idx + 1), t);
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         osc.connect(g);
-        g.connect(sfxBus || actx.destination);
+        g.connect(sfxBus || audioOut());
         osc.start(t);
         osc.stop(t + 0.22);
       });
@@ -1315,7 +1344,7 @@ function playSfx(type) {
       sg.gain.setValueAtTime(0.22, t);
       sg.gain.linearRampToValueAtTime(0.001, t + 0.26);
       sub.connect(sg);
-      sg.connect(sfxBus || actx.destination);
+      sg.connect(sfxBus || audioOut());
       sub.start(t);
       sub.stop(t + 0.26);
     } else if (type === 'warp') {
@@ -1341,7 +1370,7 @@ function playSfx(type) {
       osc1.connect(flt);
       osc2.connect(flt);
       flt.connect(g);
-      g.connect(sfxBus || actx.destination);
+      g.connect(sfxBus || audioOut());
       osc1.start(t);
       osc1.stop(t + dur);
       osc2.start(t);
@@ -1354,7 +1383,7 @@ function playSfx(type) {
       sg.gain.setValueAtTime(0.35, t + dur * 0.72);
       sg.gain.linearRampToValueAtTime(0.001, t + dur + 0.48);
       sub.connect(sg);
-      sg.connect(sfxBus || actx.destination);
+      sg.connect(sfxBus || audioOut());
       sub.start(t + dur * 0.72);
       sub.stop(t + dur + 0.48);
     } else if (type === 'airlock') {
@@ -1365,7 +1394,7 @@ function playSfx(type) {
       cg.gain.setValueAtTime(0.24, t);
       cg.gain.linearRampToValueAtTime(0.001, t + 0.24);
       clunk.connect(cg);
-      cg.connect(sfxBus || actx.destination);
+      cg.connect(sfxBus || audioOut());
       clunk.start(t);
       clunk.stop(t + 0.24);
 
@@ -1384,7 +1413,7 @@ function playSfx(type) {
       hG.linearRampToValueAtTime?.(0.001, t + 0.38);
       hSrc.connect(hFilt);
       hFilt.connect(hG);
-      hG.connect(sfxBus || actx.destination);
+      hG.connect(sfxBus || audioOut());
       hSrc.start(t + 0.06);
 
       [523.25, 659.25, 783.99].forEach((freq, idx) => {
@@ -1395,7 +1424,7 @@ function playSfx(type) {
         g.gain.setValueAtTime(0.12, noteTime);
         g.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.28);
         osc.connect(g);
-        g.connect(sfxBus || actx.destination);
+        g.connect(sfxBus || audioOut());
         osc.start(noteTime);
         osc.stop(noteTime + 0.28);
       });
@@ -1407,7 +1436,7 @@ function playSfx(type) {
       pg.gain.setValueAtTime(0.20, t);
       pg.gain.linearRampToValueAtTime(0.001, t + 0.16);
       pOsc.connect(pg);
-      pg.connect(sfxBus || actx.destination);
+      pg.connect(sfxBus || audioOut());
       pOsc.start(t);
       pOsc.stop(t + 0.16);
 
@@ -1418,7 +1447,7 @@ function playSfx(type) {
       clg.gain.setValueAtTime(0.14, t + 0.04);
       clg.gain.linearRampToValueAtTime(0.001, t + 0.26);
       cl.connect(clg);
-      clg.connect(sfxBus || actx.destination);
+      clg.connect(sfxBus || audioOut());
       cl.start(t + 0.04);
       cl.stop(t + 0.26);
     } else if (type === 'targetLock') {
@@ -1430,7 +1459,7 @@ function playSfx(type) {
       g.gain.setValueAtTime(0.12, t + 0.065);
       g.gain.linearRampToValueAtTime(0.001, t + 0.085);
       osc.connect(g);
-      g.connect(sfxBus || actx.destination);
+      g.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + 0.085);
     } else if (type === 'commChirp' || type === 'bountyAlert') {
@@ -1441,7 +1470,7 @@ function playSfx(type) {
       g.gain.setValueAtTime(0.11, t);
       g.gain.linearRampToValueAtTime(0.001, t + 0.13);
       osc.connect(g);
-      g.connect(sfxBus || actx.destination);
+      g.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + 0.13);
     } else if (type === 'autopilot') {
@@ -1452,7 +1481,7 @@ function playSfx(type) {
         g.gain.setValueAtTime(0.10, t + i * 0.05);
         g.gain.linearRampToValueAtTime(0.001, t + i * 0.05 + 0.04);
         osc.connect(g);
-        g.connect(sfxBus || actx.destination);
+        g.connect(sfxBus || audioOut());
         osc.start(t + i * 0.05);
         osc.stop(t + i * 0.05 + 0.045);
       });
@@ -1475,7 +1504,7 @@ function playSfx(type) {
       g.gain.linearRampToValueAtTime(0.001, t + dur);
       noise.connect(lp);
       lp.connect(g);
-      g.connect(sfxBus || actx.destination);
+      g.connect(sfxBus || audioOut());
       noise.start(t);
 
       const sub = actx.createOscillator(), sg = actx.createGain();
@@ -1485,7 +1514,7 @@ function playSfx(type) {
       sg.gain.setValueAtTime(0.35, t);
       sg.gain.linearRampToValueAtTime(0.001, t + dur);
       sub.connect(sg);
-      sg.connect(sfxBus || actx.destination);
+      sg.connect(sfxBus || audioOut());
       sub.start(t);
       sub.stop(t + dur);
     } else if (type === 'missileLaunch') {
@@ -1496,7 +1525,7 @@ function playSfx(type) {
       g1.gain.setValueAtTime(0.12, t);
       g1.gain.linearRampToValueAtTime(0, t + 0.10);
       osc.connect(g1);
-      g1.connect(sfxBus || actx.destination);
+      g1.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + 0.10);
 
@@ -1516,7 +1545,7 @@ function playSfx(type) {
       g2.gain.linearRampToValueAtTime(0, t + 0.32);
       noise.connect(bp);
       bp.connect(g2);
-      g2.connect(sfxBus || actx.destination);
+      g2.connect(sfxBus || audioOut());
       noise.start(t);
     } else if (type === 'missileHit') {
       const sub = actx.createOscillator(), subG = actx.createGain();
@@ -1526,13 +1555,13 @@ function playSfx(type) {
       subG.gain.setValueAtTime(0.28, t);
       subG.gain.linearRampToValueAtTime(0, t + 0.45);
       sub.connect(subG);
-      subG.connect(sfxBus || actx.destination);
+      subG.connect(sfxBus || audioOut());
       sub.start(t);
       sub.stop(t + 0.45);
     } else if (type === 'coin') {
       const osc = actx.createOscillator(), gain = actx.createGain();
       osc.connect(gain);
-      gain.connect(sfxBus || actx.destination);
+      gain.connect(sfxBus || audioOut());
       osc.type = 'square';
       osc.frequency.setValueAtTime(520, t);
       osc.frequency.setValueAtTime(780, t + 0.06);
@@ -1543,7 +1572,7 @@ function playSfx(type) {
     } else if (type === 'upgrade') {
       const osc = actx.createOscillator(), gain = actx.createGain();
       osc.connect(gain);
-      gain.connect(sfxBus || actx.destination);
+      gain.connect(sfxBus || audioOut());
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(330, t);
       osc.frequency.setValueAtTime(440, t + 0.07);
@@ -1555,7 +1584,7 @@ function playSfx(type) {
     } else if (type === 'jump') {
       const osc = actx.createOscillator(), gain = actx.createGain();
       osc.connect(gain);
-      gain.connect(sfxBus || actx.destination);
+      gain.connect(sfxBus || audioOut());
       osc.type = 'sine';
       osc.frequency.setValueAtTime(140, t);
       osc.frequency.exponentialRampToValueAtTime(320, t + 0.15);
@@ -1578,12 +1607,12 @@ function playSfx(type) {
       gain.gain.linearRampToValueAtTime(0, t + 0.08);
       noise.connect(filter);
       filter.connect(gain);
-      gain.connect(sfxBus || actx.destination);
+      gain.connect(sfxBus || audioOut());
       noise.start(t);
     } else if (type === 'miningHum') {
       const osc = actx.createOscillator(), gain = actx.createGain();
       osc.connect(gain);
-      gain.connect(sfxBus || actx.destination);
+      gain.connect(sfxBus || audioOut());
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(140 + Math.random() * 20, t);
       osc.frequency.linearRampToValueAtTime(85, t + 0.07);
@@ -1600,7 +1629,7 @@ function playSfx(type) {
       g.gain.setValueAtTime(0.09, t);
       g.gain.linearRampToValueAtTime(0, t + 0.13);
       osc.connect(g);
-      g.connect(sfxBus || actx.destination);
+      g.connect(sfxBus || audioOut());
       osc.start(t);
       osc.stop(t + 0.13);
     }
@@ -1619,7 +1648,7 @@ function playEtChime() {
         g.gain.setValueAtTime(0.11, actx.currentTime);
         g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.35);
         osc.connect(g);
-        g.connect(actx.destination);
+        g.connect(audioOut());
         osc.start();
         osc.stop(actx.currentTime + 0.35);
       } catch (e) {}
@@ -2294,8 +2323,9 @@ function destroyStrongholdAndLiberateSector(st) {
     }
   }
 
-  ship.credits += 3500;
-  runStats.creditsEarned += 3500;
+  const liberationPay = Math.round(3500 * getLoopProfitMult());
+  ship.credits += liberationPay;
+  runStats.creditsEarned += liberationPay;
   runStats.piratesKilled += 3;
   delete strongholdDefenseSpawnedRegistry[secKey];
 
@@ -2368,7 +2398,7 @@ function getPirateBeamDamage(pirate) {
 function getEnemyDamageMultiplier() {
   const defenseLevel = Math.min(ship.upgrades.shield, ship.upgrades.hull);
   const t = Math.min(1, Math.max(0, (defenseLevel - 1) / 4)); // 0 at level 1, 1 at level 5+
-  return 1.8 - 0.8 * t; // 1.8x harder-hitting at level 1, down to 1.0x (normal) at level 5+
+  return (1.8 - 0.8 * t) * getLoopEnemyDamageMult(); // 1.8x at level 1 -> 1.0x at level 5+, then loop scaling
 }
 
 function createPirate(x, y, z, isBounty = false, options = {}) {
@@ -2531,10 +2561,10 @@ function spawnSquadFinale(pirate) {
   Music.stinger('victory');
 }
 
-function playBarrelRollWhoosh() {
+function playBarrelRollWhoosh(rollDur) {
   try {
     ensureAudio();
-    const t = actx.currentTime, dur = 1.6;
+    const t = actx.currentTime, dur = Math.max(1.6, (rollDur || 3.2) * 0.75);
     const n = Math.floor(actx.sampleRate * dur);
     const buf = actx.createBuffer(1, n, actx.sampleRate);
     const d = buf.getChannelData(0);
@@ -2545,15 +2575,15 @@ function playBarrelRollWhoosh() {
     bp.frequency.exponentialRampToValueAtTime(1800, t + dur * 0.5);
     bp.frequency.exponentialRampToValueAtTime(350, t + dur);
     const g = actx.createGain(); g.gain.setValueAtTime(0.32, t);
-    src.connect(bp); bp.connect(g); g.connect(sfxBus || actx.destination);
+    src.connect(bp); bp.connect(g); g.connect(sfxBus || audioOut());
     src.start(t);
   } catch (e) {}
 }
 
-function startBarrelRoll() {
+function startBarrelRoll(dur, cloud) {
   if (barrelRoll) return;
-  barrelRoll = { t: 0, dur: 2.4, angle: 0, dir: Math.random() > 0.5 ? 1 : -1 };
-  playBarrelRollWhoosh();
+  barrelRoll = { k: 0, dur: dur || 3.2, angle: 0, dir: Math.random() > 0.5 ? 1 : -1, cloud: cloud || null };
+  playBarrelRollWhoosh(barrelRoll.dur);
   vibrateGamepad(500, 0.6, 0.9);
 }
 
@@ -2561,8 +2591,25 @@ function startBarrelRoll() {
 // whole starfield wheels around the canopy while the cockpit stays put.
 function updateBarrelRoll(dt) {
   if (!barrelRoll) return;
-  barrelRoll.t = Math.min(barrelRoll.dur, barrelRoll.t + dt);
-  const k = barrelRoll.t / barrelRoll.dur;
+  // Progress normally runs over the planned duration, but while we're aimed through the
+  // fireball it keeps re-timing itself so the roll always finishes ~0.5s after we exit,
+  // whether you're boosting, coasting or slowing down.
+  let rate = 1 / barrelRoll.dur;
+  const cl = barrelRoll.cloud;
+  if (cl && fireClouds.includes(cl) && ship.speed > 2) {
+    const px = cl.x - ship.x, py = cl.y - ship.y, pz = cl.z - ship.z;
+    const along = px * ship.fx + py * ship.fy + pz * ship.fz;
+    const perp2 = Math.max(0, px * px + py * py + pz * pz - along * along);
+    if (perp2 < cl.r * cl.r) {
+      const exitDist = along + Math.sqrt(cl.r * cl.r - perp2);
+      if (exitDist > 0) {
+        const remaining = Math.max(0.35, Math.min(5, exitDist / ship.speed + 0.5));
+        rate = Math.max(1 / 8, (1 - barrelRoll.k) / remaining);
+      }
+    }
+  }
+  barrelRoll.k = Math.min(1, barrelRoll.k + rate * dt);
+  const k = barrelRoll.k;
   const ease = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
   const target = ease * Math.PI * 2 * barrelRoll.dir;
   const dA = target - barrelRoll.angle;
@@ -2574,7 +2621,7 @@ function updateBarrelRoll(dt) {
   ship.ux = nUx; ship.uy = nUy; ship.uz = nUz;
   // let the fuzzy dice feel it
   dice.velX += dA * 140 * barrelRoll.dir;
-  if (barrelRoll.t >= barrelRoll.dur) barrelRoll = null;
+  if (barrelRoll.k >= 1) barrelRoll = null;
 }
 
 function updateFireClouds(dt) {
@@ -2586,11 +2633,27 @@ function updateFireClouds(dt) {
     cl.r = 4 + (cl.maxR - 4) * (1 - Math.pow(1 - grow, 3)) * (1 + 0.06 * Math.min(1, cl.t / cl.life));
     const fade = cl.t > cl.life * 0.72 ? Math.max(0, 1 - (cl.t - cl.life * 0.72) / (cl.life * 0.28)) : 1;
     const d = Math.hypot(ship.x - cl.x, ship.y - cl.y, ship.z - cl.z);
+    // Cinematic roll: look ahead along the flight path and start rolling just BEFORE we hit
+    // the fireball, timed so the roll finishes just AFTER we burst out the far side.
+    if (!cl.rolled && fade > 0.35 && ship.speed > 5) {
+      const R = (cl.t < 0.65 ? cl.maxR : cl.r) * 0.9;
+      const px = cl.x - ship.x, py = cl.y - ship.y, pz = cl.z - ship.z;
+      const along = px * ship.fx + py * ship.fy + pz * ship.fz;
+      const perp2 = Math.max(0, px * px + py * py + pz * pz - along * along);
+      if (along > -R && perp2 < R * R) {
+        const half = Math.sqrt(R * R - perp2);
+        const tEntry = (along - half) / ship.speed, tExit = (along + half) / ship.speed;
+        if (tEntry < 0.7 && tExit > 0) {
+          cl.rolled = true;
+          startBarrelRoll(Math.max(3.0, Math.min(6.0, tExit + 0.6)), cl);
+        }
+      }
+    }
     if (d < cl.r && fade > 0.2) {
       fireInside = Math.max(fireInside, (1 - d / cl.r) * fade);
       if (!cl.flown && d < cl.r * 0.9) {
         cl.flown = true;
-        startBarrelRoll();
+        if (!cl.rolled) { cl.rolled = true; startBarrelRoll(3.2, cl); }
         ship.credits += 250;
         runStats.creditsEarned += 250;
         addPriorityPopup("🌀 BARREL ROLL! THROUGH THE FIRE +$250 🌀", "#facc15");
@@ -2673,7 +2736,7 @@ function drawFireInterior() {
 }
 
 function spawnPirateSquad(options = {}) {
-  const count = options.count || (3 + Math.floor(Math.random() * 4)); // 3 to 6 by default
+  const count = options.count || (3 + Math.floor(Math.random() * 4) + Math.min(3, galaxyLoop * LOOP_TUNING.extraSquadPerLoop)); // 3 to 6 by default, more each loop
   squadFormationType = SQUAD_FORMATION_TYPES[Math.floor(Math.random() * SQUAD_FORMATION_TYPES.length)];
   squadFormationTimer = 3 + Math.random() * 2;
 
@@ -2719,7 +2782,8 @@ function spawnPirateSquad(options = {}) {
 // A larger, fixed-size squadron that scrambles to defend a stronghold once the player closes
 // to within range, distinct from the smaller random ambush squads encountered while traveling.
 function spawnStrongholdDefenseSquad(stronghold) {
-  spawnPirateSquad({ count: 10, label: `⚠️ STRONGHOLD DEFENSE FLEET SCRAMBLING: 10 HOSTILES` });
+  const defenders = 10 + Math.min(6, galaxyLoop * LOOP_TUNING.extraDefensePerLoop);
+  spawnPirateSquad({ count: defenders, label: `⚠️ STRONGHOLD DEFENSE FLEET SCRAMBLING: ${defenders} HOSTILES` });
   stronghold.defenseSquadSpawned = true;
   strongholdDefenseSpawnedRegistry[stronghold.secKey] = true;
 }
@@ -2767,7 +2831,7 @@ const bossState = {
 
 function areAllUpgradesMaxed() {
   for (let [key, u] of Object.entries(UPGRADE_CONFIG)) {
-    const maxLvl = u.prices.length + 1;
+    const maxLvl = getUpgradeMaxLevel(u);
     if ((ship.upgrades[key] || 1) < maxLvl) return false;
   }
   return true;
@@ -2869,6 +2933,78 @@ function spawnEt() {
 /* ==========================================================================
    SHIP UPGRADES CONFIGURATION & STATE
    ========================================================================== */
+/* ==========================================================================
+   ROGUE GALAXY LOOPS (New Game+)
+   Beat the mothership -> continue into a harder galaxy keeping every upgrade.
+   Each loop unlocks another full set of MK tiers per upgrade (buy them all
+   again to stack), raises hostile damage/aggression (NOT hp - lasers never
+   get stronger), and makes ore, bounties and liberations pay more.
+   ========================================================================== */
+let galaxyLoop = 0;            // 0 = first run ("Loop 1" on screen)
+let lastRunWasVictory = false;
+const LOOP_TUNING = {
+  enemyDamagePerLoop: 0.40,    // +40% hostile damage per loop
+  volleyPauseFloor: 2.0,       // pirates rest less between volleys (5s -> min 2s)
+  extraSquadPerLoop: 1,        // +1 pirate per ambush squad per loop (capped)
+  extraDefensePerLoop: 2,      // +2 stronghold defenders per loop
+  bossHpPerLoop: 0.20,         // mothership tankier, gently (your laser is fixed)
+  bossFirePerLoop: 0.20,       // mothership fires faster
+  profitPerLoop: 0.60,         // ore / bounty / liberation payouts +60% per loop
+  stackPricePerTier: 1.6,      // each new tier's MK ladder costs 1.6x the last
+  // How much each stacked MK level counts per tier (tier 0 = original MK1-7)
+  stackWeight: { laser: 0.8, cargo: 1.0, fuel: 1.0, engine: 0.6, shield: 0.6, hull: 0.6 },
+  engineEffCap: 10             // thrusters cap: past this the ship is uncontrollable on touch
+};
+function getLoopProfitMult() { return 1 + LOOP_TUNING.profitPerLoop * galaxyLoop; }
+function getLoopEnemyDamageMult() { return 1 + LOOP_TUNING.enemyDamagePerLoop * galaxyLoop; }
+function getUpgradeMaxLevel(u) { return 1 + u.prices.length * (galaxyLoop + 1); }
+function getUpgradePrice(u, lvl) {
+  const idx = lvl - 1, n = u.prices.length;
+  const tier = Math.floor(idx / n);
+  return Math.round(u.prices[idx % n] * Math.pow(LOOP_TUNING.stackPricePerTier, tier) / 10) * 10;
+}
+// Diminishing returns: levels bought in later tiers count for less.
+function getEffectiveUpgradeLevel(key, lvl) {
+  const u = UPGRADE_CONFIG[key], n = u.prices.length;
+  const w = LOOP_TUNING.stackWeight[key] ?? 1;
+  let eff = 1;
+  for (let k = 2; k <= lvl; k++) eff += Math.pow(w, Math.floor((k - 2) / n));
+  if (key === 'engine') eff = Math.min(eff, LOOP_TUNING.engineEffCap);
+  return eff;
+}
+function applyUpgradeLevel(key) {
+  UPGRADE_CONFIG[key].apply(getEffectiveUpgradeLevel(key, ship.upgrades[key]));
+}
+function getHighestLoop() {
+  try { return parseInt(localStorage.getItem('vp3d_highest_loop') || '1', 10) || 1; } catch (e) { return 1; }
+}
+function recordHighestLoop(loopNum) {
+  try { if (loopNum > getHighestLoop()) localStorage.setItem('vp3d_highest_loop', String(loopNum)); } catch (e) {}
+}
+function updateLoopHud() {
+  const row = document.getElementById('loop-row');
+  if (!row) return;
+  row.style.display = galaxyLoop > 0 ? '' : 'none';
+  document.getElementById('stat-loop').innerText = galaxyLoop + 1;
+}
+function continueToNextLoop() {
+  const carry = { upgrades: { ...ship.upgrades }, credits: ship.credits, maxMissiles: ship.maxMissiles };
+  galaxyLoop++;
+  recordHighestLoop(galaxyLoop + 1);
+  initGame();
+  ship.upgrades = carry.upgrades;
+  ship.credits = carry.credits;
+  ship.maxMissiles = carry.maxMissiles; ship.missiles = carry.maxMissiles;
+  for (const key of Object.keys(UPGRADE_CONFIG)) applyUpgradeLevel(key);
+  ship.shield = ship.maxShield; ship.hull = ship.maxHull; ship.fuel = ship.maxFuel;
+  bossState.hp = bossState.maxHp = Math.round(800 * (1 + LOOP_TUNING.bossHpPerLoop * galaxyLoop));
+  updateLoopHud();
+  const pct = n => Math.round(n * 100);
+  addPriorityPopup(`🌀 ROGUE GALAXY LOOP ${galaxyLoop + 1} 🌀`, "#f472b6");
+  addPopup(`HOSTILES +${pct(LOOP_TUNING.enemyDamagePerLoop * galaxyLoop)}% DAMAGE · ORE & BOUNTIES +${pct(LOOP_TUNING.profitPerLoop * galaxyLoop)}%`, "#facc15");
+  addPopup(`NEW UPGRADE TIERS UNLOCKED: MK ${getUpgradeMaxLevel(UPGRADE_CONFIG.laser)} - MAX THEM ALL TO SUMMON THE MOTHERSHIP`, "#38bdf8");
+}
+
 const UPGRADE_CONFIG = {
   laser: { name: "Mining Laser Array", desc: "Surface mining rig: boosts ore cutting speed and yield", prices: [250, 680, 1600, 4200, 9800, 22000], apply: (lvl) => { ship.miningRate = 3.5 + (lvl - 1) * 2.2; } },
   cargo: { name: "Spaceship Cargo Hold", desc: "Expands maximum mineral containment capacity", prices: [200, 540, 1300, 3400, 7800, 18000], apply: (lvl) => { ship.maxCargo = 20 + (lvl - 1) * 30; } },
@@ -3090,7 +3226,7 @@ for (let i = 0; i < 110; i++) {
 
 function dcPlayBoom(freq, dur, gainVol) {
   try {
-    if (!actx) actx = new AudioCtx();
+    if (!actx) actx = createGameAudioContext();
     if (actx.state === 'suspended') actx.resume();
     const t = actx.currentTime;
     const bSize = Math.floor(actx.sampleRate * dur);
@@ -3111,14 +3247,14 @@ function dcPlayBoom(freq, dur, gainVol) {
 
     noise.connect(lp);
     lp.connect(g);
-    g.connect(actx.destination);
+    g.connect(audioOut());
     noise.start(t);
   } catch (e) {}
 }
 
 function dcPlayBlewItTone() {
   try {
-    if (!actx) actx = new AudioCtx();
+    if (!actx) actx = createGameAudioContext();
     const t = actx.currentTime;
     [220, 185, 146.83, 110].forEach((freq, idx) => {
       const osc = actx.createOscillator();
@@ -3128,7 +3264,7 @@ function dcPlayBlewItTone() {
       g.gain.setValueAtTime(0.12, t + idx * 0.12);
       g.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.12 + 0.35);
       osc.connect(g);
-      g.connect(actx.destination);
+      g.connect(audioOut());
       osc.start(t + idx * 0.12);
       osc.stop(t + idx * 0.12 + 0.35);
     });
@@ -3694,7 +3830,7 @@ const fcInvaderLasers = [], fcSmokePuffs = [];
 
 function fcPlayFlameout() {
   try {
-    if (!actx) actx = new AudioCtx();
+    if (!actx) actx = createGameAudioContext();
     if (actx.state === 'suspended') actx.resume();
     const t = actx.currentTime;
     const osc = actx.createOscillator(), g = actx.createGain();
@@ -3703,7 +3839,7 @@ function fcPlayFlameout() {
     osc.frequency.exponentialRampToValueAtTime(25, t + 1.2);
     g.gain.setValueAtTime(0.2, t);
     g.gain.linearRampToValueAtTime(0.001, t + 1.2);
-    osc.connect(g); g.connect(actx.destination);
+    osc.connect(g); g.connect(audioOut());
     osc.start(t); osc.stop(t + 1.2);
   } catch (e) {}
 }
@@ -4097,7 +4233,7 @@ for (let i = 0; i < 110; i++) {
 
 function vcPlayBoom(freq, dur, gainVol) {
   try {
-    if (!actx) actx = new AudioCtx();
+    if (!actx) actx = createGameAudioContext();
     if (actx.state === 'suspended') actx.resume();
     const t = actx.currentTime;
     const bSize = Math.floor(actx.sampleRate * dur);
@@ -4116,14 +4252,14 @@ function vcPlayBoom(freq, dur, gainVol) {
     g.gain.setValueAtTime(gainVol, t);
     g.gain.linearRampToValueAtTime(0.001, t + dur);
 
-    noise.connect(lp); lp.connect(g); g.connect(actx.destination);
+    noise.connect(lp); lp.connect(g); g.connect(audioOut());
     noise.start(t);
   } catch (e) {}
 }
 
 function vcPlayVictoryFanfare() {
   try {
-    if (!actx) actx = new AudioCtx();
+    if (!actx) actx = createGameAudioContext();
     const t = actx.currentTime;
     const melody = [
       { f: 293.66, d: 0.18, o: 0.00 },
@@ -4146,7 +4282,7 @@ function vcPlayVictoryFanfare() {
       g.gain.setValueAtTime(0.14, t + n.o);
       g.gain.exponentialRampToValueAtTime(0.001, t + n.o + n.d);
 
-      osc.connect(filt); filt.connect(g); g.connect(actx.destination);
+      osc.connect(filt); filt.connect(g); g.connect(audioOut());
       osc.start(t + n.o); osc.stop(t + n.o + n.d);
     });
   } catch (e) {}
@@ -4570,6 +4706,8 @@ function renderVictoryCutscene() {
 function dismissVictoryCutsceneToModal() {
   if (!isVictoryCutscenePlaying || !vcState.readyForModal) return;
   isVictoryCutscenePlaying = false;
+  lastRunWasVictory = true;
+  recordHighestLoop(galaxyLoop + 1);
   triggerGameOver(vcState.modalTitle, vcState.modalDesc, "#4ade80");
 }
 
@@ -4609,6 +4747,15 @@ function triggerGameOver(title, desc, titleColor = "#ef4444") {
   document.getElementById("stat-run-sentinels").innerText = runStats.sentinelsKilled;
   document.getElementById("stat-run-nodes").innerText = runStats.nodesMined;
   document.getElementById("stat-run-derelicts").innerText = runStats.derelictsSalvaged;
+  const loopBtn = document.getElementById("loop-btn");
+  if (loopBtn) {
+    loopBtn.style.display = lastRunWasVictory ? '' : 'none';
+    loopBtn.innerText = `CONTINUE: LOOP ${galaxyLoop + 2}`;
+  }
+  if (galaxyLoop > 0 || lastRunWasVictory) {
+    document.getElementById("modal-desc").innerText = `${desc}\nLOOP REACHED: ${galaxyLoop + 1} · BEST: ${getHighestLoop()}`;
+  }
+  lastRunWasVictory = false;
   document.getElementById("modal").style.display = "flex";
 }
 
@@ -6196,11 +6343,11 @@ function playGoreSplat() {
     const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.setValueAtTime(1.2, t);
     bp.frequency.setValueAtTime(900, t); bp.frequency.exponentialRampToValueAtTime(220, t + 0.3);
     const g = actx.createGain(); g.gain.setValueAtTime(0.5, t);
-    src.connect(bp); bp.connect(g); g.connect(sfxBus || actx.destination); src.start(t);
+    src.connect(bp); bp.connect(g); g.connect(sfxBus || audioOut()); src.start(t);
     const o = actx.createOscillator(), og = actx.createGain();
     o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
     og.gain.setValueAtTime(0.35, t); og.gain.linearRampToValueAtTime(0.001, t + 0.28);
-    o.connect(og); og.connect(sfxBus || actx.destination); o.start(t); o.stop(t + 0.3);
+    o.connect(og); og.connect(sfxBus || audioOut()); o.start(t); o.stop(t + 0.3);
   } catch (e) {}
 }
 
@@ -6289,7 +6436,7 @@ function cabinSfx(type) {
   try {
     ensureAudio();
     const t = actx.currentTime;
-    const out = sfxBus || actx.destination;
+    const out = sfxBus || audioOut();
     if (type === 'step') {
       phoneBuzz(7);
       const o = actx.createOscillator(), g = actx.createGain();
@@ -6347,7 +6494,7 @@ function startCabinHum() {
     const lfo = actx.createOscillator(); lfo.frequency.setValueAtTime(0.55, t);
     const lfoG = actx.createGain(); lfoG.gain.setValueAtTime(0.012, t);
     lfo.connect(lfoG); lfoG.connect(out.gain);
-    o1.connect(lp); o2.connect(lp); lp.connect(out); out.connect(sfxBus || actx.destination);
+    o1.connect(lp); o2.connect(lp); lp.connect(out); out.connect(sfxBus || audioOut());
     o1.start(t); o2.start(t); lfo.start(t);
     cabinHum = { out, nodes: [o1, o2, lfo] };
   } catch (e) {}
@@ -7747,7 +7894,7 @@ function openStationShop(st, isSurface = false) {
   let earned = 0, itemsSold = 0;
   for (let [ore, count] of Object.entries(ship.cargo)) {
     const oreType = RESOURCE_TYPES.find(r => r.name === ore);
-    const unitPrice = Math.round((oreType ? oreType.val : 20) * (st.rates[ore] || 1.0));
+    const unitPrice = Math.round((oreType ? oreType.val : 20) * (st.rates[ore] || 1.0) * getLoopProfitMult());
     earned += unitPrice * count;
     itemsSold += count;
   }
@@ -7868,9 +8015,9 @@ function updateShopUI(isSurface = false) {
   list.innerHTML = "";
   for (let [key, u] of Object.entries(UPGRADE_CONFIG)) {
     const lvl = ship.upgrades[key];
-    const maxLvl = u.prices.length + 1;
+    const maxLvl = getUpgradeMaxLevel(u);
     const isMax = lvl >= maxLvl;
-    const price = isMax ? 0 : u.prices[lvl - 1];
+    const price = isMax ? 0 : getUpgradePrice(u, lvl);
     const row = document.createElement("div");
     row.className = "upgrade-row";
     row.innerHTML = `<div class="upgrade-info"><b>${u.name} [MK ${lvl}/${maxLvl}]</b><span>${u.desc}</span></div><button class="buy-btn" ${isMax || ship.credits < price ? "disabled" : ""}>${isMax ? "MAXED" : `BUY $${price.toLocaleString()}`}</button>`;
@@ -7879,7 +8026,7 @@ function updateShopUI(isSurface = false) {
       if (ship.credits >= price) {
         ship.credits -= price;
         ship.upgrades[key]++;
-        u.apply(ship.upgrades[key]);
+        applyUpgradeLevel(key);
         playSfx('upgrade');
         updateShopUI(isSurface);
       }
@@ -7890,10 +8037,11 @@ function updateShopUI(isSurface = false) {
 }
 
 document.getElementById("undock-btn").addEventListener("click", closeStationShop);
-document.getElementById("restart-btn").addEventListener("click", initGame);
+document.getElementById("restart-btn").addEventListener("click", () => { galaxyLoop = 0; initGame(); updateLoopHud(); });
+document.getElementById("loop-btn").addEventListener("click", continueToNextLoop);
 document.getElementById("claim-bounty-btn").addEventListener("click", () => {
   if (pendingBounties > 0) {
-    const earned = pendingBounties * 1000;
+    const earned = Math.round(pendingBounties * 1000 * getLoopProfitMult());
     ship.credits += earned;
     runStats.creditsEarned += earned;
     totalBountiesClaimed += pendingBounties;
@@ -8229,8 +8377,11 @@ function pollGamepadState() {
   }
 
   if (gameOver) {
-    if ((currentGpButtons[0] && !prevGamepadButtons[0]) || (currentGpButtons[9] && !prevGamepadButtons[9])) {
-      initGame();
+    const loopBtnVisible = document.getElementById("loop-btn")?.style.display !== 'none';
+    if (loopBtnVisible && currentGpButtons[0] && !prevGamepadButtons[0]) {
+      continueToNextLoop(); // A = continue into the next loop after a victory
+    } else if ((currentGpButtons[0] && !prevGamepadButtons[0]) || (currentGpButtons[9] && !prevGamepadButtons[9])) {
+      galaxyLoop = 0; initGame(); updateLoopHud();
     }
     return;
   }
@@ -8606,7 +8757,7 @@ function update(dt) {
 
       bossState.reload -= dt;
       if (bossState.reload <= 0 && bDist < 1400) {
-        bossState.reload = 0.40;
+        bossState.reload = 0.40 / (1 + LOOP_TUNING.bossFirePerLoop * galaxyLoop);
         playSfx('enemyLaser');
         const bSpeed = 650;
         for (let side of [-18, 18]) {
@@ -8620,7 +8771,7 @@ function update(dt) {
             vy: (aimDy / aimLen) * bSpeed,
             vz: (aimDz / aimLen) * bSpeed,
             life: 2.8, isEnemy: true, isGreen: false, isMothershipBolt: true,
-            damage: 22
+            damage: Math.round(22 * getLoopEnemyDamageMult())
           });
         }
       }
@@ -8944,7 +9095,7 @@ function update(dt) {
         if (pirate.volleyTimer <= 0) {
           if (pirate.volleyState === 'firing') {
             pirate.volleyState = 'pause';
-            pirate.volleyTimer = 5;
+            pirate.volleyTimer = Math.max(LOOP_TUNING.volleyPauseFloor, 5 - galaxyLoop);
           } else {
             pirate.volleyState = 'firing';
             pirate.volleyTimer = 2;
@@ -10283,7 +10434,7 @@ function update(dt) {
       combatFadeGain = Math.max(targetCombatGain, combatFadeGain - dt * rampRate);
     }
 
-    if (combatMasterGain) combatMasterGain.gain.setValueAtTime(combatFadeGain, actx.currentTime);
+    if (combatMasterGain) combatMasterGain.gain.setTargetAtTime(combatFadeGain, actx.currentTime, 0.05);
     {
       let mood = 'space';
       if (bossState.active && !gameOver) mood = 'boss';
@@ -10371,7 +10522,7 @@ function update(dt) {
           g.gain.setValueAtTime(0.035, t);
           g.gain.linearRampToValueAtTime(0.001, t + 0.16);
           osc.connect(g);
-          g.connect(actx.destination);
+          g.connect(audioOut());
           osc.start(t);
           osc.stop(t + 0.16);
         }
@@ -14075,7 +14226,7 @@ requestAnimationFrame(gameLoop);
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(650, t);
         osc.frequency.exponentialRampToValueAtTime(140, t + 0.5);
         g.gain.setValueAtTime(0.18, t); g.gain.linearRampToValueAtTime(0.001, t + 0.5);
-        osc.connect(g); g.connect(actx.destination);
+        osc.connect(g); g.connect(audioOut());
         osc.start(t); osc.stop(t + 0.5);
       } else if (type === 'clamp') {
         const bSize = Math.floor(actx.sampleRate * 0.22);
@@ -14084,13 +14235,13 @@ requestAnimationFrame(gameLoop);
         for (let i = 0; i < bSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bSize * 0.3));
         const src = actx.createBufferSource(); src.buffer = buf;
         const g = actx.createGain(); g.gain.setValueAtTime(0.35, t);
-        src.connect(g); g.connect(actx.destination); src.start(t);
+        src.connect(g); g.connect(audioOut()); src.start(t);
       } else if (type === 'heartbeat') {
         const osc = actx.createOscillator(), g = actx.createGain();
         osc.type = 'sine'; osc.frequency.setValueAtTime(70, t);
         osc.frequency.exponentialRampToValueAtTime(32, t + 0.18);
         g.gain.setValueAtTime(0.4, t); g.gain.linearRampToValueAtTime(0.001, t + 0.2);
-        osc.connect(g); g.connect(actx.destination);
+        osc.connect(g); g.connect(audioOut());
         osc.start(t); osc.stop(t + 0.2);
       } else if (type === 'burst') {
         const bSize = Math.floor(actx.sampleRate * 0.7);
@@ -14101,13 +14252,13 @@ requestAnimationFrame(gameLoop);
         const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
         lp.frequency.setValueAtTime(450, t); lp.frequency.exponentialRampToValueAtTime(40, t + 0.7);
         const g = actx.createGain(); g.gain.setValueAtTime(0.55, t);
-        src.connect(lp); lp.connect(g); g.connect(actx.destination); src.start(t);
+        src.connect(lp); lp.connect(g); g.connect(audioOut()); src.start(t);
       } else if (type === 'chirp') {
         const osc = actx.createOscillator(), g = actx.createGain();
         osc.type = 'square'; osc.frequency.setValueAtTime(950, t);
         osc.frequency.setValueAtTime(1500, t + 0.05);
         g.gain.setValueAtTime(0.12, t); g.gain.linearRampToValueAtTime(0.001, t + 0.12);
-        osc.connect(g); g.connect(actx.destination);
+        osc.connect(g); g.connect(audioOut());
         osc.start(t); osc.stop(t + 0.12);
       } else if (type === 'freeze') {
         const osc = actx.createOscillator(), g = actx.createGain();
@@ -14115,7 +14266,7 @@ requestAnimationFrame(gameLoop);
         osc.frequency.exponentialRampToValueAtTime(320, t + 1.6);
         g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.12, t + 0.2);
         g.gain.linearRampToValueAtTime(0.001, t + 1.6);
-        osc.connect(g); g.connect(actx.destination);
+        osc.connect(g); g.connect(audioOut());
         osc.start(t); osc.stop(t + 1.6);
       } else if (type === 'shatter') {
         const bSize = Math.floor(actx.sampleRate * 0.6);
@@ -14125,7 +14276,7 @@ requestAnimationFrame(gameLoop);
         const src = actx.createBufferSource(); src.buffer = buf;
         const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.setValueAtTime(1800, t);
         const g = actx.createGain(); g.gain.setValueAtTime(0.5, t);
-        src.connect(hp); hp.connect(g); g.connect(actx.destination); src.start(t);
+        src.connect(hp); hp.connect(g); g.connect(audioOut()); src.start(t);
       } else if (type === 'impact') {
         const bSize = Math.floor(actx.sampleRate * 0.3);
         const buf = actx.createBuffer(1, bSize, actx.sampleRate);
@@ -14135,14 +14286,14 @@ requestAnimationFrame(gameLoop);
         const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
         lp.frequency.setValueAtTime(220, t);
         const g = actx.createGain(); g.gain.setValueAtTime(0.6, t);
-        src.connect(lp); lp.connect(g); g.connect(actx.destination); src.start(t);
+        src.connect(lp); lp.connect(g); g.connect(audioOut()); src.start(t);
       } else if (type === 'drain') {
         const osc = actx.createOscillator(), g = actx.createGain();
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(90, t);
         osc.frequency.exponentialRampToValueAtTime(700, t + 1.6);
         g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.16, t + 0.3);
         g.gain.linearRampToValueAtTime(0.001, t + 1.6);
-        osc.connect(g); g.connect(actx.destination);
+        osc.connect(g); g.connect(audioOut());
         osc.start(t); osc.stop(t + 1.6);
       }
     } catch (e) {}
