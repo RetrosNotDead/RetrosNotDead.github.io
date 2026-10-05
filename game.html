@@ -7482,8 +7482,8 @@ function enterCabinLanded() {
 }
 
 function enterCabinFromSurface() {
-  cabin = makeCabin({ x: AL.cx0 + 10, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 0, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
-  playerFoot.yaw = -Math.PI / 2; playerFoot.pitch = 0;
+  cabin = makeCabin({ x: AL.cx0 + 10, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 1, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
+  playerFoot.yaw = Math.PI / 2; playerFoot.pitch = 0;      // facing back out: watch the outer hatch shut behind you
   miningLaserState.active = false; touchFire = false; touchJetpack = false;
   landingFade = 0.45;
   playSfx('airlock');
@@ -7530,6 +7530,13 @@ function getCabinAction() {
   if (nearRack) {
     const wLabel = w => w === 'rifle' ? 'PULSE RIFLE' : 'LASER';
     const aimW = c.aimRifle ? 'rifle' : 'laser';
+    // at the weapons bay holding one gun and looking at the other: swap straight over (coming or going)
+    if (c.hasLaser && c.hasHelmet && c.x < -1 && aimW !== fieldWeapon) {
+      return { label: `SWAP TO ${wLabel(aimW)}`, banner: `>> WEAPONS BAY: TAP SWAP TO ${aimW === 'rifle' ? 'PULSE RIFLE' : 'MINING LASER'} <<`, enabled: true, run: () => {
+        fieldWeapon = aimW; c.dir = 'out'; addPopup(aimW === 'rifle' ? "SWAPPED TO PULSE RIFLE - CAN'T MINE!" : "SWAPPED TO MINING LASER - CYCLE THE AIRLOCK", aimW === 'rifle' ? "#fb923c" : "#4ade80");
+        playSfx('hullClang'); vibrateGamepad(110, 0.35, 0.3); HH.raise = 0;
+      } };
+    }
     if (c.dir === 'in' && (c.hasLaser || c.hasHelmet)) {
       const which = c.hasLaser ? wLabel(fieldWeapon) : 'HELMET';
       return { label: `RACK ${which}`, banner: `>> SUIT RACK: TAP RACK ${which} <<`, enabled: true, run: () => {
@@ -7546,12 +7553,6 @@ function getCabinAction() {
         if (which === 'HELMET') { c.hasHelmet = true; addPopup("EVA SUIT & HELMET SEALED", "#4ade80"); playSfx('targetLock'); }
         else { c.hasLaser = true; fieldWeapon = aimW; addPopup(aimW === 'rifle' ? "PULSE RIFLE ARMED - CAN'T MINE! CYCLE THE AIRLOCK" : "MINING LASER ARMED - CYCLE THE AIRLOCK", aimW === 'rifle' ? "#fb923c" : "#4ade80"); playSfx('upgrade'); }
         vibrateGamepad(110, 0.35, 0.3);
-      } };
-    }
-    if (c.dir === 'out' && c.hasLaser && c.x < -1 && aimW !== fieldWeapon) {
-      return { label: `SWAP TO ${wLabel(aimW)}`, banner: `>> WEAPONS BAY: TAP SWAP TO ${aimW === 'rifle' ? 'PULSE RIFLE' : 'MINING LASER'} <<`, enabled: true, run: () => {
-        fieldWeapon = aimW; addPopup(aimW === 'rifle' ? "SWAPPED TO PULSE RIFLE - CAN'T MINE!" : "SWAPPED TO MINING LASER", aimW === 'rifle' ? "#fb923c" : "#4ade80");
-        playSfx('hullClang'); vibrateGamepad(110, 0.35, 0.3); HH.raise = 0;
       } };
     }
   }
@@ -7645,8 +7646,10 @@ function stepCabinSeq(dt) {
     once('hatch', 4.1, () => { c.hatchTarget = 1; cabinSfx('servo'); vibrateGamepad(200, 0.4, 0.4); });
     once('exit', 5.2, () => exitCabinToSurface());
   } else if (s.type === 'airlockIn') {
-    once('clang', 0.55, () => { playSfx('hullClang'); vibrateGamepad(150, 0.4, 0.3); });
-    once('hiss', 0.7, () => { cabinSfx('hiss'); c.mist = 1; });
+    once('shut', 0.3, () => { c.hatchTarget = 0; cabinSfx('servo'); });
+    once('clang', 0.95, () => { playSfx('hullClang'); vibrateGamepad(150, 0.4, 0.3); });
+    once('hiss', 1.05, () => { cabinSfx('hiss'); c.mist = 1; });
+    once('turn', 1.3, () => cabinTween({ x: AL.cx0 + 10, z: AL.zc, eyeY: CAB.eye, yaw: -Math.PI / 2, pitch: 0 }, 0.9, null, 'smooth'));
     once('green', 2.2, () => { c.lights = 'green'; playSfx('commChirp'); });
     once('open', 2.4, () => { c.doorTarget = 1; cabinSfx('servo'); });
     once('walk', 2.9, () => cabinTween({ x: CAB_HW - 7, z: AL.zc, eyeY: CAB.eye, yaw: -Math.PI / 2, pitch: 0 }, 1.0, () => {
@@ -8609,7 +8612,8 @@ function renderCabin() {
   }
   // bright daylight spilling in as the outer hatch opens
   if (c.hatch > 0.05 && c.seq && c.seq.type === 'airlockOut') {
-    ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, (c.seq.t - 4.6) / 0.6) * 0.9})`;
+    // planet: bright daylight floods in. Derelict: the dark of the wreck swallows you instead.
+    ctx.fillStyle = c.wreck ? `rgba(2, 4, 10, ${Math.max(0, (c.seq.t - 4.7) / 0.5) * 0.95})` : `rgba(255, 255, 255, ${Math.max(0, (c.seq.t - 4.6) / 0.6) * 0.9})`;
     ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
   }
 
@@ -19497,15 +19501,35 @@ requestAnimationFrame(gameLoop);
     "#####.#####", // 18 blast door (crusher)
     "#####.#####", // 19
     "##.......##", // 20 bridge
-    "##.......##", // 21
-    "##.......##", // 22
-    "###########"  // 23
+    "#........##", // 21 west hatch out of the bridge (col 1)
+    "#........##", // 22
+    "#.#########", // 23 service crawlway
+    "#.#########", // 24
+    "#.........#", // 25 CRYO BAY
+    "#.........#", // 26
+    "#.........#", // 27
+    "#.........#", // 28
+    "#########.#", // 29 second security grid
+    "#########.#", // 30
+    "#.........#", // 31 ENGINEERING / REACTOR
+    "#.........#", // 32
+    "#.........#", // 33
+    "#.........#", // 34
+    "###########"  // 35
   ];
   const ROWS = MAP.length, COLS = 11;
   const cellAt = (c, r) => (r < 0 ? ' ' : (r >= ROWS || c < 0 || c >= COLS) ? '#' : MAP[r][c]);
   const isSolid = (c, r) => { const ch = cellAt(c, r); return ch === '#' || ch === 'O'; };
 
   const LASER = { z: 7.5 * T, x0: 5 * T, x1: 6 * T, period: 3.8 };
+  const LASER2 = { z: 29.6 * T, x0: 9 * T, x1: 10 * T, period: 3.0, phase: 1.1 };   // guards the way into engineering - faster
+  const VENT2 = { x: 5.5 * T, z: 26.6 * T };                                         // cryo bay ceiling vent: wakes up with the power
+  const REACTOR = { x0: 4.6 * T, x1: 6.4 * T, z0: 32.3 * T, z1: 33.9 * T };
+  const LEVER = { x: 1 * T + 1.6, z: 33 * T };
+  const PODS = [];      // cryo pods: [x0, x1, z0, z1, facing(+1 north wall pods face south, -1 face north), id]
+  for (let i = 0; i < 5; i++) PODS.push([1.15 * T + i * 1.55 * T, 1.15 * T + i * 1.55 * T + 0.95 * T, 28.75 * T, 29 * T, -1, i]);
+  for (let i = 0; i < 4; i++) PODS.push([3.3 * T + i * 1.55 * T, 3.3 * T + i * 1.55 * T + 0.95 * T, 25 * T, 25.25 * T, 1, 5 + i]);
+  const OPEN_POD = 6;   // the one that's empty once the reactor comes back
   const CRUSH = { z: 18.5 * T, x0: 5 * T, x1: 6 * T, period: 4.2 };
   const VENT = { x: 2.5 * T, z: 11.5 * T };
   const WIN = { x: 10 * T, z0: 15 * T, z1: 17 * T, y0: -15, y1: -4 };
@@ -19513,7 +19537,8 @@ requestAnimationFrame(gameLoop);
     { id: 'c0', c: 1, r: 12, kind: 'cred' }, { id: 'c1', c: 3, r: 9, kind: 'cred' },
     { id: 'c2', c: 9, r: 9, kind: 'missile' }, { id: 'c3', c: 9, r: 12, kind: 'cred' },
     { id: 'c4', c: 9, r: 17, kind: 'big' },
-    { id: 'c5', c: 1, r: 7, kind: 'med' }, { id: 'c6', c: 9, r: 5, kind: 'safe' }
+    { id: 'c5', c: 1, r: 7, kind: 'med' }, { id: 'c6', c: 9, r: 5, kind: 'safe' },
+    { id: 'c7', c: 2, r: 27, kind: 'cred' }, { id: 'c8', c: 8, r: 34, kind: 'cell' }, { id: 'c9', c: 2, r: 31, kind: 'big' }
   ];
   const RAMP = { x: 5.5 * T, hw: 3.4, z0: -30 };      // boarding ramp from the Chimera's airlock to the deck edge
   const BBOX = { x0: 4.7 * T, x1: 6.3 * T, z0: 22.5 * T, z1: 23 * T, top: -7 };
@@ -19530,7 +19555,12 @@ requestAnimationFrame(gameLoop);
     { p: [5.5 * T, -12, 22 * T], col: [40, 200, 255], rad: 34, rate: 0 },
     { p: [5.5 * T, -6, -28], col: [170, 220, 255], rad: 20, rate: 0 },
     { p: [2.5 * T, -16.5, 6 * T], col: [120, 255, 160], rad: 30, flick: true },
-    { p: [7.6 * T, -6.5, 7.8 * T], col: [255, 190, 90], rad: 22, rate: 0 }
+    { p: [7.6 * T, -6.5, 7.8 * T], col: [255, 190, 90], rad: 22, rate: 0 },
+    { p: [1.5 * T, -16.5, 23.5 * T], col: [255, 40, 30], rad: 22, rate: 1.4 },          // crawlway
+    { p: [3 * T, -12, 27 * T], col: [80, 200, 255], rad: 30, flick: true },             // cryo pods' glow
+    { p: [8 * T, -12, 27 * T], col: [80, 200, 255], rad: 30, rate: 0.3 },
+    { p: [9.5 * T, -16.5, 29.9 * T], col: [255, 40, 30], rad: 22, rate: 2.0 },          // second grid
+    { p: [5.5 * T, -9, 33.1 * T], col: [255, 120, 40], rad: 40, rate: 0.25, reactor: true }   // reactor core
   ];
 
   // ---------- geometry ----------
@@ -19594,9 +19624,19 @@ requestAnimationFrame(gameLoop);
     box(F, WIN.x - 1.2, WIN.x, WIN.y1, WIN.y1 + 0.8, WIN.z0, WIN.z1, "#64748b");
     // corridor pipes + cable runs
     box(F, 5 * T, 5 * T + 0.9, -15.2, -14.2, 4 * T, 13 * T, "#3f3f46", { top: "#52525b" });
-    box(F, 6 * T - 0.9, 6 * T, -4.2, -3.2, 4 * T, 5 * T, "#7c2d12");
-    box(F, 6 * T - 0.9, 6 * T, -4.2, -3.2, 6 * T, 7 * T - 1.3, "#7c2d12");
-    box(F, 6 * T - 0.9, 6 * T, -4.2, -3.2, 8 * T + 1, 13 * T, "#7c2d12");
+    // rusty coolant pipe along the corridor's east wall: at waist height, climbing up and over each doorway
+    {
+      const PX0 = 6 * T - 0.9, PX1 = 6 * T, PC = "#7c2d12", PT = "#9a3412";
+      const run = (z0, z1) => box(F, PX0, PX1, -4.2, -3.2, z0, z1, PC, { top: PT, bias: 0.01 });
+      const over = (d0, d1) => {                                   // riser, overhead span, riser
+        box(F, PX0, PX1, -16.6, -3.2, d0 - 0.9, d0, PC, { top: PT, bias: 0.01 });
+        box(F, PX0, PX1, -16.6, -15.6, d0 - 0.9, d1 + 0.9, PC, { top: PT, bias: 0.01 });
+        box(F, PX0, PX1, -16.6, -3.2, d1, d1 + 0.9, PC, { top: PT, bias: 0.01 });
+        for (const z of [d0 - 0.45, d1 + 0.45]) box(F, PX0 - 0.15, PX1, -15.9, -15.1, z - 0.6, z + 0.6, "#3f3f46", { bias: 0.02 });   // elbow collars
+      };
+      run(4 * T, 5 * T); over(5 * T, 6 * T); run(6 * T, 7 * T - 1.3);
+      run(8 * T + 1, 10 * T); over(10 * T, 11 * T); run(11 * T, 13 * T);
+    }
     // laser grid emitters
     box(F, LASER.x0, LASER.x0 + 1, -17, -1, LASER.z - 1.2, LASER.z + 1.2, "#27272a", { side: "#3f3f46" });
     box(F, LASER.x1 - 1, LASER.x1, -17, -1, LASER.z - 1.2, LASER.z + 1.2, "#27272a", { side: "#3f3f46" });
@@ -19605,6 +19645,36 @@ requestAnimationFrame(gameLoop);
       box(F, LASER.x0 + 0.9, LASER.x0 + 1.15, y - 0.4, y + 0.4, LASER.z - 0.4, LASER.z + 0.4, "#ef4444", { emis: true });
       box(F, LASER.x1 - 1.15, LASER.x1 - 0.9, y - 0.4, y + 0.4, LASER.z - 0.4, LASER.z + 0.4, "#ef4444", { emis: true });
     }
+    // second laser grid emitters (engineering approach)
+    box(F, LASER2.x0, LASER2.x0 + 1, -17, -1, LASER2.z - 1.2, LASER2.z + 1.2, "#27272a", { side: "#3f3f46" });
+    box(F, LASER2.x1 - 1, LASER2.x1, -17, -1, LASER2.z - 1.2, LASER2.z + 1.2, "#27272a", { side: "#3f3f46" });
+    for (let i = 0; i < 5; i++) {
+      const y = -2.5 - i * 3;
+      box(F, LASER2.x0 + 0.9, LASER2.x0 + 1.15, y - 0.4, y + 0.4, LASER2.z - 0.4, LASER2.z + 0.4, "#ef4444", { emis: true });
+      box(F, LASER2.x1 - 1.15, LASER2.x1 - 0.9, y - 0.4, y + 0.4, LASER2.z - 0.4, LASER2.z + 0.4, "#ef4444", { emis: true });
+    }
+    // CRYO BAY: pods along both walls (frame, frosted glass, the frozen crew inside), ceiling vent, frost on the floor
+    for (const [x0, x1, z0, z1, fz] of PODS) {
+      const back = fz < 0 ? z1 : z0, front = fz < 0 ? z0 - 2.4 : z1 + 2.4;
+      box(F, x0, x1, -15, 0, Math.min(back, front), Math.max(back, front), "#334155", { side: "#1e293b", top: "#475569" });
+      box(F, x0 - 0.3, x1 + 0.3, -15.6, -15, Math.min(back, front) - 0.2, Math.max(back, front) + 0.2, "#475569");
+      box(F, x0 - 0.3, x1 + 0.3, -0.6, 0, Math.min(back, front) - 0.2, Math.max(back, front) + 0.2, "#1f2937");
+      rect(F, 'y', -0.05, x0 - 1.5, x1 + 1.5, fz < 0 ? front - 4 : front, fz < 0 ? front : front + 4, [0, -1, 0], "#1e3a4a", { floorDecal: true });
+    }
+    box(F, VENT2.x - 3, VENT2.x + 3, CEIL, CEIL + 0.5, VENT2.z - 3, VENT2.z + 3, "#0a0a0a");
+    for (let i = 0; i < 5; i++) box(F, VENT2.x - 3, VENT2.x + 3, CEIL + 0.5, CEIL + 0.8, VENT2.z - 2.6 + i * 1.3, VENT2.z - 2.2 + i * 1.3, "#52525b");
+    // crawlway: low pipes overhead, hazard stripes on the hatch frame out of the bridge
+    box(F, 1 * T + 1, 2 * T - 1, -15.5, -14.5, 21 * T, 25 * T, "#3f3f46", { top: "#52525b" });
+    box(F, 1 * T, 1 * T + 0.7, CEIL, 0, 21 * T - 0.6, 21 * T + 0.6, "#3f3f46");
+    for (let i = 0; i < 6; i++) box(F, 1 * T + 0.7, 1 * T + 0.85, -1 - i * 3 - 1.4, -1 - i * 3, 21 * T - 0.5, 21 * T + 0.5, i % 2 ? "#111827" : "#eab308");
+    // ENGINEERING: the reactor column, collar rings, catwalk rail, coolant pipes, the main power lever panel
+    box(F, REACTOR.x0, REACTOR.x1, CEIL, 0, REACTOR.z0, REACTOR.z1, "#27272a", { side: "#3f3f46", top: "#18181b" });
+    for (const y of [-3, -9, -15]) box(F, REACTOR.x0 - 0.8, REACTOR.x1 + 0.8, y - 1.1, y, REACTOR.z0 - 0.8, REACTOR.z1 + 0.8, "#52525b", { top: "#71717a" });
+    box(F, REACTOR.x0 - 4, REACTOR.x1 + 4, -0.4, 0, REACTOR.z0 - 4, REACTOR.z1 + 4, "#1c1917", { top: "#292524" });
+    for (const [px, pz] of [[2 * T, 31.2 * T], [9 * T, 31.2 * T], [2 * T, 34.8 * T], [9 * T, 34.8 * T]]) box(F, px - 0.8, px + 0.8, CEIL, 0, pz - 0.8, pz + 0.8, "#7c2d12");
+    box(F, 1 * T, 9.9 * T, -15.4, -14.4, 34.6 * T, 35 * T - 0.1, "#7c2d12");
+    box(F, 1 * T, 1 * T + 1.2, -11, -4, LEVER.z - 3, LEVER.z + 3, "#3f3f46", { side: "#52525b" });
+    rect(F, 'x', 1 * T + 1.25, LEVER.z - 2.4, LEVER.z + 2.4, -10.4, -9.2, [1, 0, 0], "#facc15", { bias: 0.3 });
     // blast door frame + header (the crusher)
     box(F, CRUSH.x0, CRUSH.x0 + 1.2, CEIL, 0, CRUSH.z - 2, CRUSH.z + 2, "#3f3f46", { side: "#52525b" });
     box(F, CRUSH.x1 - 1.2, CRUSH.x1, CEIL, 0, CRUSH.z - 2, CRUSH.z + 2, "#3f3f46", { side: "#52525b" });
@@ -19636,9 +19706,9 @@ requestAnimationFrame(gameLoop);
       box(F, gx, gx + 5.5, -4.2, -3.4, 5.6 * T, 7.2 * T, "#cbd5e1", { top: "#e2e8f0" });
       for (const lz of [5.6 * T + 0.6, 7.2 * T - 1]) for (const lx of [gx + 0.5, gx + 4.6]) box(F, lx, lx + 0.4, -3.4, 0, lz, lz + 0.4, "#64748b");
     }
-    box(F, 1 * T, 1 * T + 1.6, -14, -5, 6 * T + 1, 7 * T - 1, "#e5e7eb", { side: "#cbd5e1" });
-    rect(F, 'x', 1 * T + 1.65, 6.5 * T - 0.6, 6.5 * T + 0.6, -12.5, -8.5, [1, 0, 0], "#dc2626", { bias: 0.4 });
-    rect(F, 'x', 1 * T + 1.65, 6.5 * T - 2, 6.5 * T + 2, -11.1, -9.9, [1, 0, 0], "#dc2626", { bias: 0.4 });
+    box(F, 1 * T, 1 * T + 1.6, -14, -5, 6 * T + 1, 7 * T - 1, "#e5e7eb", { side: "#cbd5e1", bias: 0.01 });
+    rect(F, 'x', 1 * T + 1.65, 6.5 * T - 0.6, 6.5 * T + 0.6, -12.5, -8.5, [1, 0, 0], "#dc2626", { bias: 1.5 });
+    rect(F, 'x', 1 * T + 1.65, 6.5 * T - 2, 6.5 * T + 2, -11.1, -9.9, [1, 0, 0], "#dc2626", { bias: 1.5 });
     for (const [bx, bz, br] of [[2.6 * T, 6.4 * T, 3], [3.2 * T, 7.4 * T, 2.2], [4.3 * T, 5.5 * T, 1.6]]) rect(F, 'y', -0.04, bx - br, bx + br, bz - br * 0.7, bz + br * 0.7, [0, -1, 0], "#4c0519", { floorDecal: true });
     // CAPTAIN'S QUARTERS: bunk, desk + lamp, rug
     box(F, 9 * T + 3.5, 10 * T, -3, 0, 6 * T + 0.5, 7 * T + 9, "#1e3a8a", { top: "#1e40af" });
@@ -19764,6 +19834,11 @@ requestAnimationFrame(gameLoop);
     const k = t % LASER.period;
     return k < 1.5 ? 'off' : (k < 1.95 ? 'warn' : 'on');
   }
+  function laserState2(t) {
+    const k = (t + LASER2.phase) % LASER2.period;
+    return k < 1.15 ? 'off' : (k < 1.55 ? 'warn' : 'on');
+  }
+  const powered = () => isLooted('reactor');
   function crushBottom(t) {
     const k = t % CRUSH.period;
     if (k < 2.4) return CEIL;
@@ -19911,7 +19986,9 @@ requestAnimationFrame(gameLoop);
     const dL = laserState(t) !== 'off' ? Math.abs(W.z - LASER.z) + Math.abs(W.x - 5.5 * T) : 999;
     const dC = Math.hypot(W.x - 5.5 * T, W.z - CRUSH.z);
     const dW = Math.hypot(W.x - WIN.x, W.z - (WIN.z0 + WIN.z1) / 2) * (1.4 - W.crack);
-    const near = Math.min(dV, dL, dC * 1.3, dW);
+    const dL2 = laserState2(t) !== 'off' ? Math.abs(W.z - LASER2.z) + Math.abs(W.x - 9.5 * T) : 999;
+    const v2 = W.vent2, dV2 = (v2 && powered() && v2.state !== 'gone') ? Math.hypot(W.x - VENT2.x, W.z - VENT2.z) : 999;
+    const near = Math.min(dV, dL, dC * 1.3, dW, dL2, dV2);
     const target = Math.max(0, Math.min(1, 1 - near / 55));
     hz.danger += (target - hz.danger) * Math.min(1, dt * 1.5);
     const D = hz.danger;
@@ -19999,7 +20076,9 @@ requestAnimationFrame(gameLoop);
     if (W || gameOver) return;
     W = { d, phase: 'autodock', t: 0, time: 0, x: 5.5 * T, z: -19, eyeY: EYE, yaw: 0, pitch: 0.05, bob: 0, stepT: 0,
       fade: 1, vent: { state: 'idle', t: 0, y: CEIL }, crack: 0.15, crackT: 0, fx: [], drips: [], sparkT: 0.5, dripT: 0.4,
-      prevLaser: 'off', prevCrushK: 0, action: null, look: null, firstLog: false };
+      prevLaser: 'off', prevLaser2: 'off', prevCrushK: 0, action: null, look: null, firstLog: false,
+      vent2: { state: 'idle', t: 0, y: CEIL }, needPower: false };
+    { const on = isLooted('reactor'); for (const L of LAMPS) if (L.reactor) { L.col = on ? [80, 220, 255] : [255, 120, 40]; L.rad = on ? 60 : 40; L.rate = on ? 0 : 0.25; } }
     ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     W.ad = { flags: {}, puffs: [], p0: [ship.x, ship.y, ship.z], f0: [ship.fx, ship.fy, ship.fz], speed: Math.max(20, Math.abs(ship.speed)) };
     targetedObject = null; popupQueue.length = 0; activePopup = null;
@@ -20014,21 +20093,43 @@ requestAnimationFrame(gameLoop);
     cabin = makeCabin({ wreck: true, x: 0, z: 2, dir: 'out', chairYaw: Math.PI });
     playerFoot.yaw = Math.PI; playerFoot.pitch = 0.05;
     hudInside(true);
-    addPopup(`DOCKED WITH THE ${W.d.name}`, "#f59e0b");
+    addPopup(`PARKED ALONGSIDE THE ${W.d.name}`, "#f59e0b");
     addPopup("SUIT UP AT THE AFT RACK: HELMET + HELMET LIGHT", "#38bdf8");
     addPopup("LEAVE THE MINING LASER. NOTHING OVER THERE TO MINE...", "#fca5a5");
+  }
+  function startBoarding() {                  // turn round, walk up the ramp, the Chimera's outer hatch slides open
+    W.phase = 'boarding'; W.t = 0; W.action = null;
+    const nb = document.getElementById('nav-banner'); if (nb) nb.innerText = ">> CHIMERA AIRLOCK CYCLING <<";
+    W.b0 = { x: W.x, z: W.z, yaw: W.yaw, pitch: W.pitch };
+    try { blip('square', 880, 880, 0.08, 0.04); } catch (e) {}
+  }
+  function stepBoarding(dt) {
+    const t = W.t, b = W.b0, ez = (k) => k * k * (3 - 2 * k);
+    let dy = ((Math.PI - b.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    const k1 = ez(Math.min(1, t / 0.8));
+    W.yaw = b.yaw + dy * k1; W.pitch = b.pitch + (0.02 - b.pitch) * k1;
+    W.x = b.x + (RAMP.x - b.x) * k1;
+    const zView = Math.max(b.z, RAMP.z0 + 13);                  // stand far enough back to watch the doors part
+    if (t < 0.9) W.z = b.z + (zView - b.z) * k1;
+    if (t >= 0.45 && !W.bFlags) { W.bFlags = 1; try { cabinSfx('servo'); cabinSfx('hiss'); } catch (e) {} }
+    W.shipHatch = Math.max(0, Math.min(1, (t - 0.55) / 0.75));
+    const k2 = ez(Math.max(0, Math.min(1, (t - 1.15) / 1.15)));
+    if (t >= 0.9) W.z = zView + ((RAMP.z0 + 1.6) - zView) * k2;
+    W.bob += dt * 6 * (t > 0.9 && t < 2.1 ? 1 : 0); W.eyeY = EYE + Math.sin(W.bob) * 0.3;
+    if (t >= 2.4) { W.bFlags = 0; enterShipFromWreck(); }
   }
   function enterShipFromWreck() {            // back up the ramp and through the airlock
     stopAmbience();
     W.phase = 'cabin'; W.fade = 0;
-    cabin = makeCabin({ wreck: true, x: AL.cx0 + 10, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 0, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
-    playerFoot.yaw = -Math.PI / 2; playerFoot.pitch = 0;
+    cabin = makeCabin({ wreck: true, x: AL.cx0 + 10, z: AL.zc, hasHelmet: true, hasLaser: true, dir: 'in', hatch: 1, hatchTarget: 1, lights: 'red', seq: { type: 'airlockIn', t: 0 } });
+    playerFoot.yaw = Math.PI / 2; playerFoot.pitch = 0;
     try { playSfx('airlock'); } catch (e) {}
   }
   function cabinToWreck() {                    // the airlock cycle finishes: out onto the boarding ramp
     cabin = null;
     try { stopCabinHum(); } catch (e) {}
     W.phase = 'in'; W.x = RAMP.x; W.z = RAMP.z0 + 8; W.yaw = 0; W.pitch = 0.02; W.fade = 0.5;
+    W.shipHatch = 1.6;                          // the hatch you just came out of slides shut behind you
     startAmbience();
     try { playSfx('airlock'); cabinSfx('hiss'); } catch (e) {}
     if (!W.boardedOnce) { W.boardedOnce = true; addPopup(`ABOARD THE ${W.d.name}: SALVAGE THE BLACK BOX ON THE BRIDGE`, "#f59e0b"); addPopup("TAKE IT SLOW, PILOT. SHE'S NOT AS DEAD AS SHE LOOKS", "#fca5a5"); }
@@ -20039,7 +20140,7 @@ requestAnimationFrame(gameLoop);
     cabinTween({ x: 0, z: CAB.seatZ, eyeY: CAB.seatEye, yaw: Math.PI, pitch: 0.05 }, 1.1, () => {
       try { playSfx('hullClang'); cabinSfx('servo'); } catch (e) {}
       c.chairFollow = true;
-      cabinTween({ x: 0, z: CAB.seatZ, eyeY: CAB.seatEye, yaw: 0, pitch: 0.1 }, 1.0, () => { c.chairFollow = false; startUndock(); addPopup("RELEASING DOCKING CLAMPS", "#38bdf8"); });
+      cabinTween({ x: 0, z: CAB.seatZ, eyeY: CAB.seatEye, yaw: 0, pitch: 0.1 }, 1.0, () => { c.chairFollow = false; startUndock(); addPopup("RAMP RETRACTED - PULLING AWAY", "#38bdf8"); });
     });
   }
   // cabin actions while docked: helmet light instead of the laser, airlock leads to the wreck, seat undocks
@@ -20134,6 +20235,16 @@ requestAnimationFrame(gameLoop);
   const prevSurfPass = window.renderSurfacePass;
   window.renderSurfacePass = function(planet, cam) {
     if (!(cabin && cabin.wreck)) return prevSurfPass.apply(this, arguments);
+    if (W && cabin.hatch > 0.02) {      // outer hatch open: the boarding ramp and the wreck's breach are right there
+      const sv = { x: W.x, z: W.z, yaw: W.yaw, pitch: W.pitch, eyeY: W.eyeY, fade: W.fade };
+      try {
+        W.hatchView = true; W.x = RAMP.x; W.z = RAMP.z0 + 2; W.yaw = cam.yaw - Math.PI / 2; W.pitch = cam.pitch; W.fade = 0;
+        W.eyeY = EYE;
+        renderWreck();
+      } catch (e) {}
+      finally { W.hatchView = false; Object.assign(W, sv); }
+      return;
+    }
     ctx.fillStyle = "#010103"; ctx.fillRect(-20, -20, V_WIDTH + 40, V_HEIGHT + 40);
     const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch), fov = V_HEIGHT * 0.9;
     for (const st of STARS) {
@@ -20149,7 +20260,7 @@ requestAnimationFrame(gameLoop);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = "#021407"; g.fillRect(0, 0, Wd, Hd);
     g.textBaseline = "top"; g.textAlign = "left";
-    g.font = "bold 11px monospace"; g.fillStyle = "#bbf7d0"; g.fillText("◆ DOCKING CLAMPS ◆", 8, 6);
+    g.font = "bold 11px monospace"; g.fillStyle = "#bbf7d0"; g.fillText("◆ HOLDING STATION ◆", 8, 6);
     g.fillStyle = "#22803f"; g.fillRect(8, 20, Wd - 16, 1);
     const rows = [["VESSEL", W.d.name], ["CLASS", "CONFED DREADNOUGHT"], ["STATUS", "DERELICT / BROKEN"], ["ATMOS", "VACUUM - EVA ONLY"], ["POWER", "EMERGENCY ONLY"], ["SALVAGE", isLooted('blackbox') ? "BLACK BOX SECURED" : "BLACK BOX: BRIDGE"]];
     g.font = "10px monospace";
@@ -20249,7 +20360,7 @@ requestAnimationFrame(gameLoop);
     ctx.restore();
     // captions
     ctx.save(); ctx.font = "bold 10px monospace"; ctx.textAlign = "center";
-    const cap = t < 1.6 ? `AUTOPILOT: APPROACHING ${W.d.name}` : (t < 3.0 ? "MATCHING DRIFT · RETRO THRUSTERS" : (t < 4.1 ? "EXTENDING BOARDING RAMP" : "DOCKING CLAMPS ENGAGED · EQUALISING PRESSURE"));
+    const cap = t < 1.6 ? `AUTOPILOT: APPROACHING ${W.d.name}` : (t < 3.0 ? "MATCHING DRIFT · RETRO THRUSTERS" : (t < 4.1 ? "EXTENDING BOARDING RAMP" : "PARKED ALONGSIDE · HOLDING STATION"));
     ctx.fillStyle = "rgba(2, 6, 23, 0.7)"; ctx.fillRect(V_WIDTH / 2 - 150, V_HEIGHT - 34, 300, 16);
     ctx.fillStyle = t >= 4.1 ? "#4ade80" : "#f59e0b"; ctx.fillText(cap, V_WIDTH / 2, V_HEIGHT - 22);
     if (Math.floor(Date.now() / 500) % 2) { ctx.font = "bold 7px monospace"; ctx.fillStyle = "#64748b"; ctx.fillText("TAP TO SKIP", V_WIDTH - 40, 16); }
@@ -20311,8 +20422,7 @@ requestAnimationFrame(gameLoop);
     if (at(0.05)) { try { tone2('sawtooth', 70, 55, 3.4, 0.06); } catch (e) {} }
     if (at(3.3)) { try { cabinSfx('hiss'); } catch (e) {} }                 // retro thrusters
     if (at(AD_PATH_END)) { try { cabinSfx('hiss'); cabinSfx('servo'); } catch (e) {} }   // lateral thrusters: slide onto the berth
-    if (at(AD_CLAMP)) { screenShake = 0.5; try { playSfx('hullClang'); vibrateGamepad(220, 0.6, 0.4); setTimeout(() => { try { playSfx('hullClang'); } catch (e) {} }, 180); } catch (e) {} }
-    if (at(AD_CLAMP + 0.35)) { try { cabinSfx('hiss'); } catch (e) {} }
+    if (at(AD_CLAMP)) { try { cabinSfx('hiss'); vibrateGamepad(90, 0.2, 0.15); } catch (e) {} }   // last puff of the RCS jets: parked, nothing to latch onto
     if (t >= AD_LEN) { ship.speed = 0; enterCabinDocked(); }
   }
   function renderAutoDockCockpit(baseRender) {
@@ -20324,8 +20434,7 @@ requestAnimationFrame(gameLoop);
     else if (t < 2.7) { phase = "CIRCLING TO THE BREAK"; range = `BERTH RANGE ${dist}m`; }
     else if (t < AD_PATH_END - 0.3) { phase = "THREADING THE BREAK"; range = `RANGE ${dist}m`; }
     else if (t < AD_CLAMP) { phase = "STARBOARD AIRLOCK ALIGN"; range = `LATERAL ${Math.abs(P.p[0] + 12).toFixed(1)}m TO STARBOARD`; }
-    else { phase = "DOCKING CLAMPS ENGAGED"; range = "BOARDING RAMP EXTENDED"; good = true; }
-    if (t > AD_CLAMP - 0.3) drawDockClamps(Math.min(1, (t - (AD_CLAMP - 0.3)) / 0.3), t);
+    else { phase = "PARKED ALONGSIDE · HOLDING STATION"; range = "BOARDING RAMP EXTENDED"; good = true; }
     drawDockReadout(phase, W.d.name, range, t > 0.4 && t < AD_CLAMP, good);
     if (t > AD_CLAMP + 0.2) { ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(1, (t - AD_CLAMP - 0.2) / (AD_LEN - AD_CLAMP - 0.3))})`; ctx.fillRect(-10, -10, V_WIDTH + 20, V_HEIGHT + 20); }
   }
@@ -20345,7 +20454,7 @@ requestAnimationFrame(gameLoop);
   }
   function startUndock() {
     W.phase = 'undock'; W.t = 0;
-    try { cabinSfx('servo'); } catch (e) {}
+    try { cabinSfx('servo'); cabinSfx('hiss'); } catch (e) {}
   }
   function exitToSpace() {
     const d = W.d;
@@ -20361,7 +20470,7 @@ requestAnimationFrame(gameLoop);
     touchReverse = false; touchThrust = false; touchFire = false;
     landingFade = 0.6;
     try { playSfx('hullClang'); } catch (e) {}
-    addPopup(`UNDOCKED FROM ${d.name}`, "#38bdf8");
+    addPopup(`PULLED AWAY FROM ${d.name}`, "#38bdf8");
   }
 
   // ---------- collision ----------
@@ -20375,6 +20484,9 @@ requestAnimationFrame(gameLoop);
     o.push([9 * T + 3.5, 10 * T, 6 * T + 0.5, 7 * T + 9], [7 * T, 7 * T + 7, 7 * T + 4, 8 * T]);
     o.push([CRUSH.x0, CRUSH.x0 + 1.2, CRUSH.z - 2, CRUSH.z + 2], [CRUSH.x1 - 1.2, CRUSH.x1, CRUSH.z - 2, CRUSH.z + 2]);
     o.push([LASER.x0, LASER.x0 + 1, LASER.z - 1.2, LASER.z + 1.2], [LASER.x1 - 1, LASER.x1, LASER.z - 1.2, LASER.z + 1.2]);
+    o.push([LASER2.x0, LASER2.x0 + 1, LASER2.z - 1.2, LASER2.z + 1.2], [LASER2.x1 - 1, LASER2.x1, LASER2.z - 1.2, LASER2.z + 1.2]);
+    for (const [x0, x1, z0, z1, fz] of PODS) o.push([x0, x1, fz < 0 ? z0 - 2.4 : z0, fz < 0 ? z1 : z1 + 2.4]);
+    o.push([REACTOR.x0 - 0.8, REACTOR.x1 + 0.8, REACTOR.z0 - 0.8, REACTOR.z1 + 0.8], [1 * T, 1 * T + 1.2, LEVER.z - 3, LEVER.z + 3]);
     if (W && crushBottom(W.time) > -5) o.push([CRUSH.x0, CRUSH.x1, CRUSH.z - 1.5, CRUSH.z + 1.5]);
     return o;
   };
@@ -20399,14 +20511,14 @@ requestAnimationFrame(gameLoop);
   // ---------- actions ----------
   function profit() { return typeof getLoopProfitMult === 'function' ? getLoopProfitMult() : 1; }
   function getAction() {
-    if (W.z < RAMP.z0 + 5) {
-      return { label: "BOARD CHIMERA", banner: ">> CHIMERA AIRLOCK: TAP BOARD CHIMERA <<", run: enterShipFromWreck };
+    if (W.z < RAMP.z0 + 14) {
+      return { label: "BOARD CHIMERA", banner: ">> CHIMERA AIRLOCK: TAP BOARD CHIMERA <<", run: startBoarding };
     }
     for (const c of CRATES) {
       const cx = c.c * T + T / 2, cz = c.r * T + T / 2;
       if (Math.hypot(W.x - cx, W.z - cz) < 11 && !isLooted(c.id)) {
-        const lab = c.kind === 'safe' ? "CRACK SAFE" : (c.kind === 'med' ? "OPEN MEDKIT" : "OPEN CRATE");
-        const nm = c.kind === 'safe' ? "CAPTAIN'S WALL SAFE" : (c.kind === 'med' ? "MEDBAY SUPPLY KIT" : (c.kind === 'big' ? "OFFICER'S STRONGBOX" : (c.kind === 'missile' ? "ARMOURY CRATE" : "SUPPLY CRATE")));
+        const lab = c.kind === 'safe' ? "CRACK SAFE" : (c.kind === 'med' ? "OPEN MEDKIT" : (c.kind === 'cell' ? "PULL CELL" : "OPEN CRATE"));
+        const nm = c.kind === 'safe' ? "CAPTAIN'S WALL SAFE" : (c.kind === 'med' ? "MEDBAY SUPPLY KIT" : (c.kind === 'cell' ? "SPARE FUSION CELL" : (c.kind === 'big' ? (c.id === 'c9' ? "CHIEF ENGINEER'S LOCKER" : "OFFICER'S STRONGBOX") : (c.kind === 'missile' ? "ARMOURY CRATE" : (c.r >= 25 ? "CRYO BAY STORES" : "SUPPLY CRATE")))));
         return { label: lab, banner: `>> ${nm}: TAP ${lab} <<`, run: () => {
           loot(c.id);
           try { cabinSfx('servo'); playSfx('coin'); vibrateGamepad(120, 0.3, 0.4); } catch (e) {}
@@ -20415,9 +20527,21 @@ requestAnimationFrame(gameLoop);
           else if (c.kind === 'med') { ship.hull = ship.maxHull; ship.shield = ship.maxShield; addPopup(`${nm}: +$${pay(1000, 1500).toLocaleString()} - HULL & SHIELDS RESTORED`, "#4ade80"); }
           else if (c.kind === 'safe') { addPopup(`${nm}: +$${pay(5000, 7000).toLocaleString()} IN CONFED BEARER BONDS!`, "#facc15"); try { playSfx('upgrade'); } catch (e) {} }
           else if (c.kind === 'big') addPopup(`${nm}: +$${pay(3500, 5000).toLocaleString()}`, "#facc15");
+          else if (c.kind === 'cell') { ship.fuel = ship.maxFuel; addPopup(`${nm}: +$${pay(4000, 6000).toLocaleString()} - FUEL TANKS TOPPED UP`, "#facc15"); try { playSfx('upgrade'); } catch (e) {} }
           else addPopup(`${nm}: +$${pay(1200, 2000).toLocaleString()}`, "#4ade80");
         } };
       }
+    }
+    if (Math.hypot(W.x - LEVER.x, W.z - LEVER.z) < 15 && !powered()) {
+      return { label: "RESTORE POWER", banner: ">> MAIN POWER LEVER: TAP RESTORE POWER <<", run: restorePower };
+    }
+    if (Math.hypot(W.x - (BBOX.x0 + BBOX.x1) / 2, W.z - (BBOX.z0 - 4)) < 12 && !isLooted('blackbox') && !powered()) {
+      return { label: "NO POWER", banner: ">> BLACK BOX CLAMPED - BRIDGE HAS NO POWER. RESTORE THE REACTOR VIA THE WEST HATCH <<", run: () => {
+        W.needPower = true;
+        try { blip('square', 220, 160, 0.25, 0.06); } catch (e) {}
+        addPopup("BLACK BOX CLAMPS WON'T RELEASE: BRIDGE IS ON DEAD BATTERIES", "#f87171");
+        addPopup("RESTORE MAIN POWER IN ENGINEERING - THROUGH THE WEST HATCH, PAST CRYO", "#facc15");
+      } };
     }
     if (Math.hypot(W.x - (BBOX.x0 + BBOX.x1) / 2, W.z - (BBOX.z0 - 4)) < 12 && !isLooted('blackbox')) {
       return { label: "PULL BLACK BOX", banner: ">> FLIGHT RECORDER: TAP PULL BLACK BOX <<", run: () => {
@@ -20436,9 +20560,23 @@ requestAnimationFrame(gameLoop);
         addPopup("SECURITY GRID STUCK ON. BLAST DOOR WON'T STOP CYCLING.", "#7dd3fc");
         addPopup("SOMETHING CAME ABOARD WITH THE SALVAGE. IT LIVES IN THE VENTS.", "#7dd3fc");
         addPopup("DON'T GO NEAR THE OBSERVATION GLASS. IT WON'T HOLD.", "#fca5a5");
+        addPopup("REACTOR SCRAMMED. BRIDGE ON BATTERY. BLACK BOX CLAMPED TILL POWER'S BACK.", "#7dd3fc");
+        addPopup("ENGINEERING GRID IS FASTER THAN THE ONE FORWARD. TIME IT.", "#7dd3fc");
+        addPopup("WE PUT 41 IN CRYO. I ONLY COUNT 40 NOW.", "#fca5a5");
       } };
     }
     return null;
+  }
+
+  function restorePower() {
+    loot('reactor');
+    W.powerT = 0; W.needPower = false;
+    try { dcPlayBoom(60, 2.2, 0.8); dcPlayBoom(220, 0.8, 0.35); blip('sawtooth', 60, 420, 2.4, 0.07); vibrateGamepad(700, 0.9, 0.9); } catch (e) {}
+    screenShake = 0.9;
+    for (const L of LAMPS) if (L.reactor) { L.col = [80, 220, 255]; L.rad = 60; L.rate = 0; }
+    addPopup("REACTOR ONLINE - MAIN POWER RESTORED", "#22d3ee");
+    addPopup("BRIDGE POWERED: BLACK BOX CLAMPS RELEASED", "#facc15");
+    setTimeout(() => { if (W && W.phase === 'in') { addPopup("...CRYO BAY: POD 07 SEAL BROKEN", "#fca5a5"); try { blip('square', 1400, 1400, 0.12, 0.05); setTimeout(() => { try { blip('square', 1400, 1400, 0.12, 0.05); } catch (e) {} }, 250); } catch (e) {} } }, 2600);
   }
 
   // ---------- hazards ----------
@@ -20462,6 +20600,33 @@ requestAnimationFrame(gameLoop);
     const dL = Math.abs(W.z - LASER.z);
     setG(au.laser, ls === 'on' ? Math.max(0, 0.07 * (1 - dL / 50)) : 0);
     if (ls === 'on' && dL < 1.3 && W.x > LASER.x0 && W.x < LASER.x1) return die('laser');
+    // second grid (engineering approach) - shares the hum
+    const ls2 = laserState2(t);
+    if (ls2 !== W.prevLaser2) {
+      const near2 = Math.abs(W.z - LASER2.z) < 70;
+      if (near2 && ls2 === 'warn') blip('square', 1000, 1000, 0.07, 0.05);
+      if (near2 && ls2 === 'on') blip('sawtooth', 340, 140, 0.22, 0.08);
+      W.prevLaser2 = ls2;
+    }
+    const dL2 = Math.abs(W.z - LASER2.z);
+    if (ls2 === 'on' && dL2 < 50) setG(au.laser, Math.max(ls === 'on' ? Math.max(0, 0.07 * (1 - dL / 50)) : 0, 0.07 * (1 - dL2 / 50)));
+    if (ls2 === 'on' && dL2 < 1.3 && W.x > LASER2.x0 && W.x < LASER2.x1) return die('laser');
+    // the cryo lurker: only stirs once the power is back on
+    if (powered() && W.powerT !== undefined) W.powerT += dt;
+    const v2 = W.vent2, dV2 = Math.hypot(W.x - VENT2.x, W.z - VENT2.z);
+    v2.t += dt;
+    if (powered()) {
+      if (v2.state === 'idle' && dV2 < 7) { v2.state = 'arm'; v2.t = 0; blip('sawtooth', 1800, 600, 0.3, 0.05); try { cabinSfx('crackle'); } catch (e) {} }
+      else if (v2.state === 'arm' && v2.t > 0.45) { v2.state = 'drop'; v2.t = 0; blip('sawtooth', 500, 1500, 0.2, 0.08); }
+      else if (v2.state === 'drop') {
+        v2.y = CEIL + Math.min(1, v2.t / 0.22) * 10;
+        if (v2.t >= 0.22) {
+          if (dV2 < 7.5) { W.deathCryo = true; return die('vent'); }
+          v2.state = 'miss'; v2.t = 0; blip('square', 1400, 300, 0.4, 0.07); addPopup("!!! IT CAME OUT OF THE POD!", "#f472b6"); screenShake = 0.25;
+        }
+      } else if (v2.state === 'miss') { v2.y = v2.t < 0.3 ? CEIL + 10 + v2.t / 0.3 * 7 : -1 - (v2.t - 0.3) / 1.0 * 17; if (v2.t > 1.3) { v2.state = 'gone'; v2.t = 0; v2.y = CEIL; } }
+      else if (v2.state === 'gone' && v2.t > 10) v2.state = 'idle';
+    }
     // blast door
     const k = t % CRUSH.period, b = crushBottom(t), dC = Math.hypot(W.x - (CRUSH.x0 + CRUSH.x1) / 2, W.z - CRUSH.z);
     setG(au.grind, (k > 3.4 || (k > 2.2 && k < 2.62)) ? Math.max(0, 0.22 * (1 - dC / 60)) : 0);
@@ -20538,12 +20703,13 @@ requestAnimationFrame(gameLoop);
       const wants = btnTap || kJ('action') || kJ('board') || isGpJustPressed('action') || isGpJustPressed('board');
       btnTap = false; anyTap = false;
       if (cabin) updateCabin(dt, walkX, walkZ, wants);
-      if (cabin && cabin.seq && cabin.seq.type === 'airlockOut') cabin.hatch = Math.min(cabin.hatch, 0.04);   // no planet daylight out here
       endInput(); return;
     }
     if (W.phase === 'undock') { if (W.t >= 0.8) exitToSpace(); endInput(); return; }
+    if (W.phase === 'boarding') { W.time += dt; stepBoarding(dt); endInput(); return; }
     if (W.phase !== 'in') { endInput(); return; }
     W.time += dt;
+    if (W.shipHatch > 0) W.shipHatch = Math.max(0, W.shipHatch - dt * 1.25);
     W.fade = Math.max(0, W.fade - dt * 1.2);
     const cluster = document.getElementById("flight-cluster");
     if (cluster) cluster.style.display = window.showTouchControls ? 'grid' : 'none';
@@ -20644,11 +20810,39 @@ requestAnimationFrame(gameLoop);
     if (!scratch) { const r = createRNG(txt.length * 99); for (let i = 0; i < 26; i++) { const x = r() * w, y0 = h * 0.45 + (r() - 0.3) * h * 0.25, L = 3 + r() * h * 0.45; g.fillRect(x, y0, 1 + (r() < 0.3 ? 1 : 0), L); } }
     return cv;
   }
-  const TEX_TURN = makeTextTex("TURN BACK", 120, 30, "#b91c1c", false);
+  function makeBloodTex(txt, w, h) {
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h * 2;
+    const g = cv.getContext("2d"), r = createRNG(txt.length * 131 + 7), fs = Math.round(h * 0.62), y = h * 0.5;
+    g.font = `bold ${fs}px monospace`; g.textAlign = "center"; g.textBaseline = "middle";
+    // smeared by hand: a few offset dark passes, then the wet layer on top
+    for (let i = 0; i < 4; i++) { g.fillStyle = i < 2 ? "#450a0a" : "#7f1d1d"; g.fillText(txt, w / 2 + (r() - 0.5) * 3, y + (r() - 0.5) * 2.5); }
+    g.fillStyle = "#991b1b"; g.fillText(txt, w / 2, y);
+    g.globalAlpha = 0.6; g.fillStyle = "#dc2626"; g.fillText(txt, w / 2 - 0.6, y - 0.6); g.globalAlpha = 1;
+    // runs dripping off the letters, each ending in a fat bead
+    const img = g.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < 46; i++) {
+      const x = Math.floor(r() * w); let yy = Math.floor(h * 0.75);
+      while (yy > 2 && img[(yy * w + x) * 4 + 3] < 40) yy--;
+      if (yy <= 2) continue;
+      const L = 3 + r() * h * 0.9, wd = r() < 0.35 ? 2 : 1;
+      g.fillStyle = r() < 0.5 ? "#7f1d1d" : "#991b1b"; g.fillRect(x, yy, wd, L);
+      g.fillStyle = "#450a0a"; g.fillRect(x - 0.5, yy + L - 1, wd + 1, 2);
+    }
+    // spatter around it
+    for (let i = 0; i < 30; i++) { g.fillStyle = r() < 0.5 ? "#7f1d1d" : "#450a0a"; const sx = r() * w, sy = r() * h * 1.1, sz = r() < 0.2 ? 2 : 1; g.fillRect(sx, sy, sz, sz); }
+    // a smeared hand-swipe under the words
+    g.globalAlpha = 0.35; g.fillStyle = "#7f1d1d"; g.fillRect(w * 0.12, h * 0.8, w * 0.7, 2); g.fillRect(w * 0.2, h * 0.86, w * 0.5, 1); g.globalAlpha = 1;
+    return cv;
+  }
+  const TEX_TURN = makeBloodTex("TURN BACK", 120, 30);
   const TEX_VENT = makeTextTex("IT'S IN THE VENTS", 160, 24, "#9ca3af", true);
+  const TEX_CRYO = makeTextTex("41 ASLEEP", 140, 24, "#7dd3fc", false);
+  const TEX_WAKE = makeBloodTex("DON'T WAKE THEM", 170, 28);
   const DECALS = [
-    { tex: TEX_TURN, pts: [[2 * T + 1, -15, 4 * T - 0.06], [4.85 * T, -15, 4 * T - 0.06], [4.85 * T, -8, 4 * T - 0.06], [2 * T + 1, -8, 4 * T - 0.06]], n: [0, 0, -1], grid: [6, 2] },
-    { tex: TEX_VENT, pts: [[1 * T + 0.06, -13, 9.2 * T], [1 * T + 0.06, -13, 11.8 * T], [1 * T + 0.06, -9.5, 11.8 * T], [1 * T + 0.06, -9.5, 9.2 * T]], n: [1, 0, 0], grid: [6, 2] }
+    { tex: TEX_TURN, pts: [[2 * T + 1, -15, 4 * T - 0.06], [4.85 * T, -15, 4 * T - 0.06], [4.85 * T, -1, 4 * T - 0.06], [2 * T + 1, -1, 4 * T - 0.06]], n: [0, 0, -1], grid: [6, 4] },
+    { tex: TEX_VENT, pts: [[1 * T + 0.06, -13, 9.2 * T], [1 * T + 0.06, -13, 11.8 * T], [1 * T + 0.06, -9.5, 11.8 * T], [1 * T + 0.06, -9.5, 9.2 * T]], n: [1, 0, 0], grid: [6, 2] },
+    { tex: TEX_CRYO, pts: [[1 * T + 0.06, -13, 25.4 * T], [1 * T + 0.06, -13, 27.6 * T], [1 * T + 0.06, -9.5, 27.6 * T], [1 * T + 0.06, -9.5, 25.4 * T]], n: [1, 0, 0], grid: [6, 2] },
+    { tex: TEX_WAKE, pts: [[10 * T - 0.06, -14, 27.8 * T], [10 * T - 0.06, -14, 25.2 * T], [10 * T - 0.06, -2, 25.2 * T], [10 * T - 0.06, -2, 27.8 * T]], n: [-1, 0, 0], grid: [6, 4] }
   ];
   function smooth(a, b, x) { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); }
 
@@ -20700,6 +20894,65 @@ requestAnimationFrame(gameLoop);
         face(D, [[LASER.x0 + 1, -2.6, LASER.z], [LASER.x1 - 1, -14.6, LASER.z], [LASER.x1 - 1, -14.2, LASER.z], [LASER.x0 + 1, -2.2, LASER.z]], "#ff3b3b", { emis: true, glow: true });
       }
     }
+    {   // the docked Chimera's outer airlock doors
+      const op = Math.max(0, Math.min(1, W.shipHatch || 0)), cxr = RAMP.x, zd = RAMP.z0 - 0.35, half = 3.5, w = half * (1 - op);
+      if (Math.abs(ez - zd) < 140 && w > 0.05) {
+        const dO = { ship: true, decal: true, bias: 4 };
+        rect(D, 'z', zd, cxr - half, cxr - half + w, -11, 0, [0, 0, 1], "#64748b", dO);
+        rect(D, 'z', zd, cxr + half - w, cxr + half, -11, 0, [0, 0, 1], "#64748b", dO);
+        rect(D, 'z', zd + 0.02, cxr - half, cxr - half + w, -6.2, -5.2, [0, 0, 1], "#eab308", Object.assign({}, dO, { bias: 4.2 }));
+        rect(D, 'z', zd + 0.02, cxr + half - w, cxr + half, -6.2, -5.2, [0, 0, 1], "#eab308", Object.assign({}, dO, { bias: 4.2 }));
+        if (op < 0.02) rect(D, 'z', zd + 0.03, cxr - 0.12, cxr + 0.12, -11, 0, [0, 0, 1], "#1e293b", Object.assign({}, dO, { bias: 4.3 }));   // seam
+      }
+    }
+    const ls2 = laserState2(now);
+    if (ls2 !== 'off') {
+      const on = ls2 === 'on';
+      for (let i = 0; i < 5; i++) {
+        if (!on && Math.random() < 0.5) continue;
+        const y = -2.5 - i * 3, hh = on ? 0.18 : 0.06;
+        face(D, [[LASER2.x0 + 1, y - hh, LASER2.z], [LASER2.x1 - 1, y - hh, LASER2.z], [LASER2.x1 - 1, y + hh, LASER2.z], [LASER2.x0 + 1, y + hh, LASER2.z]], on ? "#ff3b3b" : "#7f1d1d", { emis: true, glow: on });
+      }
+      if (on) {
+        face(D, [[LASER2.x0 + 1, -14.6, LASER2.z], [LASER2.x1 - 1, -2.6, LASER2.z], [LASER2.x1 - 1, -2.2, LASER2.z], [LASER2.x0 + 1, -14.2, LASER2.z]], "#ff3b3b", { emis: true, glow: true });
+        face(D, [[LASER2.x0 + 1, -2.6, LASER2.z], [LASER2.x1 - 1, -14.6, LASER2.z], [LASER2.x1 - 1, -14.2, LASER2.z], [LASER2.x0 + 1, -2.2, LASER2.z]], "#ff3b3b", { emis: true, glow: true });
+      }
+    }
+    // cryo pods: frosted glass with a frozen body, lights up with main power; pod 07 hangs open and empty after
+    const pw = powered();
+    for (const [x0, x1, z0, z1, fz, id] of PODS) {
+      if (Math.hypot(ex - (x0 + x1) / 2, ez - z0) > 125) continue;
+      const fzp = fz < 0 ? z0 - 2.45 : z1 + 2.45, n = [0, 0, fz < 0 ? -1 : 1];
+      if (pw && id === OPEN_POD) {
+        rect(D, 'z', fzp, x0 + 0.6, x1 - 0.6, -14, -1, n, "#0b1220", { bias: 0.3 });
+        rect(D, 'z', fzp + (fz < 0 ? -0.05 : 0.05), x1 - 0.4, x1 + 2.6, -14, -1, n, "#7dd3fc", { bias: 0.4 });     // glass door swung out
+        rect(D, 'y', -0.06, x0, x1, fz < 0 ? fzp - 5 : fzp, fz < 0 ? fzp : fzp + 5, [0, -1, 0], "#365314", { floorDecal: true });   // slime trail
+        continue;
+      }
+      rect(D, 'z', fzp, x0 + 0.6, x1 - 0.6, -14, -1, n, pw ? "#67e8f9" : "#0e7490", { emis: true, dimEmis: pw ? 0.75 : 0.6, flick: pw ? 0 : 0.05, bias: 0.3 });
+      const bx = (x0 + x1) / 2, o2 = fz < 0 ? -0.04 : 0.04, o3 = fz < 0 ? -0.08 : 0.08;
+      rect(D, 'z', fzp + o2, bx - 1.5, bx + 1.5, -12.8, -9.8, n, "#0b1324", { bias: 0.45 });     // frozen face behind the frost
+      rect(D, 'z', fzp + o2, bx - 2.6, bx + 2.6, -9.6, -3.4, n, "#132036", { bias: 0.45 });     // shoulders + chest
+      rect(D, 'z', fzp + o2, bx - 2.2, bx - 0.6, -3.4, -1.4, n, "#132036", { bias: 0.45 }); rect(D, 'z', fzp + o2, bx + 0.6, bx + 2.2, -3.4, -1.4, n, "#132036", { bias: 0.45 });
+      rect(D, 'z', fzp + o3, x0 + 0.6, x1 - 0.6, -14, -13.3, n, "#ecfeff", { emis: true, dimEmis: 0.8, bias: 0.5 });  // frost rim
+      rect(D, 'z', fzp + o3, bx - 0.4, bx + 0.4, -14.9, -14.3, n, pw ? "#22c55e" : "#ef4444", { emis: true, blink: pw ? null : { rate: 0.6, phase: id }, bias: 0.55 });   // pod status
+    }
+    // reactor: dead red pulse until restored, then a roaring cyan core
+    {
+      const pul = 0.5 + 0.5 * Math.sin(now * (pw ? 9 : 1.6));
+      const col = pw ? (pul > 0.5 ? "#a5f3fc" : "#22d3ee") : (pul > 0.6 ? "#7f1d1d" : "#450a0a");
+      for (const y0 of [-14.5, -8.5, -2.5]) {
+        rect(D, 'z', REACTOR.z0 - 0.06, REACTOR.x0 + 1, REACTOR.x1 - 1, y0 - 4, y0, [0, 0, -1], col, { emis: true, bias: 0.4 });
+        rect(D, 'z', REACTOR.z1 + 0.06, REACTOR.x0 + 1, REACTOR.x1 - 1, y0 - 4, y0, [0, 0, 1], col, { emis: true, bias: 0.4 });
+        rect(D, 'x', REACTOR.x0 - 0.06, REACTOR.z0 + 1, REACTOR.z1 - 1, y0 - 4, y0, [-1, 0, 0], col, { emis: true, bias: 0.4 });
+        rect(D, 'x', REACTOR.x1 + 0.06, REACTOR.z0 + 1, REACTOR.z1 - 1, y0 - 4, y0, [1, 0, 0], col, { emis: true, bias: 0.4 });
+      }
+      // the lever: down = off, thrown up = on
+      const ly = pw ? [-12.5, -9.8] : [-7.2, -4.5];
+      box(D, 1 * T + 1.2, 1 * T + 2.4, ly[0], ly[1], LEVER.z - 0.4, LEVER.z + 0.4, "#e5e7eb", { bias: 0.2 });
+      box(D, 1 * T + 2.2, 1 * T + 3.2, ly[0] - (pw ? 1 : 0), ly[0] + (pw ? 0 : 1), LEVER.z - 0.7, LEVER.z + 0.7, "#dc2626", { bias: 0.25 });
+      rect(D, 'x', 1 * T + 1.26, LEVER.z - 2, LEVER.z - 1, -12.6, -11.6, [1, 0, 0], pw ? "#22c55e" : (Math.floor(now * 2) % 2 ? "#ef4444" : "#450a0a"), { emis: true, bias: 0.5 });
+    }
     const bot = crushBottom(now);
     if (bot > CEIL + 0.2) {
       box(D, CRUSH.x0 + 1.2, CRUSH.x1 - 1.2, CEIL, bot, CRUSH.z - 1.5, CRUSH.z + 1.5, "#52525b", { side: "#3f3f46", top: "#27272a" });
@@ -20734,7 +20987,7 @@ requestAnimationFrame(gameLoop);
 
     const faces = STATIC.concat(D);
     const lampK = LAMPS.map(L => L.flick ? (Math.random() < 0.12 ? 0.1 : 0.85) : (L.rate ? 0.35 + 0.65 * Math.max(0, Math.sin(now * L.rate * 4)) : 0.9));
-    const lasOn = ls === 'on' ? 1 : 0;
+    const lasOn = ls === 'on' ? 1 : 0, lasOn2 = ls2 === 'on' ? 1 : 0;
     const list = [];
     for (const f of faces) {
       const vx = ex - f.c[0], vy = ey - f.c[1], vz = ez - f.c[2];
@@ -20781,6 +21034,7 @@ requestAnimationFrame(gameLoop);
             ar += Lp.col[0] * kk; ag += Lp.col[1] * kk; ab += Lp.col[2] * kk;
           }
           if (lasOn) { const dd = Math.hypot(f.c[0] - 5.5 * T, f.c[1] + 8, f.c[2] - LASER.z); if (dd < 22) { const kk = Math.pow(1 - dd / 22, 2) * 0.9; ar += 255 * kk; ag += 30 * kk; ab += 30 * kk; } }
+          if (lasOn2) { const dd = Math.hypot(f.c[0] - 9.5 * T, f.c[1] + 8, f.c[2] - LASER2.z); if (dd < 22) { const kk = Math.pow(1 - dd / 22, 2) * 0.9; ar += 255 * kk; ag += 30 * kk; ab += 30 * kk; } }
           r = (r * L + ar * (r / 255 * 0.7 + 0.3)) * shade * fog;
           g = (g * L + ag * (g / 255 * 0.7 + 0.3)) * shade * fog;
           b = (b * L + ab * (b / 255 * 0.7 + 0.3)) * shade * fog;
@@ -20794,7 +21048,7 @@ requestAnimationFrame(gameLoop);
         // grow the rect in its own plane by one tile so any panel it sits on can't sort in front of it
         const G = 6.6, thin = Math.min(mxx - mnx, mxy - mny, mxz - mnz);
         if (mxx - mnx > thin) { mnx -= G; mxx += G; } if (mxy - mny > thin) { mny -= G; mxy += G; } if (mxz - mnz > thin) { mnz -= G; mxz += G; }
-        depth = Math.hypot(ex - Math.max(mnx, Math.min(ex, mxx)), ey - Math.max(mny, Math.min(ey, mxy)), ez - Math.max(mnz, Math.min(ez, mxz))) - 0.35;
+        depth = Math.hypot(ex - Math.max(mnx, Math.min(ex, mxx)), ey - Math.max(mny, Math.min(ey, mxy)), ez - Math.max(mnz, Math.min(ez, mxz))) - 0.35 - Math.max(0, f.bias - 1);   // bias > 1: always over the surface it's painted on
       }
       const grp = f.ext ? 0 : (f.floor ? 1 : (f.floorDecal ? 1.5 : (f.ship ? (f.decal ? 2.5 : 2) : 3)));
       list.push({ scr, depth, grp, col: `rgb(${Math.min(255, r) | 0},${Math.min(255, g) | 0},${Math.min(255, b) | 0})`, glow: f.glow });
@@ -20827,6 +21081,9 @@ requestAnimationFrame(gameLoop);
     sprite(3 * T + 6.2, -4.3, 6.4 * T, (x, y, s) => drawGurneyBody(x, y, s, 1), 0.5);
     const v = W.vent;
     if (v.state === 'drop' || v.state === 'miss') sprite(VENT.x, v.y, VENT.z, (x, y, s) => drawLurker(x, y, s, now, v.state === 'miss' && v.t < 0.3), 0.5);
+    const v2 = W.vent2;
+    if (v2 && (v2.state === 'drop' || v2.state === 'miss')) sprite(VENT2.x, v2.y, VENT2.z, (x, y, s) => drawLurker(x, y, s, now, v2.state === 'miss' && v2.t < 0.3), 0.5);
+    if (v2 && v2.state === 'arm') sprite(VENT2.x, CEIL + 0.9, VENT2.z, (x, y, s) => { ctx.fillStyle = "#f472b6"; const q = Math.max(1, s * 0.3); for (let i = 0; i < 4; i++) ctx.fillRect(Math.round(x - s * 2 + i * s * 1.2), Math.round(y), q, q * 2); }, 0);
     if (v.state === 'arm') sprite(VENT.x, CEIL + 0.9, VENT.z, (x, y, s) => { ctx.fillStyle = "#f472b6"; const q = Math.max(1, s * 0.3); for (let i = 0; i < 4; i++) ctx.fillRect(Math.round(x - s * 2 + i * s * 1.2), Math.round(y), q, q * 2); }, 0);
     for (const d of W.drips) sprite(d.x, d.y, d.z, (x, y, s) => { ctx.fillStyle = "#84cc16"; const q = Math.max(1, s * 0.35); ctx.fillRect(Math.round(x), Math.round(y), q, q * 1.6); }, 0);
     for (const f of W.fx) sprite(f.x, f.y, f.z, (x, y, s) => { ctx.fillStyle = f.life / f.max > 0.5 ? "#fef9c3" : "#fb923c"; const q = Math.max(1, Math.min(3, s * 0.25)); ctx.fillRect(Math.round(x), Math.round(y), q, q); }, 0);
@@ -20846,9 +21103,12 @@ requestAnimationFrame(gameLoop);
       if (it.glow) { ctx.globalAlpha = 0.35; ctx.lineWidth = 4; ctx.stroke(); ctx.globalAlpha = 1; }
     }
     ctx.restore();
+    if (W.hatchView) return;            // just the scene: seen through the Chimera's open airlock, no suit HUD
 
     // red wash when the grid fires nearby
     if (lasOn && Math.abs(W.z - LASER.z) < 30) { ctx.fillStyle = `rgba(239, 68, 68, ${0.08 * (1 - Math.abs(W.z - LASER.z) / 30)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    if (lasOn2 && Math.abs(W.z - LASER2.z) < 30 && W.x > 7 * T) { ctx.fillStyle = `rgba(239, 68, 68, ${0.08 * (1 - Math.abs(W.z - LASER2.z) / 30)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    if (W.powerT !== undefined && W.powerT < 1.2) { ctx.fillStyle = `rgba(165, 243, 252, ${0.35 * (1 - W.powerT / 1.2)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }   // power surge flash
     // frost creeping in from the edges near the cracked glass
     if (W.crack > 0.3) {
       const k = Math.min(1, (W.crack - 0.3) / 0.7);
@@ -20866,7 +21126,7 @@ requestAnimationFrame(gameLoop);
     ctx.save(); ctx.font = "bold 7px monospace"; ctx.textAlign = "left";
     ctx.fillStyle = "rgba(2, 6, 23, 0.7)"; ctx.fillRect(8, 8, 118, 22);
     ctx.fillStyle = "#4ade80"; ctx.fillText("SUIT SEALED · TORCH ON", 12, 17);
-    ctx.fillStyle = isLooted('blackbox') ? "#facc15" : "#f59e0b"; ctx.fillText(isLooted('blackbox') ? "BLACK BOX: SECURED" : "BLACK BOX: BRIDGE (FWD)", 12, 26);
+    ctx.fillStyle = isLooted('blackbox') ? "#facc15" : "#f59e0b"; ctx.fillText(isLooted('blackbox') ? "BLACK BOX: SECURED" : (powered() ? "BLACK BOX: BRIDGE - POWERED" : (W.needPower ? "POWER: REACTOR (WEST HATCH)" : "BLACK BOX: BRIDGE (FWD)")), 12, 26);
     ctx.restore();
     // motion tracker: little sweep display with a blip for the last return
     {
@@ -21013,8 +21273,9 @@ requestAnimationFrame(gameLoop);
       if (W.phase === 'undock') { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, W.t / 0.8)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
       return;
     }
-    if (W && (W.phase === 'in' || W.phase === 'undock' || W.phase === 'dead')) {
+    if (W && (W.phase === 'in' || W.phase === 'undock' || W.phase === 'dead' || W.phase === 'boarding')) {
       try { renderWreck(); } catch (e) { console.warn("wreck render", e); ctx.restore(); }
+      if (W && W.phase === 'boarding' && W.t > 1.9) { ctx.fillStyle = `rgba(2, 4, 10, ${Math.min(1, (W.t - 1.9) / 0.5)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
       if (W && W.phase === 'undock') { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, W.t / 0.8)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
       return;
     }
@@ -21022,7 +21283,7 @@ requestAnimationFrame(gameLoop);
     if (W && W.phase === 'dockFade') {
       ctx.fillStyle = `rgba(0,0,0,${Math.min(1, W.t / 1.0)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
       ctx.save(); ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#f59e0b";
-      ctx.fillText("DOCKING CLAMPS ENGAGED · EQUALISING PRESSURE", V_WIDTH / 2, V_HEIGHT / 2); ctx.restore();
+      ctx.fillText("PARKED ALONGSIDE · BOARDING RAMP OUT", V_WIDTH / 2, V_HEIGHT / 2); ctx.restore();
     }
     return r;
   };
@@ -21097,7 +21358,8 @@ requestAnimationFrame(gameLoop);
   // ---------- trigger / dismiss ----------
   function start(type, W) {
     playing = true;
-    Object.assign(cs, { type, t: 0, ready: false, bars: 0, flash: 0.7, shake: 0.3, m: {}, wreckName: W && W.d ? W.d.name : "DERELICT" });
+    Object.assign(cs, { type, t: 0, ready: false, bars: 0, flash: 0.7, shake: 0.3, m: {}, wreckName: W && W.d ? W.d.name : "DERELICT", cryo: !!(W && W.deathCryo) });
+    if (W) W.deathCryo = false;
     cs.pieces.length = 0; cs.blood.length = 0; cs.pools.length = 0; cs.debris.length = 0;
     ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     squelch(0.2, 0.15, 2000);
@@ -21431,13 +21693,62 @@ requestAnimationFrame(gameLoop);
     if (m.grille) { const g = m.grille; g.vy += 420 * dt; g.y += g.vy * dt; g.rot += 5 * dt; if (g.y > F - 2) { g.y = F - 2; g.vy = 0; if (!g.landed) { g.landed = true; tone('triangle', 900, 400, 0.15, 0.05); } } }
     if (m.helm) { const h = m.helm; h.vy += 340 * dt; h.y += h.vy * dt; h.x += h.vx * dt; h.rot += h.vx * dt * 0.06; if (h.y > F - 6 * S * 0.9) { h.y = F - 6 * S * 0.9; if (Math.abs(h.vy) > 50) { h.vy = -h.vy * 0.3; tone('triangle', 1600, 1200, 0.1, 0.06); boom(500, 0.15, 0.2); } else h.vy = 0; h.vx *= 0.96; } }
   }
+  // the cryo bay: frosted pods along the back wall, pod 07 hanging open with its seal blown
+  function cryoBg(t) {
+    const F = FLOOR(), w = V_WIDTH;
+    interiorBg(t, { noCorpse: true });
+    ctx.fillStyle = "rgba(14, 116, 144, 0.10)"; ctx.fillRect(-60, -60, w + 120, V_HEIGHT + 120);          // cold cyan cast
+    const podW = 34, podH = F - CEILY - 34, top = CEILY + 18, open = w * 0.7;
+    for (let px = -40; px < w + 60; px += 48) {
+      const cx = px + podW / 2, isOpen = Math.abs(cx - open) < 24;
+      // frame
+      ctx.fillStyle = "#334155"; ctx.fillRect(px - 3, top - 4, podW + 6, podH + 8);
+      ctx.fillStyle = "#475569"; ctx.fillRect(px - 3, top - 4, podW + 6, 3);
+      ctx.fillStyle = "#1f2937"; ctx.fillRect(px - 3, top + podH, podW + 6, 4);
+      if (!isOpen) {
+        const fl = Math.random() < 0.03 ? 0.6 : 1;
+        ctx.fillStyle = `rgba(103, 232, 249, ${0.55 * fl})`; ctx.fillRect(px, top, podW, podH);                // frosted glass, lit
+        ctx.fillStyle = "rgba(236, 254, 255, 0.35)"; ctx.fillRect(px, top, podW, 4); ctx.fillRect(px, top, 3, podH);
+        // the sleeper
+        ctx.fillStyle = "#0b1324"; ctx.fillRect(cx - 6, top + 10, 12, 11);
+        ctx.fillStyle = "#132036"; ctx.fillRect(cx - 10, top + 22, 20, podH - 44); ctx.fillRect(cx - 9, top + podH - 22, 7, 20); ctx.fillRect(cx + 2, top + podH - 22, 7, 20);
+        ctx.fillStyle = "rgba(236, 254, 255, 0.25)"; for (let i = 0; i < 6; i++) ctx.fillRect(px + 4 + ((i * 13) % (podW - 8)), top + 8 + ((i * 29) % (podH - 16)), 3, 2);  // frost
+        ctx.fillStyle = "#22c55e"; ctx.fillRect(cx - 1.5, top - 9, 3, 3);
+      } else {
+        // empty, dark, wet inside; glass door hanging open on its hinge; the seal blown out
+        ctx.fillStyle = "#020617"; ctx.fillRect(px, top, podW, podH);
+        ctx.fillStyle = "#0f172a"; ctx.fillRect(px + 3, top + 3, podW - 6, podH - 6);
+        ctx.fillStyle = "#365314"; ctx.fillRect(px + 6, top + podH - 18, podW - 12, 14);                      // slime pooled in the bottom
+        for (let i = 0; i < 5; i++) { ctx.fillStyle = "#4d7c0f"; ctx.fillRect(px + 5 + i * 6, top + 6 + (i * 17) % 40, 2, 10 + (i * 7) % 14); }   // dripping down the walls
+        ctx.save(); ctx.translate(px + podW + 3, top); ctx.transform(1, 0.18, 0, 1, 0, 0);                        // the door swung out
+        ctx.fillStyle = "rgba(125, 211, 252, 0.45)"; ctx.fillRect(0, 0, 20, podH);
+        ctx.strokeStyle = "rgba(236, 254, 255, 0.9)"; ctx.lineWidth = 1; ctx.beginPath();                       // shattered from the inside
+        ctx.moveTo(10, podH * 0.4); ctx.lineTo(2, podH * 0.25); ctx.moveTo(10, podH * 0.4); ctx.lineTo(18, podH * 0.3);
+        ctx.moveTo(10, podH * 0.4); ctx.lineTo(4, podH * 0.62); ctx.moveTo(10, podH * 0.4); ctx.lineTo(17, podH * 0.58); ctx.stroke();
+        ctx.fillStyle = "#475569"; ctx.fillRect(0, 0, 20, 3); ctx.fillRect(0, podH - 3, 20, 3);
+        ctx.restore();
+        // torn seal + hoses
+        ctx.fillStyle = "#facc15"; for (let i = 0; i < 6; i++) ctx.fillRect(px - 3, top + i * (podH / 6), 3, podH / 12);
+        ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px + 8, top - 4); ctx.quadraticCurveTo(px + 4, top + 26 + Math.sin(t * 3) * 3, px + 12, top + 38); ctx.stroke();
+        ctx.strokeStyle = "#7f1d1d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + 26, top - 4); ctx.quadraticCurveTo(px + 30, top + 18, px + 24 + Math.sin(t * 2.4) * 2, top + 30); ctx.stroke();
+        // venting coolant + sparks off the broken seal
+        for (let i = 0; i < 4; i++) { const k = ((t * 0.7 + i * 0.25) % 1); ctx.fillStyle = `rgba(226, 232, 240, ${0.35 * (1 - k)})`; ctx.fillRect(px + podW / 2 - 6 + Math.sin(i * 2.1 + t) * 8, top - 10 - k * 26, 10 + k * 10, 6); }
+        if (Math.random() < 0.35) { ctx.fillStyle = Math.random() < 0.5 ? "#fef9c3" : "#fb923c"; ctx.fillRect(px - 2 + Math.random() * 6, top + Math.random() * podH, 2, 2); }
+        // status light: red, blinking - and the label
+        ctx.fillStyle = Math.floor(t * 3) % 2 ? "#ef4444" : "#450a0a"; ctx.fillRect(cx - 1.5, top - 9, 3, 3);
+        ctx.save(); ctx.font = "bold 7px monospace"; ctx.textAlign = "center"; ctx.fillStyle = Math.floor(t * 3) % 2 ? "#f87171" : "#7f1d1d"; ctx.fillText("POD 07 · SEAL BREACH", cx, top - 13); ctx.restore();
+        // slime trail across the floor
+        ctx.fillStyle = "#365314"; for (let i = 0; i < 14; i++) ctx.fillRect(cx - 8 - i * 9, F + 1 + (i % 2), 7, 2);
+      }
+    }
+  }
   function ventRender(t) {
     const m = cs.m, F = FLOOR();
     let z = 1, fx = m.mx || V_WIDTH / 2, fy = F - 34 * S;
     if (t >= VB.gone && t < VB.buckle) z = 1 + 0.45 * ease((t - VB.gone) / 1.2);                   // slow push-in on the stump
     else if (t >= VB.buckle) { z = 1.45 - 0.3 * ease((t - VB.buckle) / 1.2); fy = F - 24 * S; }
     ctx.save(); cam(z, fx, fy);
-    interiorBg(t);
+    if (cs.cryo) cryoBg(t); else interiorBg(t);
     ctx.fillStyle = "#020202"; ctx.fillRect(m.vx - 13, CEILY - 4, 26, 6);
     if (!m.grille) { for (let i = 0; i < 6; i++) { ctx.fillStyle = "#52525b"; ctx.fillRect(m.vx - 12 + i * 4.4, CEILY - 3, 2, 5); } }
     else { const g = m.grille; ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.rot); for (let i = 0; i < 6; i++) { ctx.fillStyle = "#52525b"; ctx.fillRect(-12 + i * 4.4, -2.5, 2, 5); } ctx.restore(); }
@@ -21699,7 +22010,7 @@ requestAnimationFrame(gameLoop);
       ctx.fillStyle = "#000"; ctx.fillText(info.title, x + 2, y + 2);
       ctx.fillStyle = "#7f1d1d"; ctx.fillText(info.title, x - 1, y - 1); ctx.fillText(info.title, x + 1, y - 1);
       ctx.fillStyle = "#ef4444"; ctx.fillText(info.title, x, y);
-      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText(info.sub, x, y + 15);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText(cs.cryo && cs.type === 'vent' ? "POD 07 WASN'T EMPTY FOR LONG" : info.sub, x, y + 15);
       ctx.fillStyle = "#94a3b8"; ctx.font = "bold 7px monospace"; ctx.fillText(`ABOARD THE ${cs.wreckName}`, x, y + 26);
       ctx.restore();
     }
