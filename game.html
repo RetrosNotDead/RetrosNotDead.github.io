@@ -3828,6 +3828,34 @@ const fcState = {
 const fcChimera = { x: 0, y: 0, vx: 0, vy: 0, bank: 0, vBank: 0.04, flameoutSputter: 1.6 };
 const fcInvader = { active: false, x: 0, y: 0, bank: 0, fled: false };
 const fcInvaderLasers = [], fcSmokePuffs = [];
+const fcHoles = [];   // bullet holes punched through the floating pilot (astronaut-local coords)
+function fcZoom(t) {   // push in on the floating pilot for the shooting, ease back out after
+  const e = (a) => a * a * (3 - 2 * a), seg = (t0, t1, z0, z1) => z0 + (z1 - z0) * e(Math.max(0, Math.min(1, (t - t0) / (t1 - t0))));
+  if (t < 4.2) return 1;
+  if (t < 6.9) return seg(4.2, 5.2, 1, 2.6);
+  return seg(6.9, 7.7, 2.6, 1.5);
+}
+function fcShootAstro() {
+  playSfx('laser');
+  const tx = dcAstronaut.x + (Math.random() - 0.5) * 8, ty = dcAstronaut.y + (Math.random() - 0.5) * 14;
+  const dx = tx - fcInvader.x, dy = ty - fcInvader.y, d = Math.hypot(dx, dy) || 1, sp = 340;
+  fcInvaderLasers.push({ x: fcInvader.x, y: fcInvader.y, vx: dx / d * sp, vy: dy / d * sp, life: 1.2, atAstro: true });
+}
+function fcHitAstro(lx, ly) {
+  // record the hole in the pilot's own rotated frame so it stays put as the body spins
+  const c = Math.cos(-dcAstronaut.rot), s2 = Math.sin(-dcAstronaut.rot);
+  const rx = lx - dcAstronaut.x, ry = ly - dcAstronaut.y;
+  const hx = Math.max(-3.5, Math.min(3.5, rx * c - ry * s2)), hy = Math.max(-8.5, Math.min(11, rx * s2 + ry * c));
+  fcHoles.push({ x: hx, y: hy });
+  dcAstronaut.vx += -3 - Math.random() * 3; dcAstronaut.vy += (Math.random() - 0.5) * 6; dcAstronaut.vRot += (Math.random() - 0.5) * 2.2;   // each hit jolts the body
+  fcState.shake = Math.max(fcState.shake, 0.25);
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI + (Math.random() - 0.5) * 1.6, spd = 10 + Math.random() * 30;
+    dcBloodDroplets.push({ x: lx, y: ly, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, size: Math.random() > 0.5 ? 2 : 1.2, life: 3 + Math.random() * 2, maxLife: 5,
+      color: Math.random() > 0.4 ? "#ef4444" : (Math.random() > 0.5 ? "#b91c1c" : "#7f1d1d") });
+  }
+  try { dcPlayBoom(900, 0.08, 0.12); } catch (e) {}
+}
 
 function fcPlayFlameout() {
   try {
@@ -3862,7 +3890,7 @@ function triggerFuelExhaustionCutscene() {
   dcAstronaut.active = false;
 
   dcDebris.length = 0; dcFireballs.length = 0; dcShockwaves.length = 0; dcBloodDroplets.length = 0;
-  fcInvaderLasers.length = 0; fcSmokePuffs.length = 0;
+  fcInvaderLasers.length = 0; fcSmokePuffs.length = 0; fcHoles.length = 0;
 
   ['hud', 'nav-banner', 'threat-banner', 'btn-msl', 'flight-cluster'].forEach(id => {
     const el = document.getElementById(id);
@@ -3896,7 +3924,8 @@ function fcDrawRedInvader(x, y, scale, bankAngle) {
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 11; col++) {
       if (sprite[row][col] === '#') {
-        ctx.fillRect(Math.round((col - 5.5) * px), Math.round((row - 4) * px), Math.ceil(px), Math.ceil(px));
+        // exact grid (no per-cell rounding) so both eyes come out the same size
+        ctx.fillRect((col - 5.5) * px, (row - 4) * px, px + 0.15, px + 0.15);
       }
     }
   }
@@ -4016,7 +4045,7 @@ function fcDrawMessage(alpha) {
 
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 9px monospace";
-  ctx.fillText("AMBUSHED BY PIRATES IN ZERO-G", textX, textY + 16);
+  ctx.fillText("AMBUSHED AND USED FOR TARGET PRACTICE", textX, textY + 16);
   ctx.restore();
 }
 
@@ -4030,10 +4059,10 @@ function updateFuelCutscene(dt) {
   if (fcState.warpFlash > 0) fcState.warpFlash = Math.max(0, fcState.warpFlash - dt * 3.0);
 
   if (dcAstronaut.active) {
-    const targetCamX = fcChimera.x - (V_WIDTH / 2);
-    const targetCamY = fcChimera.y - (V_HEIGHT / 2);
-    fcState.camX += (targetCamX - fcState.camX) * 2.5 * dt;
-    fcState.camY += (targetCamY - fcState.camY) * 2.5 * dt;
+    const targetCamX = (t < 4.2 ? fcChimera.x : dcAstronaut.x + 40) - (V_WIDTH / 2);
+    const targetCamY = (t < 4.2 ? fcChimera.y : dcAstronaut.y) - (V_HEIGHT / 2);
+    fcState.camX += (targetCamX - fcState.camX) * 2.0 * dt;
+    fcState.camY += (targetCamY - fcState.camY) * 2.0 * dt;
   }
 
   if (t < 3.2) {
@@ -4055,9 +4084,15 @@ function updateFuelCutscene(dt) {
   if (fcInvader.active && !fcInvader.fled) {
     if (t < 2.5) { fcInvader.x += -75 * dt; fcInvader.y += 40 * dt; }
     else if (t < 3.5) { fcInvader.x += -40 * dt; fcInvader.y += -8 * dt; fcInvader.bank = -0.1; }
-    else {
-      fcInvader.x += -140 * dt; fcInvader.y += -60 * dt; fcInvader.bank = -0.35;
-      if (fcInvader.x < fcChimera.x - 100) fcInvader.fled = true;
+    else if (t < 7.0) {
+      // swings back around and parks beside the drifting pilot... waits... then target practice
+      const hx = dcAstronaut.x + 80, hy = dcAstronaut.y - 18 + Math.sin(t * 3) * 3;
+      const k = Math.min(1, dt * (t < 4.6 ? 1.6 : 3));
+      fcInvader.x += (hx - fcInvader.x) * k; fcInvader.y += (hy - fcInvader.y) * k;
+      fcInvader.bank += ((t >= 5.4 && t < 6.7 ? (Math.random() - 0.5) * 0.12 : 0.05) - fcInvader.bank) * Math.min(1, dt * 6);
+    } else {
+      fcInvader.x += 160 * dt; fcInvader.y += -70 * dt; fcInvader.bank = 0.3;
+      if (fcInvader.x > dcAstronaut.x + 420) fcInvader.fled = true;
     }
   }
 
@@ -4093,11 +4128,16 @@ function updateFuelCutscene(dt) {
     dcPlayBoom(120, 1.1, 0.75);
   }
 
-  if (t >= 4.2 && t < 6.0) {
-    if (t < 4.8) fcState.msgAlpha = (t - 4.2) / 0.6;
-    else if (t < 5.4) fcState.msgAlpha = 1.0;
-    else fcState.msgAlpha = 1.0 - (t - 5.4) / 0.6;
-  } else if (t >= 6.0) {
+  if (t >= 5.0 && t < 5.05 && prevT < 5.0) playSfx('commChirp');            // the pirate's little 'heh'
+  if (t >= 5.4 && t < 6.7 && fcInvader.active && !fcInvader.fled) {           // Swiss cheese
+    fcState.fireT = (fcState.fireT || 0) - dt;
+    if (fcState.fireT <= 0) { fcState.fireT = 0.075; fcShootAstro(); }
+  }
+  if (t >= 7.1 && t < 9.0) {
+    if (t < 7.7) fcState.msgAlpha = (t - 7.1) / 0.6;
+    else if (t < 8.4) fcState.msgAlpha = 1.0;
+    else fcState.msgAlpha = 1.0 - (t - 8.4) / 0.6;
+  } else if (t >= 9.0) {
     fcState.msgAlpha = 0.0;
     fcState.readyForModal = true;
   }
@@ -4107,7 +4147,15 @@ function updateFuelCutscene(dt) {
   for (let i = fcInvaderLasers.length - 1; i >= 0; i--) {
     const l = fcInvaderLasers[i];
     l.x += l.vx * dt; l.y += l.vy * dt; l.life -= dt;
+    if (l.atAstro && dcAstronaut.active && Math.hypot(l.x - dcAstronaut.x, l.y - dcAstronaut.y) < 8) { fcHitAstro(l.x, l.y); fcInvaderLasers.splice(i, 1); continue; }
     if (l.life <= 0) fcInvaderLasers.splice(i, 1);
+  }
+  // the holes keep bleeding
+  if (fcHoles.length && dcAstronaut.active && Math.random() < 0.5) {
+    const h = fcHoles[Math.floor(Math.random() * fcHoles.length)];
+    const c = Math.cos(dcAstronaut.rot), s2 = Math.sin(dcAstronaut.rot);
+    const wx = dcAstronaut.x + h.x * c - h.y * s2, wy = dcAstronaut.y + h.x * s2 + h.y * c;
+    dcBloodDroplets.push({ x: wx, y: wy, vx: dcAstronaut.vx * 0.3 + (Math.random() - 0.5) * 8, vy: dcAstronaut.vy * 0.3 + (Math.random() - 0.5) * 8, size: 1.2, life: 3, maxLife: 4, color: Math.random() > 0.5 ? "#b91c1c" : "#7f1d1d" });
   }
   for (let i = fcSmokePuffs.length - 1; i >= 0; i--) {
     const sp = fcSmokePuffs[i];
@@ -4143,7 +4191,8 @@ function renderFuelCutscene() {
   renderDeathCutsceneBackdrop();
 
   ctx.save();
-  ctx.translate(-fcState.camX, -fcState.camY);
+  const fcZ = fcZoom(fcState.timer);
+  ctx.translate(V_WIDTH / 2, V_HEIGHT / 2); ctx.scale(fcZ, fcZ); ctx.translate(-V_WIDTH / 2 - fcState.camX, -V_HEIGHT / 2 - fcState.camY);
 
   for (let sp of fcSmokePuffs) {
     const alpha = Math.max(0, sp.life / 0.5);
@@ -4183,6 +4232,15 @@ function renderFuelCutscene() {
 
   dcDrawBloodDroplets();
   dcDrawAstronaut();
+  if (dcAstronaut.active && fcHoles.length) {
+    ctx.save(); ctx.translate(dcAstronaut.x, dcAstronaut.y); ctx.rotate(dcAstronaut.rot);
+    fcHoles.forEach((h, i) => {
+      ctx.fillStyle = "#991b1b"; ctx.fillRect(h.x - 1.2, h.y - 1.2, 2.4, 2.4);
+      ctx.fillStyle = "#02030a"; ctx.fillRect(h.x - 0.7, h.y - 0.7, 1.4, 1.4);
+      if (i % 3 === 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(h.x - 0.2, h.y - 0.2, 0.4, 0.4); }   // a star twinkling through
+    });
+    ctx.restore();
+  }
 
   dcShockwaves.forEach(dcDrawSquareShockwave);
   dcFireballs.forEach(dcDrawPixelFireball);
@@ -15388,11 +15446,14 @@ requestAnimationFrame(gameLoop);
     }
 
     playCutsceneSfx('swoop');
+    vbReset();
   }
 
   function dismissBerzerkCutscene() {
     isBerzerkCutscenePlaying = false;
-    origTriggerGameOver("SUIT COMPROMISED", "Torn apart and consumed by an unstable Dark Matter berzerker.");
+    origTriggerGameOver("SUIT COMPROMISED", BZ_STYLE === 'voidborn'
+      ? "Stripped to the bone by a Dark Matter berzerker - and claimed as its new host."
+      : "Torn apart and consumed by an unstable Dark Matter berzerker.");
   }
 
   function triggerFrostDeathCutscene() {
@@ -15413,11 +15474,14 @@ requestAnimationFrame(gameLoop);
       if (typeof baseAmbientGain !== 'undefined' && baseAmbientGain) baseAmbientGain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
     }
     playCutsceneSfx('swoop');
+    fiReset();
   }
 
   function dismissFrostCutscene() {
     isFrostCutscenePlaying = false;
-    origTriggerGameOver("SUIT COMPROMISED", "Flash-frozen solid and shattered by a Frost Warden.", "#67e8f9");
+    origTriggerGameOver("SUIT COMPROMISED", FZ_STYLE === 'incubator'
+      ? "Frozen limb by limb, then used as an incubator for a Frost Warden hatchling."
+      : "Flash-frozen solid and shattered by a Frost Warden.", "#67e8f9");
   }
 
   // 3. Input Handlers to Skip/Dismiss
@@ -15575,7 +15639,7 @@ requestAnimationFrame(gameLoop);
     if (t >= 6.0) sdState.ready = true;
   }
 
-  function updateBerzerkCutscene(dt) {
+  function updateBerzerkCutsceneClassic(dt) {
     const prevT = bzState.timer;
     bzState.timer += dt;
     const t = bzState.timer;
@@ -15739,7 +15803,7 @@ requestAnimationFrame(gameLoop);
     if (t >= 4.8) bzState.ready = true;
   }
 
-  function updateFrostCutscene(dt) {
+  function updateFrostCutsceneClassic(dt) {
     const prevT = fzState.timer;
     fzState.timer += dt;
     const t = fzState.timer;
@@ -15907,7 +15971,7 @@ requestAnimationFrame(gameLoop);
     }
   }
 
-  function renderBerzerkCutscene() {
+  function renderBerzerkCutsceneClassic() {
     const t = Date.now();
     ctx.save();
     if (bzState.shake > 0) {
@@ -16098,6 +16162,778 @@ requestAnimationFrame(gameLoop);
     ctx.restore();
   }
 
+  /* ======================================================================
+     VOID-BORN berzerker fatality (BZ_STYLE = 'voidborn'; 'classic' = old one)
+     Feed: tendrils + X-ray heartbeat pulses strip the pilot to the bone as the
+     berzerker swells. Then the skeleton collapses... twitches... its eyes
+     ignite and it rises and lurches at the camera. Smash cut: VOID-BORN.
+     ====================================================================== */
+  const BZ_STYLE = 'voidborn';
+  const vb = { flesh: 1, botScale: 1.6, xray: 0, k: 1, eyes: 0, twitch: 0, lurch: 0, cut: false, botAlpha: 1, helmet: null, cutFlash: 0 };
+  const vbStream = [], vbAsh = [], vbWisps = [];
+  const VB_PULSES = [1.35, 1.95, 2.45, 2.9, 3.3];
+  function vbReset() {
+    Object.assign(vb, { flesh: 1, botScale: 1.6, xray: 0, k: 1, eyes: 0, twitch: 0, lurch: 0, cut: false, botAlpha: 1, helmet: null, cutFlash: 0 });
+    vbStream.length = 0; vbAsh.length = 0; vbWisps.length = 0;
+  }
+  function vbSfx(type) {
+    try {
+      if (typeof actx === 'undefined' || !actx) return;
+      const t = actx.currentTime, out = audioOut();
+      const noise = (dur, f0, f1, vol, hp) => {
+        const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+        const src = actx.createBufferSource(); src.buffer = buf;
+        const fl = actx.createBiquadFilter(); fl.type = hp ? 'highpass' : 'lowpass';
+        fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(f1, t + dur);
+        const g = actx.createGain(); g.gain.setValueAtTime(vol, t);
+        src.connect(fl); fl.connect(g); g.connect(out); src.start(t);
+      };
+      const tone = (type2, f0, f1, dur, vol, delay) => {
+        const o = actx.createOscillator(), g = actx.createGain(), st = t + (delay || 0);
+        o.type = type2; o.frequency.setValueAtTime(f0, st); o.frequency.exponentialRampToValueAtTime(f1, st + dur);
+        g.gain.setValueAtTime(0.001, st); g.gain.linearRampToValueAtTime(vol, st + 0.02); g.gain.exponentialRampToValueAtTime(0.001, st + dur);
+        o.connect(g); g.connect(out); o.start(st); o.stop(st + dur + 0.05);
+      };
+      if (type === 'crack') { noise(0.08, 3000, 900, 0.35, true); tone('square', 220, 90, 0.07, 0.05); }
+      else if (type === 'clatter') { for (let i = 0; i < 5; i++) tone('square', 900 - i * 90, 300, 0.05, 0.04, i * 0.07); noise(0.4, 2500, 600, 0.12, true); }
+      else if (type === 'ignite') { tone('sawtooth', 55, 40, 1.6, 0.12); tone('sine', 880, 1320, 0.9, 0.05); tone('triangle', 110, 104, 1.4, 0.08); }
+      else if (type === 'step') { tone('sine', 90, 40, 0.22, 0.25); noise(0.12, 400, 120, 0.15); }
+      else if (type === 'smash') { noise(0.7, 1800, 60, 0.45); tone('sawtooth', 70, 30, 0.9, 0.15); }
+      else if (type === 'xray') { tone('square', 1800, 1200, 0.06, 0.03); }
+    } catch (e) {}
+  }
+
+  /* ======================================================================
+     FROZEN INCUBATOR frost warden fatality (FZ_STYLE = 'incubator'; 'classic' = old)
+     The walking spaceman from Frozen Stiff gets frozen one limb at a time
+     (arms, then legs), an embryo is stung into the chest, it incubates,
+     a baby Frost Warden bursts out, and the frozen husk shatters.
+     ====================================================================== */
+  const FZ_STYLE = 'incubator';
+  // [limb, freeze start, frozen solid, shatters]
+  const FI_ORDER = [['la', 1.25, 1.65, 1.8], ['ra', 1.95, 2.35, 2.5], ['ll', 2.65, 3.05, 3.2], ['rl', 3.35, 3.75, 3.9]];
+  const fi = { px: 0, walking: true, ice: { la: 0, ra: 0, ll: 0, rl: 0 }, gone: {}, beamLimb: null, stinger: 0, implanted: false, bulge: 0, frost: 0,
+               burst: false, alive: true, droop: 0, jerk: 0, baby: null, wx: 0, wy: 0, exit: 0, fall: 0, hopY: 0, huskIce: 0, huskBeam: false };
+  const fiMotes = [];
+  function fiReset() {
+    Object.assign(fi, { px: V_WIDTH * 0.42, walking: true, ice: { la: 0, ra: 0, ll: 0, rl: 0 }, gone: {}, beamLimb: null, stinger: 0, implanted: false, bulge: 0, frost: 0,
+                        burst: false, alive: true, droop: 0, jerk: 0, baby: null, wx: V_WIDTH + 40, wy: GROUND_Y - 40, exit: 0, fall: 0, hopY: 0, huskIce: 0, huskBeam: false,
+                        camX: V_WIDTH * 0.42 + 24, camY: GROUND_Y - 26 });
+    fiMotes.length = 0;
+  }
+  const FI_SC = 2.3;
+  const fiEase = (a) => a * a * (3 - 2 * a);
+  function fiZoom(T) {
+    const seg = (t0, t1, z0, z1) => z0 + (z1 - z0) * fiEase(Math.max(0, Math.min(1, (T - t0) / (t1 - t0))));
+    if (T < 1.1) return 1;
+    if (T < 4.2) return seg(1.1, 1.6, 1, 1.55);
+    if (T < 8.0) return seg(4.2, 5.0, 1.55, 2.0);
+    return seg(8.0, 8.5, 2.0, 1.35);
+  }
+  function fiSfx(type) {
+    try {
+      if (typeof actx === 'undefined' || !actx) return;
+      const t = actx.currentTime, out = audioOut();
+      const tone = (ty, f0, f1, dur, vol, delay) => {
+        const o = actx.createOscillator(), g = actx.createGain(), st = t + (delay || 0);
+        o.type = ty; o.frequency.setValueAtTime(f0, st); o.frequency.exponentialRampToValueAtTime(f1, st + dur);
+        g.gain.setValueAtTime(0.001, st); g.gain.linearRampToValueAtTime(vol, st + 0.02); g.gain.exponentialRampToValueAtTime(0.001, st + dur);
+        o.connect(g); g.connect(out); o.start(st); o.stop(st + dur + 0.05);
+      };
+      const noise = (dur, f0, f1, vol) => {
+        const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.5);
+        const src = actx.createBufferSource(); src.buffer = buf;
+        const fl = actx.createBiquadFilter(); fl.type = 'highpass'; fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(f1, t + dur);
+        const g = actx.createGain(); g.gain.setValueAtTime(vol, t); src.connect(fl); fl.connect(g); g.connect(out); src.start(t);
+      };
+      if (type === 'limb') { noise(0.35, 4000, 1200, 0.25); tone('triangle', 1600, 2400, 0.25, 0.05); tone('sine', 3200, 2600, 0.15, 0.03, 0.08); }
+      else if (type === 'creak') { tone('sawtooth', 180, 120, 0.4, 0.04); }
+      else if (type === 'sting') { noise(0.15, 2500, 800, 0.3); tone('square', 300, 90, 0.2, 0.08); }
+      else if (type === 'baby') { tone('square', 1400, 2200, 0.09, 0.06); tone('square', 1800, 2600, 0.09, 0.06, 0.11); tone('square', 1500, 2400, 0.08, 0.05, 0.22); }
+    } catch (e) {}
+  }
+
+  // walking spaceman (same look as Frozen Stiff), each limb with a free pose and a frozen pose
+  function fiLimbParts(name, frozen, an) {
+    const W = "#e2e8f0", D = "#334155";
+    if (name === 'la') return frozen
+      ? { parts: [[-6, -22, 2.5, 7, W], [-6, -23.5, 2.5, 1.5, D]], box: [-6, -23.5, 2.5, 8.5], tip: 'up' }
+      : { parts: [[-5.5, -15 + an.al, 2.5, 6, W], [-5.5, -9.5 + an.al, 2.5, 1.5, D]], box: [-5.5, -15 + an.al, 2.5, 7.5], tip: 'down' };
+    if (name === 'ra') return frozen
+      ? { parts: [[3, -14.5, 7, 2.5, W], [10, -14.5, 1.5, 2.5, D]], box: [3, -14.5, 8.5, 2.5], tip: 'right' }
+      : { parts: [[3, -15 + an.ar, 2.5, 6, W], [3, -9.5 + an.ar, 2.5, 1.5, D]], box: [3, -15 + an.ar, 2.5, 7.5], tip: 'down' };
+    if (name === 'll') return frozen
+      ? { parts: [[-4.5, -8, 3, 8, W], [-5.5, -2, 3.5, 2, D]], box: [-5.5, -8, 4.5, 8], tip: 'down' }
+      : { parts: [[-3.5, -8 + an.ll, 3, 8 - an.ll, W], [-4.5, -2, 3.5, 2, D]], box: [-4.5, -8 + an.ll, 4, 8 - an.ll], tip: 'down' };
+    return frozen
+      ? { parts: [[1.5, -8, 3, 8, W], [1.5, -2, 3.5, 2, D]], box: [1.5, -8, 3.5, 8], tip: 'down' }
+      : { parts: [[0.5, -8 + an.rl, 3, 8 - an.rl, W], [0.5, -2, 3.5, 2, D]], box: [0.5, -8 + an.rl, 3.5, 8 - an.rl], tip: 'down' };
+  }
+  // Torso transform: once the legs are gone the torso drops to the ground and topples back
+  function fiTorsoXform() {
+    const legless = fi.gone.ll && fi.gone.rl;
+    // hips drop to the ground, then the torso topples back around the hips, lifted so it lies ON the snow
+    return { drop: legless ? 8 : 0, rot: -Math.PI / 2 * fi.fall + (fi.fall >= 1 && !fi.burst && fi.alive ? Math.sin(fzState.timer * 14) * 0.06 : 0), hop: fi.hopY, lift: 4.3 * fi.fall };
+  }
+  function fiLocalToWorld(lx, ly) {          // spaceman-local point -> world (same transform order as the drawing)
+    const X = fiTorsoXform();
+    const x = lx, y = ly + X.drop;
+    const c = Math.cos(X.rot), s2 = Math.sin(X.rot);
+    const rx = x * c - y * s2, ry = x * s2 + y * c + X.hop - X.lift;
+    return [fi.px + rx * FI_SC, GROUND_Y + ry * FI_SC];
+  }
+  function fiLimbTarget(name) {      // world point the beam aims at
+    const P = { la: [-4.8, -19], ra: [8, -13.2], ll: [-3, -4], rl: [3, -4] }[name];
+    if (name === 'll' || name === 'rl') return [fi.px + P[0] * FI_SC, GROUND_Y + (P[1] + fi.hopY) * FI_SC];
+    return fiLocalToWorld(P[0], P[1]);
+  }
+  function fiDrawIce(box, tip, ice, time) {
+    let [x, y, w, h] = box;
+    const g = 1.1; x -= g; y -= g; w += g * 2; h += g * 2;
+    // ice creeps from the tip of the limb toward the body
+    if (tip === 'down') { const hh = h * ice; y = y + h - hh; h = hh; }
+    else if (tip === 'up') { h = h * ice; }
+    else if (tip === 'right') { const ww = w * ice; x = x + w - ww; w = ww; }
+    if (w <= 0 || h <= 0) return;
+    ctx.fillStyle = `rgba(103, 232, 249, ${0.5 + 0.2 * ice})`; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(224, 242, 254, 0.9)"; ctx.fillRect(x, y, 0.8, h); ctx.fillRect(x, y, w, 0.6);
+    ctx.fillStyle = "rgba(14, 116, 144, 0.6)"; ctx.fillRect(x + w - 0.6, y, 0.6, h);
+    if (ice >= 1) {                                   // jagged ice spikes once fully encased
+      ctx.fillStyle = "#e0f2fe";
+      if (tip === 'right') { ctx.fillRect(x + 2, y - 1.6, 1, 1.6); ctx.fillRect(x + 5, y + h, 1, 1.4); ctx.fillRect(x + w, y + 0.6, 1.2, 1); }
+      else { ctx.fillRect(x - 1.2, y + 2, 1.2, 1); ctx.fillRect(x + w, y + h * 0.5, 1.4, 1); ctx.fillRect(x + w * 0.4, tip === 'up' ? y - 1.4 : y + h, 1, 1.4); }
+      if (Math.sin(time * 3 + x) > 0.9) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 1, y + 1, 1, 1); }
+    }
+  }
+  function fiDrawSpaceman(time) {
+    const T = fzState.timer;
+    ctx.save();
+    const jx = fi.jerk > 0 ? (Math.random() - 0.5) * 1.6 : 0;
+    ctx.translate(Math.round(fi.px), GROUND_Y); ctx.scale(FI_SC, FI_SC);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)"; ctx.fillRect(-8, -0.5, 16, 2);
+    if (fi.walking) ctx.rotate(0.1);
+    const fleeing = !fi.walking && fi.gone.la && !(fi.gone.ll && fi.gone.rl);
+    const struggling = !fi.walking && !fi.burst && !fleeing;
+    const ph = Math.sin(time * (fleeing ? 9 : 7));
+    const an = fi.walking || fleeing
+      ? { al: ph * 1.2, ar: -ph * 1.2, ll: Math.max(0, ph) * 1.5, rl: Math.max(0, -ph) * 1.5 }
+      : struggling ? { al: -3 + Math.sin(time * 22) * 3, ar: -2 + Math.cos(time * 19) * 3, ll: Math.max(0, Math.sin(time * 16)) * 2, rl: Math.max(0, Math.cos(time * 15)) * 2 }
+      : { al: 0, ar: 0, ll: 0, rl: 0 };
+    if (fleeing) ctx.rotate(-0.12 + Math.sin(time * 9) * 0.05);    // leaning away, staggering
+    const X = fiTorsoXform();
+    // legs first (behind the torso), then torso, then arms
+    const drawLimb = (nm) => {
+      if (fi.gone[nm]) return;
+      const fr = fi.ice[nm] > 0;
+      const L = fiLimbParts(nm, fr, an);
+      for (const [x, y, w, h, c] of L.parts) { ctx.fillStyle = fr ? (fi.ice[nm] >= 1 ? "#cbd5e1" : c) : c; ctx.fillRect(x, y, w, h); }
+      if (fr) fiDrawIce(L.box, L.tip, fi.ice[nm], time);
+    };
+    if (!(fi.gone.ll && fi.gone.rl)) { ctx.save(); ctx.translate(0, X.hop); drawLimb('ll'); drawLimb('rl'); ctx.restore(); }
+    // everything above the hips: hops, drops to the ground and topples once the legs are gone
+    ctx.translate(0, X.hop - X.lift); ctx.rotate(X.rot); ctx.translate(0, X.drop);
+    ctx.translate(jx, 0);
+    // bloody hip stumps
+    ctx.fillStyle = "#7f1d1d";
+    if (fi.gone.ll) { ctx.fillRect(-3.5, -8.4, 3, 1.4); ctx.fillStyle = "#ef4444"; ctx.fillRect(-3, -8, 2, 0.8); ctx.fillStyle = "#7f1d1d"; }
+    if (fi.gone.rl) { ctx.fillRect(0.5, -8.4, 3, 1.4); ctx.fillStyle = "#ef4444"; ctx.fillRect(1, -8, 2, 0.8); }
+    if (fi.gone.ll || fi.gone.rl) { ctx.fillStyle = "#e2e8f0"; ctx.fillRect(-3, -8.6, 6, 0.8); }
+    // torso
+    ctx.fillStyle = "#e2e8f0"; ctx.fillRect(-3, -15, 6, 7);
+    ctx.fillStyle = "#94a3b8"; ctx.fillRect(1, -15, 2, 7);
+    ctx.fillStyle = "#334155"; ctx.fillRect(-4.5, -14, 1.5, 5);
+    ctx.fillStyle = fi.burst ? "#1e293b" : (Math.floor(time * 4) % 2 ? "#ef4444" : "#450a0a"); ctx.fillRect(-2, -14, 2, 2);
+    // the embryo: glowing bulge under the suit, pulsing faster
+    if (fi.implanted && !fi.burst) {
+      const pul = 0.5 + 0.5 * Math.sin(time * (8 + fi.bulge * 14));
+      const r = 1 + fi.bulge * 2.2 + pul * 0.6;
+      ctx.fillStyle = `rgba(103, 232, 249, ${0.35 + 0.4 * pul})`; ctx.fillRect(-r + 0.5, -11.5 - r, r * 2, r * 2);
+      ctx.fillStyle = "#e2e8f0"; ctx.fillRect(-r * 0.6 + 0.5, -11.5 - r * 0.6, r * 1.2, r * 1.2);
+      if (fi.bulge > 0.5) { ctx.fillStyle = "#67e8f9"; ctx.fillRect(-0.5, -13, 0.6, 3); ctx.fillRect(0.6, -12.2, 1.6, 0.6); }   // cracks of light
+      ctx.fillStyle = "#991b1b"; ctx.fillRect(0, -10.2, 1, 1.6 + fi.bulge * 2);                                                     // wound weeping
+    }
+    if (fi.burst) {   // the exit wound
+      ctx.fillStyle = "#450a0a"; ctx.fillRect(-2, -13.5, 4.5, 4);
+      ctx.fillStyle = "#b91c1c"; ctx.fillRect(-2.5, -14, 5.5, 0.8); ctx.fillRect(-2.5, -9.6, 5.5, 0.8); ctx.fillRect(-2.5, -13.5, 0.8, 4);
+      ctx.fillStyle = "#67e8f9"; ctx.fillRect(-1, -12.5, 0.8, 0.8); ctx.fillRect(1.2, -11.2, 0.8, 0.8);
+    }
+    // frost creeping over the torso
+    const fn = Math.round(fi.frost * 24);
+    for (let i = 0; i < fn; i++) { ctx.fillStyle = i % 3 ? "#ffffff" : "#bae6fd"; ctx.fillRect(-3 + ((i * 37) % 60) / 10, -15 + ((i * 53) % 70) / 10, 0.8, 0.8); }
+    // helmet (droops after the burst)
+    ctx.save(); ctx.translate(fi.droop * 1.2 * (1 - fi.fall), fi.droop * 1.6 * (1 - fi.fall)); ctx.rotate(fi.droop * (0.25 * (1 - fi.fall) - 0.18 * fi.fall));
+    ctx.fillStyle = "#f8fafc"; ctx.fillRect(-4, -23, 8, 7);
+    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-4, -23, 2, 7);
+    ctx.fillStyle = fi.frost > 0.3 ? "#bae6fd" : "#0284c7"; ctx.fillRect(-1, -21, 4, 3);
+    ctx.fillStyle = "#e0f2fe"; ctx.fillRect(0, -20.5, 2, 1);
+    ctx.restore();
+    drawLimb('la'); drawLimb('ra');
+    // bloody shoulder stumps
+    if (fi.gone.la) { ctx.fillStyle = "#7f1d1d"; ctx.fillRect(-4.8, -15, 1.8, 2.4); ctx.fillStyle = "#ef4444"; ctx.fillRect(-4.6, -14.6, 1, 1.4); }
+    if (fi.gone.ra) { ctx.fillStyle = "#7f1d1d"; ctx.fillRect(3, -15, 1.8, 2.4); ctx.fillStyle = "#ef4444"; ctx.fillRect(3.6, -14.6, 1, 1.4); }
+    // the husk icing over at the very end
+    if (fi.huskIce > 0) {
+      ctx.fillStyle = `rgba(103, 232, 249, ${0.55 * fi.huskIce})`; ctx.fillRect(-4.5, -23.5, 9, 16);
+      ctx.fillStyle = `rgba(224, 242, 254, ${0.8 * fi.huskIce})`; ctx.fillRect(-4.5, -23.5, 0.8, 16); ctx.fillRect(-4.5, -23.5, 9, 0.6);
+    }
+    ctx.restore();
+  }
+  // icy dusk backdrop (matches Frozen Stiff) so the cyan warden, ice and hatchling read clearly
+  function fiBackdrop(time) {
+    const hz = 150;
+    const sky = ctx.createLinearGradient(0, 0, 0, hz);
+    sky.addColorStop(0, "#020617"); sky.addColorStop(0.6, "#0c2340"); sky.addColorStop(1, "#1e4a6e");
+    ctx.fillStyle = sky; ctx.fillRect(-60, -60, V_WIDTH + 120, hz + 60);
+    for (let i = 0; i < 5; i++) {                       // faint aurora
+      ctx.fillStyle = `rgba(52, 211, 153, ${0.05 + 0.03 * Math.sin(time * 0.8 + i)})`;
+      const y = 28 + i * 7 + Math.sin(time * 0.6 + i * 1.3) * 4;
+      ctx.fillRect(-60, Math.round(y), V_WIDTH + 120, 5);
+    }
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 40; i++) ctx.fillRect((i * 97) % (V_WIDTH + 40) - 20, (i * 37) % 110, 1, 1);
+    ctx.fillStyle = "#28557a";
+    ctx.beginPath(); ctx.moveTo(-60, hz);
+    for (let x = -60; x <= V_WIDTH + 60; x += 12) ctx.lineTo(x, hz - 10 - Math.abs(Math.sin(x * 0.031)) * 26 - Math.sin(x * 0.11) * 4);
+    ctx.lineTo(V_WIDTH + 60, hz); ctx.fill();
+    const gr = ctx.createLinearGradient(0, hz, 0, V_HEIGHT);
+    gr.addColorStop(0, "#7fa9c8"); gr.addColorStop(0.5, "#b9d6ea"); gr.addColorStop(1, "#dcecf7");
+    ctx.fillStyle = gr; ctx.fillRect(-60, hz, V_WIDTH + 120, V_HEIGHT - hz + 60);
+  }
+  function fiDrawBaby(b, time) {
+    const sprite = SENTINEL_SPRITES[Math.floor(time * 8) % 2], px = 1.3;
+    ctx.save();
+    ctx.fillStyle = "rgba(103, 232, 249, 0.2)"; ctx.beginPath(); ctx.arc(Math.round(b.x), Math.round(b.y), 7, 0, Math.PI * 2); ctx.fill();
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (sprite[r][c] !== '#') continue;
+      const bloody = b.blood > 0 && ((r * 7 + c * 3) % 5 === 0);
+      ctx.fillStyle = bloody ? "#b91c1c" : "#a5f3fc";
+      ctx.fillRect(b.x + (c - 4) * px, b.y + (r - 4) * px, px + 0.2, px + 0.2);
+    }
+    ctx.restore();
+  }
+
+  function updateFrozenIncubator(dt) {
+    const prevT = fzState.timer;
+    fzState.timer += dt;
+    const t = fzState.timer;
+    const at = (k) => t >= k && prevT < k;
+    if (fzState.shake > 0) fzState.shake = Math.max(0, fzState.shake - dt * 2.2);
+    if (fzState.flash > 0) fzState.flash = Math.max(0, fzState.flash - dt * 2.5);
+    if (fi.jerk > 0) fi.jerk = Math.max(0, fi.jerk - dt);
+    const bob = Math.sin(t * 5) * 2;
+    const gore = (x, y, n, up) => {
+      for (let i = 0; i < n; i++) {
+        const ang = Math.random() * Math.PI * 2, spd = 30 + Math.random() * 110, roll = Math.random();
+        fzBlood.push({ x: x + (Math.random() - 0.5) * 4, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - (up || 40),
+          color: roll > 0.6 ? "#ef4444" : (roll > 0.3 ? "#b91c1c" : (roll > 0.15 ? "#7f1d1d" : "#a5f3fc")), sz: roll > 0.85 ? 3 : 1.5 + Math.random() * 1.5 });
+      }
+    };
+
+    // walk in; warden glides in from the right
+    if (t < 1.1) { fi.px += 26 * dt; fi.wx = (V_WIDTH + 40) + ((fi.px + 70) - (V_WIDTH + 40)) * fiEase(t / 1.1); fi.wy = GROUND_Y - 44 + bob; }
+    if (at(1.1)) { fi.walking = false; fi.jerk = 0.25; playCutsceneSfx('chirp'); }
+
+    // freeze each limb, then shatter it
+    fi.beamLimb = null;
+    FI_ORDER.forEach(([nm, t0, t1, t2]) => {
+      if (t >= t0 && t < t1) { fi.beamLimb = nm; fi.ice[nm] = Math.max(0.05, (t - t0) / (t1 - t0)); }
+      if (at(t0)) { playCutsceneSfx('freeze'); fzState.flash = 0.2; fzState.flashColor = "186, 230, 253"; }
+      if (at(t1)) { fi.ice[nm] = 1; fi.jerk = 0.15; fiSfx('limb'); fzState.shake = 0.25; }
+      if (at(t2)) {
+        const [lx, ly] = fiLimbTarget(nm);
+        fi.gone[nm] = true; fi.jerk = 0.35;
+        fzState.shake = 0.9; fzState.flash = 0.55; fzState.flashColor = "239, 68, 68";
+        playCutsceneSfx('shatter'); playCutsceneSfx('impact');
+        if (typeof vibrateGamepad === 'function') vibrateGamepad(220, 0.8, 0.8);
+        spawnFrostChunks(lx, ly, 12, false); spawnFrostChunks(lx, ly, 8, true);
+        gore(lx, ly, 26, 40);
+        for (let i = 0; i < 10; i++) fiMotes.push({ x: lx, y: ly, vx: (Math.random() - 0.5) * 60, vy: -10 - Math.random() * 40, life: 0.5 + Math.random() * 0.4 });
+      }
+    });
+    if (fi.beamLimb && Math.random() < 0.7) { const [lx, ly] = fiLimbTarget(fi.beamLimb); fiMotes.push({ x: lx + (Math.random() - 0.5) * 6, y: ly + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 10, vy: -8 - Math.random() * 10, life: 0.4 + Math.random() * 0.3 }); }
+
+    // trying to get away: stagger once the arms are going, hop on one leg, then wriggle
+    const legs = (fi.gone.ll ? 0 : 1) + (fi.gone.rl ? 0 : 1);
+    if (t >= 1.8 && legs === 2) fi.px -= 11 * dt;
+    if (legs === 1) {
+      fi.px -= 16 * dt;
+      fi.hopY = -Math.abs(Math.sin((t - 3.2) * 9)) * 2.4;
+      if (Math.sin((t - 3.2) * 9) * Math.sin((prevT - 3.2) * 9) < 0) { playCutsceneSfx('heartbeat'); }
+    } else fi.hopY = 0;
+    if (legs === 0 && fi.fall < 1) {
+      fi.fall = Math.min(1, fi.fall + dt / 0.3);
+      if (fi.fall >= 1) { fzState.shake = 0.7; playCutsceneSfx('impact'); gore(fi.px - 4, GROUND_Y - 3, 14, 20); }
+    }
+    if (legs === 0 && fi.fall >= 1 && t < 5.4) {
+      fi.px -= 7 * dt * (0.5 + 0.5 * Math.abs(Math.sin(t * 7)));          // inching away
+      if (Math.random() < 0.5) fzPuddle.push({ x: fi.px + 6 + Math.random() * 6, y: GROUND_Y + (Math.random() - 0.5) * 1.5, w: 3 + Math.random() * 4, color: Math.random() < 0.5 ? "#7f1d1d" : "#b91c1c" });   // blood trail
+    }
+    if (t < 5.0 && t >= 1.1) { fi.wx += ((fi.px + 70) - fi.wx) * Math.min(1, dt * 3); fi.wy = GROUND_Y - 44 + bob; }
+
+    // the warden lands right on the face and clamps on to implant the embryo
+    const [cxw, cyw] = fiLocalToWorld(0.5, -11.5);
+    const [hxw, hyw] = fiLocalToWorld(0, -19.5);
+    fi.onFace = t >= 5.35 && t < 6.25;
+    if (t >= 5.0 && t < 5.35) {                                        // drop onto the head
+      const k = fiEase((t - 5.0) / 0.35);
+      fi.wx += (hxw - fi.wx) * Math.min(1, k * dt * 14); fi.wy += ((hyw - 9) - fi.wy) * Math.min(1, k * dt * 14);
+    }
+    if (fi.onFace) { fi.wx = hxw + Math.sin(t * 30) * 0.6; fi.wy = hyw - 9 + Math.sin(t * 8) * 0.8; }
+    if (at(5.05)) playCutsceneSfx('swoop');
+    if (at(5.35)) { fi.jerk = 0.6; fzState.shake = 0.8; playCutsceneSfx('clamp'); fiSfx('sting'); gore(hxw, hyw, 10, 20); }
+    if (at(5.75)) {                                                    // the push: embryo forced down the throat
+      fi.implanted = true; fi.jerk = 0.5; fzState.shake = 0.6; fzState.flash = 0.35; fzState.flashColor = "103, 232, 249";
+      playCutsceneSfx('heartbeat');
+    }
+    fi.implantGlow = (t >= 5.6 && t < 6.0) ? (t - 5.6) / 0.4 : -1;    // glow travelling from the face down to the chest
+    if (at(6.25)) { playCutsceneSfx('swoop'); fi.jerk = 0.3; }
+    if (t >= 6.25 && t < 7.0) { fi.wx += ((cxw + 50) - fi.wx) * Math.min(1, dt * 3); fi.wy += ((GROUND_Y - 50) - fi.wy) * Math.min(1, dt * 3); }
+    if (fi.implanted && !fi.burst) { fi.bulge = Math.min(1, (t - 5.75) / 1.25); fi.frost = Math.min(0.5, (t - 5.75) / 2); }
+    [6.35, 6.6, 6.82].forEach(hb => { if (at(hb)) { playCutsceneSfx('heartbeat'); fzState.shake = 0.35; fi.jerk = 0.25; } });
+    if (at(6.45)) fiSfx('creak');
+
+    // CHESTBURST out of what's left
+    if (at(7.0)) {
+      fi.burst = true; fi.droop = 1; fzState.shake = 1.4; fzState.flash = 0.9; fzState.flashColor = "239, 68, 68";
+      playCutsceneSfx('burst'); fiSfx('baby');
+      if (typeof vibrateGamepad === 'function') vibrateGamepad(500, 1.0, 1.0);
+      for (let i = 0; i < 60; i++) {                                       // blood geyser up out of the chest
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.4, spd = 50 + Math.random() * 130, roll = Math.random();
+        fzBlood.push({ x: cxw + (Math.random() - 0.5) * 6, y: cyw, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+          color: roll > 0.6 ? "#ef4444" : (roll > 0.3 ? "#b91c1c" : (roll > 0.15 ? "#7f1d1d" : "#a5f3fc")), sz: roll > 0.85 ? 3 : 1.5 + Math.random() * 1.5 });
+      }
+      spawnFrostChunks(cxw, cyw, 6, true);
+      fi.baby = { x: cxw, y: cyw, vx: 12, vy: -120, blood: 1.2 };
+    }
+    if (fi.baby) {
+      const b = fi.baby;
+      b.blood -= dt;
+      if (t < 7.5) { b.vy += 150 * dt; b.vx *= 0.98; b.x += b.vx * dt; b.y += b.vy * dt; if (b.y > GROUND_Y - 24) { b.y = GROUND_Y - 24; b.vy = -70; } }
+      else { const tx = fi.wx - 24, ty = fi.wy + 8 + Math.sin(t * 9) * 3; b.x += (tx - b.x) * Math.min(1, dt * 3); b.y += (ty - b.y) * Math.min(1, dt * 3); }
+      if (at(7.35) || at(7.7)) fiSfx('baby');
+    }
+    // the torso is left lying there; one last little twitch as they leave
+    fi.huskBeam = false;
+    if (at(8.4)) { fi.jerk = 0.2; vbSfx('crack'); }
+    if (t >= 8.2) { fi.exit = Math.min(1, (t - 8.2) / 1.0); fi.wx += 110 * fi.exit * dt * 3; fi.wy -= 60 * fi.exit * dt * 3; }
+    if (t >= 10.0) fzState.ready = true;
+    // camera follows the pilot, then drops to the torso on the ground
+    const camTX = fi.px + 24 * (1 - fi.fall) - 4 * fi.fall, camTY = GROUND_Y - 26 * (1 - fi.fall) - 10 * fi.fall;
+    fi.camX += (camTX - fi.camX) * Math.min(1, dt * 3); fi.camY += (camTY - fi.camY) * Math.min(1, dt * 3);
+
+    for (let i = fzBlood.length - 1; i >= 0; i--) {
+      const b = fzBlood[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 135 * dt;
+      if (b.y >= GROUND_Y) { b.y = GROUND_Y; fzPuddle.push({ x: b.x, y: GROUND_Y + (Math.random() - 0.5) * 2, w: 3 + Math.random() * 5, color: b.color }); fzBlood.splice(i, 1); }
+    }
+    for (let c of fzChunks) { if (!c.landed) { c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 135 * dt; if (c.y >= GROUND_Y) { c.y = GROUND_Y; c.landed = true; c.vx = 0; c.vy = 0; } } }
+    for (let i = fiMotes.length - 1; i >= 0; i--) { const m = fiMotes[i]; m.x += m.vx * dt; m.y += m.vy * dt; m.vy += 20 * dt; m.life -= dt; if (m.life <= 0) fiMotes.splice(i, 1); }
+    if (fzPop.active) { fzPop.timer += dt; if (fzPop.timer >= fzPop.dur) fzPop.active = false; else fzPop.r = 4 + (fzPop.timer / fzPop.dur) * fzPop.maxR; }
+  }
+
+  function renderFrozenIncubator() {
+    const t = Date.now(), T = fzState.timer, time = T;
+    ctx.save();
+    if (fzState.shake > 0) { const a = fzState.shake * 8; ctx.translate((Math.random() - 0.5) * a, (Math.random() - 0.5) * a); }
+    const Z = fiZoom(T), fx = fi.camX, fy = fi.camY;
+    const za = Math.max(0, Math.min(1, (Z - 1) / 0.9));
+    const ax = fx + (V_WIDTH * 0.46 - fx) * za, ay = fy + (V_HEIGHT * 0.6 - fy) * za;   // zoomed: frame the action mid-screen
+    ctx.save(); ctx.translate(ax, ay); ctx.scale(Z, Z); ctx.translate(-fx, -fy);
+    fiBackdrop(time);
+    for (let pd of fzPuddle) { ctx.fillStyle = pd.color; ctx.fillRect(Math.round(pd.x), Math.round(pd.y), Math.round(pd.w), 2); }
+    for (let c of fzChunks) {
+      const gx = Math.round(c.x - c.w / 2), gy = Math.round(c.y - c.h);
+      ctx.fillStyle = c.color1; ctx.fillRect(gx, gy, Math.ceil(c.w), Math.ceil(c.h));
+      ctx.fillStyle = c.color2; ctx.fillRect(gx, gy, Math.max(1, Math.round(c.w * 0.4)), Math.max(1, Math.round(c.h * 0.4)));
+    }
+    if (fi.alive) fiDrawSpaceman(time);
+    // freeze beam onto the current limb
+    if (fi.beamLimb) {
+      const [lx, ly] = fiLimbTarget(fi.beamLimb), bx = fi.wx - 10, by = fi.wy + 4;
+      drawChunkyLimb(bx, by, lx, ly, 8, "rgba(103, 232, 249, 0.18)");
+      drawChunkyLimb(bx, by, lx, ly, 5, "rgba(186, 230, 253, 0.4)");
+      drawChunkyLimb(bx, by, lx, ly, 2, Math.floor(t / 70) % 2 === 0 ? "#ffffff" : "#67e8f9");
+    }
+    if (fi.huskBeam && fi.alive) {
+      const [hx, hy] = fiLocalToWorld(0, -14), bx = fi.wx - 10, by = fi.wy + 4;
+      drawChunkyLimb(bx, by, hx, hy, 7, "rgba(103, 232, 249, 0.2)");
+      drawChunkyLimb(bx, by, hx, hy, 2, Math.floor(t / 70) % 2 === 0 ? "#ffffff" : "#67e8f9");
+    }
+    // ice stinger planting the embryo
+    if (fi.stinger > 0 && fi.alive) {
+      const sx = fi.wx - 6, sy = fi.wy + 12, [ex, ey] = fiLocalToWorld(0.5, -11.5);
+      const tx = sx + (ex - sx) * fi.stinger, ty = sy + (ey - sy) * fi.stinger;
+      drawChunkyLimb(sx, sy, tx, ty, 3, "#67e8f9");
+      drawChunkyLimb(sx, sy, tx, ty, 1.2, "#e0f2fe");
+      ctx.fillStyle = "#a5f3fc"; ctx.fillRect(Math.round(tx) - 2, Math.round(ty) - 2, 4, 4);
+    }
+    if (fi.implantGlow >= 0 && fi.alive) {
+      const [ax2, ay2] = fiLocalToWorld(0, -18), [bx2, by2] = fiLocalToWorld(0.5, -11.5), k = fi.implantGlow;
+      const gx = ax2 + (bx2 - ax2) * k, gy = ay2 + (by2 - ay2) * k;
+      ctx.fillStyle = "rgba(103, 232, 249, 0.45)"; ctx.fillRect(Math.round(gx) - 5, Math.round(gy) - 5, 10, 10);
+      ctx.fillStyle = "#e0f2fe"; ctx.fillRect(Math.round(gx) - 2, Math.round(gy) - 2, 4, 4);
+    }
+    if (fi.exit < 1) {
+      if (fi.onFace) {   // clamped on the face, squeezing as it pumps the embryo in
+        const sq = Math.sin(fzState.timer * 16) * 0.08;
+        ctx.save(); ctx.translate(fi.wx, fi.wy); ctx.scale(1 + sq, 1 - sq); ctx.translate(-fi.wx, -fi.wy);
+        drawFrostWarden(fi.wx, fi.wy, t, 1);
+        ctx.restore();
+      } else drawFrostWarden(fi.wx, fi.wy, t, fi.beamLimb ? 1 : 0.3);
+    }
+    if (fi.baby && fi.exit < 1) fiDrawBaby(fi.exit > 0 ? { x: fi.wx - 24, y: fi.wy + 8, blood: fi.baby.blood } : fi.baby, time);
+    for (let b of fzBlood) { ctx.fillStyle = b.color; ctx.fillRect(Math.round(b.x), Math.round(b.y), Math.round(b.sz), Math.round(b.sz)); }
+    for (const m of fiMotes) { ctx.globalAlpha = Math.max(0, Math.min(1, m.life * 2)); ctx.fillStyle = "#e0f2fe"; ctx.fillRect(Math.round(m.x), Math.round(m.y), 2, 2); }
+    ctx.globalAlpha = 1;
+    if (fzPop.active) {
+      const pp = fzPop.timer / fzPop.dur, r = Math.round(fzPop.r), [qx, py] = fiLocalToWorld(0, -12);
+      ctx.save(); ctx.strokeStyle = "#e0f2fe"; ctx.globalAlpha = Math.max(0, 1 - pp); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(qx, py - r); ctx.lineTo(qx + r, py); ctx.lineTo(qx, py + r); ctx.lineTo(qx - r, py); ctx.closePath(); ctx.stroke();
+      ctx.strokeRect(qx - Math.round(r * 0.7), py - Math.round(r * 0.7), Math.round(r * 1.4), Math.round(r * 1.4));
+      ctx.restore();
+    }
+    ctx.restore();   // end zoom
+    if (fzState.flash > 0) { ctx.fillStyle = `rgba(${fzState.flashColor}, ${fzState.flash * 0.5})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    ctx.restore();
+
+    if (T >= 8.4) {
+      const a = Math.min(1, (T - 8.4) / 0.5);
+      ctx.save(); ctx.globalAlpha = a;
+      const cx = Math.round(V_WIDTH / 2), cy = 52, msg = "FROZEN INCUBATOR";
+      ctx.fillStyle = "rgba(2, 6, 23, 0.45)"; ctx.fillRect(0, cy - 20, V_WIDTH, 40);
+      ctx.font = "bold 20px monospace"; ctx.textAlign = "center";
+      ctx.fillStyle = "#000000"; ctx.fillText(msg, cx + 2, cy + 2);
+      ctx.fillStyle = "#0284c7"; ctx.fillText(msg, cx - 1, cy - 1); ctx.fillText(msg, cx + 1, cy - 1);
+      ctx.fillStyle = "#e0f2fe"; ctx.fillText(msg, cx, cy);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("A FROST WARDEN HATCHLING CLAIMS YOUR CHEST", cx, cy + 15);
+      ctx.restore();
+    }
+    if (fzState.ready && Math.floor(t / 400) % 2 === 0) {
+      ctx.save(); ctx.fillStyle = "#facc15"; ctx.font = "bold 8.5px monospace"; ctx.textAlign = "center";
+      ctx.fillText("[ TAP SCREEN OR PRESS ANY KEY FOR MISSION REPORT ]", Math.round(V_WIDTH / 2), V_HEIGHT - 16);
+      ctx.restore();
+    }
+  }
+  function updateFrostCutscene(dt) { return FZ_STYLE === 'incubator' ? updateFrozenIncubator(dt) : updateFrostCutsceneClassic(dt); }
+  function renderFrostCutscene() { return FZ_STYLE === 'incubator' ? renderFrozenIncubator() : renderFrostCutsceneClassic(); }
+  window.__fi = { fi, state: fzState, playing: () => isFrostCutscenePlaying };
+
+  // Skeleton in the same space as drawExactSpaceman (feet at y=0, head ~-23).
+  // k: 1 = standing, 0 = collapsed heap. opts: struggle (arms up), eyes 0..1, xray, alpha, jitter
+  function drawVoidSkeleton(x, y, scale, k, opts) {
+    opts = opts || {};
+    ctx.save();
+    ctx.globalAlpha = opts.alpha === undefined ? 1 : opts.alpha;
+    const jx = opts.jitter ? (Math.random() - 0.5) * opts.jitter : 0, jy = opts.jitter ? (Math.random() - 0.5) * opts.jitter * 0.6 : 0;
+    ctx.translate(x + jx * scale, y + jy * scale); ctx.scale(scale, scale);
+    const B = opts.xray ? "#ecfeff" : "#e7e5e4", Sd = opts.xray ? "#a5f3fc" : "#a8a29e", D = "#0c0a09";
+    const drop = (1 - k) * 8, tilt = (1 - k) * 2;
+    const R = (a, b, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(a, b, w, h); };
+    if (opts.xray) { ctx.fillStyle = "rgba(165, 243, 252, 0.25)"; ctx.fillRect(-7, -24 + drop, 14, 25 - drop); }
+    // legs
+    if (k > 0.5) {
+      R(-2.5, -7.5, 1.1, 7.5, B); R(1.4, -7.5, 1.1, 7.5, B);
+      R(-3.6, -0.9, 2.2, 0.9, Sd); R(1.4, -0.9, 2.2, 0.9, Sd);
+    } else {
+      R(-4, -1.6, 4.5, 1.1, B); R(0.5, -1.6, 4.5, 1.1, B); R(4.5, -1.2, 1.4, 1.2, Sd); R(-5, -1.2, 1.4, 1.2, Sd);
+    }
+    // pelvis + spine + ribs
+    R(-3, -8.2 + drop, 6, 1.6, B);
+    R(-0.5, -15.6 + drop, 1, 8, Sd);
+    for (let i = 0; i < 4; i++) R(-3 + (i === 3 ? 0.6 : 0), -15 + i * 1.8 + drop, 6 - (i === 3 ? 1.2 : 0), 0.9, B);
+    // dark-matter core in the ribcage once it's reanimated
+    if (opts.eyes > 0) {
+      const pul = 0.6 + 0.4 * Math.sin(Date.now() * 0.012);
+      R(-1.3, -13.4 + drop, 2.6, 2.6, `rgba(168, 85, 247, ${opts.eyes * pul})`);
+      R(-0.6, -12.7 + drop, 1.2, 1.2, `rgba(245, 208, 254, ${opts.eyes * pul})`);
+    }
+    // arms
+    if (opts.struggle) {
+      R(-6.4, -21 + drop, 1.1, 6, B); R(5.3, -21 + drop, 1.1, 6, B);
+      R(-6.8, -22.5 + drop, 1.8, 1.5, Sd); R(5, -22.5 + drop, 1.8, 1.5, Sd);
+    } else if (k > 0.5) {
+      R(-4.6, -15 + drop, 1, 5, B); R(3.6, -15 + drop, 1, 5, B);
+      R(-5, -10 + drop, 1, 4.5, B); R(4, -10 + drop, 1, 4.5, B);
+      R(-5.4, -5.8 + drop, 1.6, 1.2, Sd); R(3.8, -5.8 + drop, 1.6, 1.2, Sd);
+    } else {
+      R(-4.6, -15 + drop, 1, 5, B); R(3.6, -15 + drop, 1, 5, B);
+      R(-6, -10.5 + drop, 2.5, 1, B); R(3.5, -10.5 + drop, 2.5, 1, B);
+    }
+    // skull (tips forward as it slumps)
+    const sx = tilt, sy = drop + tilt * 0.6;
+    R(-3.5 + sx, -23.2 + sy, 7, 6, B); R(1.8 + sx, -23.2 + sy, 1.7, 6, Sd);
+    R(-2.6 + sx, -17.2 + sy, 5.2, 1.6, B);
+    R(-2 + sx, -16.6 + sy, 0.5, 1, D); R(-0.8 + sx, -16.6 + sy, 0.5, 1, D); R(0.4 + sx, -16.6 + sy, 0.5, 1, D); R(1.6 + sx, -16.6 + sy, 0.5, 1, D);
+    R(-0.4 + sx, -19 + sy, 0.8, 1.1, D);
+    const e = opts.eyes || 0;
+    if (e > 0) {
+      R(-3.4 + sx, -22.6 + sy, 3.4, 3.4, `rgba(192, 132, 252, ${0.4 * e})`); R(0 + sx, -22.6 + sy, 3.4, 3.4, `rgba(192, 132, 252, ${0.4 * e})`);
+      R(-2.2 + sx, -21.4 + sy, 2, 2, "#a855f7"); R(0.6 + sx, -21.4 + sy, 2, 2, "#a855f7");
+      R(-1.7 + sx, -20.9 + sy, 1, 1, "#f5d0fe"); R(1.1 + sx, -20.9 + sy, 1, 1, "#f5d0fe");
+    } else {
+      R(-2.2 + sx, -21.4 + sy, 2, 2, D); R(0.6 + sx, -21.4 + sy, 2, 2, D);
+    }
+    ctx.restore();
+  }
+
+  // camera: push in on the feed, ease out for the collapse, creep in as the eyes ignite
+  const vbEase = (a) => a * a * (3 - 2 * a);
+  function vbZoom(T) {
+    const seg = (t0, t1, z0, z1) => z0 + (z1 - z0) * vbEase(Math.max(0, Math.min(1, (T - t0) / (t1 - t0))));
+    if (T < 0.7) return 1;
+    if (T < 3.6) return seg(0.7, 1.3, 1, 1.9);
+    if (T < 5.6) return seg(3.6, 4.3, 1.9, 1.55);
+    return seg(5.6, 6.35, 1.55, 2.3);
+  }
+  function vbMaw() { const px = 2.6 * vb.botScale; return { x: bzAttacker.x - 2 * px, y: GROUND_Y - 7 * px }; }
+
+  function updateVoidBorn(dt) {
+    const prevT = bzState.timer;
+    bzState.timer += dt;
+    const t = bzState.timer;
+    const at = (k) => t >= k && prevT < k;
+    if (bzState.shake > 0) bzState.shake = Math.max(0, bzState.shake - dt * 2.2);
+    if (bzState.flash > 0) bzState.flash = Math.max(0, bzState.flash - dt * 2.5);
+    if (vb.xray > 0) vb.xray = Math.max(0, vb.xray - dt);
+    if (vb.twitch > 0) vb.twitch = Math.max(0, vb.twitch - dt);
+    if (vb.cutFlash > 0) vb.cutFlash = Math.max(0, vb.cutFlash - dt * 2.5);
+    const torsoY = bzVictim.y - (10 * CHAR_SCALE);
+    const blood = (n, spd0, spd1) => {
+      for (let i = 0; i < n; i++) {
+        const ang = Math.random() * Math.PI * 2, spd = spd0 + Math.random() * spd1, roll = Math.random();
+        bzBlood.push({ x: bzVictim.x + (Math.random() - 0.5) * 6, y: torsoY, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 25,
+          color: roll > 0.6 ? "#ef4444" : (roll > 0.35 ? "#7f1d1d" : (roll > 0.15 ? "#1c1917" : "#c084fc")), sz: roll > 0.8 ? 3 : 1.5 + Math.random() * 1.5 });
+      }
+    };
+
+    if (t < 0.7) {                                            // CHARGE
+      const p = t / 0.7;
+      bzAttacker.x = (bzVictim.x + 150) * (1 - p * p) + bzVictim.x * (p * p);
+      bzAttacker.y = GROUND_Y; bzVictim.state = 'STANDING';
+    } else if (t < 3.6) {                                     // LATCH + FEED
+      bzAttacker.x = bzVictim.x + 22; bzAttacker.y = GROUND_Y; bzAttacker.latched = true;
+      bzVictim.state = 'STRUGGLING';
+      if (at(0.7)) { bzState.shake = 0.8; bzState.flash = 0.7; bzState.flashColor = "239, 68, 68"; playCutsceneSfx('impact'); blood(16, 30, 80); if (typeof vibrateGamepad === 'function') vibrateGamepad(300, 0.7, 0.8); }
+      if (at(1.0)) playCutsceneSfx('drain');
+      const punchT = 0.7 + ARM_WINDUP + ARM_THRUST;
+      if (at(punchT)) { bzState.shake = 1.1; bzState.flash = 0.8; bzState.flashColor = "239, 68, 68"; playCutsceneSfx('burst'); blood(36, 40, 120); spawnBerzerkGibs(bzVictim.x, torsoY, 5); }
+      VB_PULSES.forEach((pt, i) => {
+        if (at(pt)) {
+          vb.flesh = 1 - (i + 1) / VB_PULSES.length;
+          vb.xray = 0.17; bzState.shake = 0.45;
+          playCutsceneSfx('heartbeat'); vbSfx('xray');
+          if (typeof vibrateGamepad === 'function') vibrateGamepad(120, 0.5, 0.6);
+        }
+      });
+      vb.botScale += ((1.6 + 0.5 * (1 - vb.flesh)) - vb.botScale) * Math.min(1, dt * 4);
+      // flesh streaming into the maw
+      const m = vbMaw();
+      for (let i = 0; i < 3; i++) {
+        vbStream.push({ x: bzVictim.x + (Math.random() - 0.5) * 12, y: bzVictim.y - Math.random() * 36, tx: m.x, ty: m.y, life: 0.45 + Math.random() * 0.3,
+          col: ["#1c1917", "#0c0a09", "#7f1d1d", "#a855f7", "#c084fc"][Math.floor(Math.random() * 5)] });
+      }
+    }
+    if (at(3.6)) {                                            // STRIPPED
+      vb.flesh = 0; bzVictim.state = 'GONE'; bzAttacker.latched = false;
+      bzState.shake = 1.0; bzState.flash = 0.6; bzState.flashColor = "192, 132, 252";
+      playCutsceneSfx('burst');
+      vb.helmet = { x: bzVictim.x - 2, y: bzVictim.y - 21 * CHAR_SCALE, vx: -38, vy: -70, rot: 0, vr: -9, rest: false };
+      for (let i = 0; i < 70; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 10 + Math.random() * 50;
+        vbAsh.push({ x: bzVictim.x + (Math.random() - 0.5) * 14, y: bzVictim.y - Math.random() * 38, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, life: 1 + Math.random() * 1.2,
+          col: ["#292524", "#44403c", "#78716c", "#a855f7", "#0c0a09"][Math.floor(Math.random() * 5)] });
+      }
+    }
+    if (t >= 3.6 && t < 4.4) { bzAttacker.x += 24 * dt; vb.botScale += (1.9 - vb.botScale) * dt * 2; }
+    if (t >= 4.0 && t < 4.35) vb.k = Math.max(0, 1 - (t - 4.0) / 0.35);
+    if (at(4.0)) vbSfx('clatter');
+    if (at(4.3)) { vb.k = 0; bzState.shake = 0.3; }
+    if (t >= 4.4 && t < 5.2) { bzAttacker.x += 150 * dt; vb.botAlpha = Math.max(0, 1 - (t - 4.4) / 0.6); }
+    if (at(5.0)) { vb.twitch = 0.22; vbSfx('crack'); }
+    if (at(5.35)) { vb.twitch = 0.3; vbSfx('crack'); }
+    if (t >= 5.7) vb.eyes = Math.min(1, (t - 5.7) / 0.3);
+    if (at(5.7)) { vbSfx('ignite'); bzState.flash = 0.45; bzState.flashColor = "168, 85, 247"; }
+    if (t >= 5.9 && t < 6.35) vb.k = Math.min(1, (t - 5.9) / 0.45);
+    if (t >= 6.35) vb.k = 1;
+    if (t >= 6.4 && !vb.cut) {                              // LURCH at the camera, four heavy steps
+      const steps = 4, dur = 0.8, raw = Math.min(1, (t - 6.4) / dur) * steps;
+      const si = Math.floor(raw), fr = raw - si;
+      vb.lurch = Math.min(1, (si + (si >= steps ? 0 : fr * fr * (3 - 2 * fr))) / steps);
+    }
+    [6.45, 6.65, 6.85, 7.05].forEach((st, i) => { if (at(st)) { vbSfx('step'); bzState.shake = 0.4 + i * 0.25; if (typeof vibrateGamepad === 'function') vibrateGamepad(110, 0.4 + i * 0.15, 0.5); } });
+    if (at(7.25)) { vb.cut = true; vb.cutFlash = 1; vbSfx('smash'); bzState.shake = 0; }
+    if (t >= 8.4) bzState.ready = true;
+
+    // dark-matter wisps off the reanimated bones
+    if (vb.eyes > 0 && !vb.cut) {
+      if (Math.random() < 0.7) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        vbWisps.push({ ox: side * (3 + Math.random() * 4), oy: -3 - Math.random() * 14, rise: 0, life: 0.5 + Math.random() * 0.4, col: Math.random() < 0.6 ? "#a855f7" : "#1c1917" });
+      }
+    }
+    for (let i = vbWisps.length - 1; i >= 0; i--) { const w = vbWisps[i]; w.rise += 14 * dt; w.life -= dt; if (w.life <= 0) vbWisps.splice(i, 1); }
+    for (let i = vbStream.length - 1; i >= 0; i--) {
+      const q = vbStream[i]; q.x += (q.tx - q.x) * Math.min(1, dt * 5); q.y += (q.ty - q.y) * Math.min(1, dt * 5); q.life -= dt;
+      if (q.life <= 0) vbStream.splice(i, 1);
+    }
+    for (let i = vbAsh.length - 1; i >= 0; i--) {
+      const a = vbAsh[i]; a.vy += 60 * dt; a.vx *= 0.98; a.x += a.vx * dt; a.y += a.vy * dt; a.life -= dt;
+      if (a.y > GROUND_Y) { a.y = GROUND_Y; a.vy = 0; a.vx *= 0.5; }
+      if (a.life <= 0) vbAsh.splice(i, 1);
+    }
+    if (vb.helmet && !vb.helmet.rest) {
+      const h = vb.helmet; h.vy += 180 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.rot += h.vr * dt;
+      if (h.y >= GROUND_Y - 6) { h.y = GROUND_Y - 6; h.vy *= -0.35; h.vx *= 0.6; h.vr *= 0.6; if (Math.abs(h.vy) < 12) { h.rest = true; h.rot = Math.round(h.rot / (Math.PI / 2)) * (Math.PI / 2) + 0.25; } else vbSfx('crack'); }
+    }
+    // blood / gibs physics shared with the classic scene
+    for (let i = bzBlood.length - 1; i >= 0; i--) {
+      const p2 = bzBlood[i]; p2.x += p2.vx * dt; p2.y += p2.vy * dt; p2.vy += 135 * dt;
+      if (p2.y >= GROUND_Y) { p2.y = GROUND_Y; bzPuddle.push({ x: p2.x, y: GROUND_Y + (Math.random() - 0.5) * 2, w: 3 + Math.random() * 5, color: p2.color }); bzBlood.splice(i, 1); }
+    }
+    for (let g of bzGibs) { if (!g.landed) { g.x += g.vx * dt; g.y += g.vy * dt; g.vy += 135 * dt; if (g.y >= GROUND_Y) { g.y = GROUND_Y; g.landed = true; g.vx = 0; g.vy = 0; } } }
+  }
+
+  function vbDrawHelmet(h) {
+    ctx.save(); ctx.translate(Math.round(h.x), Math.round(h.y)); ctx.rotate(h.rot); ctx.scale(CHAR_SCALE, CHAR_SCALE);
+    ctx.fillStyle = "#f8fafc"; ctx.fillRect(-4, -3.5, 8, 7);
+    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-4, -3.5, 2, 7);
+    ctx.fillStyle = "#0284c7"; ctx.fillRect(-1, -1.5, 4, 3);
+    ctx.fillStyle = "#38bdf8"; ctx.fillRect(0, -1, 2, 1);
+    ctx.fillStyle = "#7f1d1d"; ctx.fillRect(-3, 2.5, 6, 1);       // gore at the neck ring
+    ctx.restore();
+  }
+
+  function renderVoidBorn() {
+    const t = Date.now(), T = bzState.timer;
+    ctx.save();
+    if (bzState.shake > 0) { const a = bzState.shake * 8; ctx.translate((Math.random() - 0.5) * a, (Math.random() - 0.5) * a); }
+
+    if (vb.cut) {
+      // smash cut: black, the eyes still burning in the dark, title
+      ctx.fillStyle = "#000000"; ctx.fillRect(-10, -10, V_WIDTH + 20, V_HEIGHT + 20);
+      const ex = Math.round(V_WIDTH / 2), ey = 150, blink = Math.sin(T * 9) > -0.85;
+      if (blink) {
+        ctx.fillStyle = "rgba(168, 85, 247, 0.25)"; ctx.fillRect(ex - 34, ey - 10, 26, 20); ctx.fillRect(ex + 8, ey - 10, 26, 20);
+        ctx.fillStyle = "#a855f7"; ctx.fillRect(ex - 28, ey - 5, 14, 10); ctx.fillRect(ex + 14, ey - 5, 14, 10);
+        ctx.fillStyle = "#f5d0fe"; ctx.fillRect(ex - 24, ey - 2, 5, 4); ctx.fillRect(ex + 18, ey - 2, 5, 4);
+      }
+      if (vb.cutFlash > 0) { ctx.fillStyle = `rgba(245, 208, 254, ${vb.cutFlash * 0.85})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+      ctx.restore();
+      if (T >= 7.45) {
+        const a = Math.min(1, (T - 7.45) / 0.4);
+        ctx.save(); ctx.globalAlpha = a;
+        const cx = Math.round(V_WIDTH / 2), cy = 70;
+        ctx.font = "bold 26px monospace"; ctx.textAlign = "center";
+        ctx.fillStyle = "#000000"; ctx.fillText("VOID-BORN", cx + 2, cy + 2);
+        ctx.fillStyle = "#ef4444"; ctx.fillText("VOID-BORN", cx - 1, cy - 1); ctx.fillText("VOID-BORN", cx + 1, cy - 1);
+        ctx.fillStyle = "#c084fc"; ctx.fillText("VOID-BORN", cx, cy);
+        ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("THE DARK MATTER CLAIMS ANOTHER HOST", cx, cy + 18);
+        ctx.restore();
+      }
+      if (bzState.ready && Math.floor(t / 400) % 2 === 0) {
+        ctx.save(); ctx.fillStyle = "#facc15"; ctx.font = "bold 8.5px monospace"; ctx.textAlign = "center";
+        ctx.fillText("[ TAP SCREEN OR PRESS ANY KEY FOR MISSION REPORT ]", Math.round(V_WIDTH / 2), V_HEIGHT - 16);
+        ctx.restore();
+      }
+      return;
+    }
+
+    const Z = vbZoom(T), fx = bzVictim.x, fy = bzVictim.y - 25;
+    ctx.save();
+    ctx.translate(fx, fy); ctx.scale(Z, Z); ctx.translate(-fx, -fy);
+    drawDynamicPlanetBackdrop();
+    for (let pd of bzPuddle) { ctx.fillStyle = pd.color; ctx.fillRect(Math.round(pd.x), Math.round(pd.y), Math.round(pd.w), 2); }
+    for (let g of bzGibs) {
+      const gx = Math.round(g.x - g.w / 2), gy = Math.round(g.y - g.h);
+      ctx.fillStyle = g.color1; ctx.fillRect(gx, gy, Math.ceil(g.w), Math.ceil(g.h));
+      ctx.fillStyle = g.color2; ctx.fillRect(gx, gy, Math.max(1, Math.round(g.w * 0.4)), Math.max(1, Math.round(g.h * 0.4)));
+    }
+
+    const vx = bzVictim.x, vy = bzVictim.y;
+    if (T < 3.6) {
+      // the pilot being eaten: bones show through as the flesh goes
+      const fl = vb.flesh;
+      if (bzVictim.state === 'STRUGGLING' && fl < 1) drawVoidSkeleton(vx, vy, CHAR_SCALE, 1, { struggle: true, alpha: Math.min(1, 1.1 - fl), jitter: 0.6 });
+      ctx.save();
+      ctx.globalAlpha = bzVictim.state === 'STRUGGLING' ? 0.12 + 0.88 * fl : 1;
+      drawExactSpaceman(vx, vy, CHAR_SCALE, bzVictim.state, t);
+      if (bzVictim.state === 'STRUGGLING') drawStrugglingHelmet(vx, vy, CHAR_SCALE);
+      ctx.restore();
+      if (bzVictim.state === 'STRUGGLING') {
+        // black dark-matter veins spreading over the suit
+        const n = Math.round((1 - fl) * 34 + Math.min(1, (T - 1.0) / 0.4) * 6);
+        for (let i = 0; i < n; i++) {
+          ctx.fillStyle = i % 3 === 0 ? "#a855f7" : "#0c0a09";
+          ctx.fillRect(Math.round(vx + Math.sin(i * 12.99) * 6), Math.round(vy - 3 - Math.abs(Math.sin(i * 7.23)) * 34), 2, i % 4 ? 1 : 2);
+        }
+        // tendrils from the maw into the visor and chest
+        const m = vbMaw();
+        [[vx + 2, vy - 21 * CHAR_SCALE], [vx + 3, vy - 12 * CHAR_SCALE], [vx - 1, vy - 16 * CHAR_SCALE]].forEach(([tx2, ty2], i) => {
+          for (let s2 = 0; s2 <= 14; s2++) {
+            const u = s2 / 14, wob = Math.sin(u * 9 + T * 14 + i * 2) * 3 * Math.sin(u * Math.PI);
+            const px = m.x + (tx2 - m.x) * u, py = m.y + (ty2 - m.y) * u + wob;
+            ctx.fillStyle = s2 % 3 === 0 ? "#c084fc" : "#1c1917";
+            ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 3, 3);
+          }
+        });
+        if (bzAttacker.latched) drawBerzerkArmThroughVictim(bzAttacker.x, bzAttacker.y, vx, vy, t, 1.6);
+      }
+    } else if (vb.lurch <= 0) {
+      drawVoidSkeleton(vx, vy, CHAR_SCALE, vb.k, { eyes: vb.eyes, jitter: vb.twitch > 0 ? 2.2 : 0 });
+    }
+    // wisps rising off the bones
+    if (vb.eyes > 0 && vb.lurch <= 0) for (const w of vbWisps) { ctx.globalAlpha = Math.min(1, w.life * 2); ctx.fillStyle = w.col; ctx.fillRect(Math.round(vx + w.ox * CHAR_SCALE), Math.round(vy + w.oy * CHAR_SCALE - w.rise), 1, 1); }
+    ctx.globalAlpha = 1;
+    for (const q of vbStream) { ctx.globalAlpha = Math.min(1, q.life * 2.5); ctx.fillStyle = q.col; ctx.fillRect(Math.round(q.x), Math.round(q.y), 2, 2); }
+    ctx.globalAlpha = 1;
+    for (let b of bzBlood) { ctx.fillStyle = b.color; ctx.fillRect(Math.round(b.x), Math.round(b.y), Math.round(b.sz), Math.round(b.sz)); }
+    if (vb.helmet) vbDrawHelmet(vb.helmet);
+    for (const a of vbAsh) { ctx.globalAlpha = Math.min(1, a.life * 1.5); ctx.fillStyle = a.col; ctx.fillRect(Math.round(a.x), Math.round(a.y), 2, 2); }
+    ctx.globalAlpha = 1;
+
+    // the berzerker, swelling and glowing as it feeds
+    if (vb.botAlpha > 0.01) {
+      ctx.save(); ctx.globalAlpha = vb.botAlpha;
+      const glow = Math.min(1, (vb.botScale - 1.6) / 0.5);
+      if (glow > 0.05) {
+        ctx.fillStyle = `rgba(192, 132, 252, ${0.22 * glow})`;
+        ctx.beginPath(); ctx.ellipse(bzAttacker.x, GROUND_Y - 14 * vb.botScale, 16 * vb.botScale, 20 * vb.botScale, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      drawBerzerkBotCutscene(bzAttacker.x, bzAttacker.y, vb.botScale, t, bzAttacker.latched);
+      ctx.restore();
+    }
+
+    // X-ray heartbeat pulse
+    if (vb.xray > 0 && T < 3.6) {
+      ctx.fillStyle = "rgba(12, 4, 28, 0.82)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      ctx.save(); ctx.globalAlpha = 0.35; drawBerzerkBotCutscene(bzAttacker.x, bzAttacker.y, vb.botScale, t, bzAttacker.latched); ctx.restore();   // dim silhouette behind
+      ctx.fillStyle = `rgba(165, 243, 252, ${0.18 * vb.flesh + 0.04})`;
+      ctx.beginPath(); ctx.ellipse(vx, vy - 12 * CHAR_SCALE, 9 * CHAR_SCALE, 14 * CHAR_SCALE, 0, 0, Math.PI * 2); ctx.fill();
+      drawVoidSkeleton(vx, vy, CHAR_SCALE, 1, { struggle: true, xray: true, alpha: 1 });
+    }
+    ctx.restore();   // end zoomed world
+
+    // the lurch: screen space, starting exactly where the zoomed skeleton stands
+    if (vb.lurch > 0) {
+      const e = vb.lurch, Z0 = vbZoom(6.4);
+      const sx0 = vx, sy0 = fy + (vy - fy) * Z0;
+      const sc = CHAR_SCALE * Z0 * (1 + 3.2 * e);
+      const lx = sx0 + (V_WIDTH / 2 - sx0) * e, ly = sy0 + 170 * e + Math.sin(e * Math.PI * 8) * 3 * e;
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.6 * e})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      drawVoidSkeleton(lx, ly, sc, 1, { eyes: 1, jitter: 0.5 });
+      for (const w of vbWisps) { ctx.globalAlpha = Math.min(1, w.life * 2); ctx.fillStyle = w.col; const sz = Math.max(2, Math.round(sc * 0.45)); ctx.fillRect(Math.round(lx + w.ox * sc), Math.round(ly + w.oy * sc - w.rise * (sc / CHAR_SCALE)), sz, sz); }
+      ctx.globalAlpha = 1;
+    }
+
+    if (bzState.flash > 0) { ctx.fillStyle = `rgba(${bzState.flashColor}, ${bzState.flash * 0.45})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    ctx.restore();
+  }
+
+  function updateBerzerkCutscene(dt) { return BZ_STYLE === 'voidborn' ? updateVoidBorn(dt) : updateBerzerkCutsceneClassic(dt); }
+  function renderBerzerkCutscene() { return BZ_STYLE === 'voidborn' ? renderVoidBorn() : renderBerzerkCutsceneClassic(); }
+  window.__vb = { vb, state: bzState, playing: () => isBerzerkCutscenePlaying, trigger: () => triggerBerzerkDeathCutscene() };
+
   function drawBerzerkBotCutscene(x, y, scale, t, isLatched) {
     ctx.save();
     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
@@ -16194,7 +17030,7 @@ requestAnimationFrame(gameLoop);
     ctx.restore();
   }
 
-  function renderFrostCutscene() {
+  function renderFrostCutsceneClassic() {
     const t = Date.now();
     ctx.save();
     if (fzState.shake > 0) {
