@@ -118,7 +118,8 @@
   .starmap-title { font-size: 13px; font-weight: 900; color: #38bdf8; letter-spacing: 1.5px; }
   .starmap-sub { font-size: 8px; color: #94a3b8; display: block; margin-top: 1px; }
   .starmap-body { flex: 1; display: flex; position: relative; overflow: hidden; }
-  #starmap-canvas { flex: 1; height: 100%; cursor: crosshair; touch-action: none; }
+  #starmap-canvas { flex: 1 1 0; min-width: 0; width: 0; height: 100%; cursor: crosshair; touch-action: none; }
+  @media (min-width: 1000px) { .starmap-frame { max-width: min(1400px, 94vw); } }
   .starmap-sidebar { 
     width: clamp(210px, 34%, 270px); 
     background: rgba(11, 19, 41, 0.96); 
@@ -15564,6 +15565,7 @@ function toggleStarMap(open) {
 }
 
 document.getElementById("starmap-close-btn").addEventListener("click", () => toggleStarMap(false));
+window.addEventListener("resize", () => { if (isMapOpen) { resizeMapCanvas(); renderMap(); } });
 document.getElementById("starmap-ship-btn").addEventListener("click", () => {
   mapCam.x = currentSector.x; mapCam.z = currentSector.z;
   selectedSector.sx = currentSector.x; selectedSector.sz = currentSector.z;
