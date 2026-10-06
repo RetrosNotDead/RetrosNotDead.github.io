@@ -11266,7 +11266,7 @@ function update(dt) {
             vz: (dz / dTot) * boltSpd,
             life: s.isBerzerk ? 2.5 : 1.8,
             isEnemy: true,
-            damage: s.isBerzerk ? 185 : (s.isFrost ? 16 : 13),
+            damage: s.isBerzerk ? 90 : (s.isFrost ? 13 : 10),
             isSurface: true,
             isBerzerk: !!s.isBerzerk,
             isFrost: !!s.isFrost
@@ -16045,6 +16045,10 @@ requestAnimationFrame(gameLoop);
   // 2. Main Trigger Hook
   const origTriggerGameOver = window.triggerGameOver;
   window.triggerGameOver = function(title, desc, color) {
+    // A death cutscene is already rolling: ignore any extra hits that land in the same frame
+    // (a sentinel burst used to pop the mission report open underneath the cutscene, and tapping
+    // through it restarted the run mid-cutscene - wrong backdrop, HUD and flight buttons back on).
+    if (isSurfaceCutscenePlaying || isBerzerkCutscenePlaying || isFrostCutscenePlaying) return;
     if (title === "SUIT COMPROMISED") {
       // Don't play if it's a Red Planet / Dark Matter (those ones don't have standard sentinels)
       const isRedPlanet = landedPlanet && landedPlanet.ore && (landedPlanet.ore.name === "Dark Matter" || landedPlanet.ore.color === "#f43f5e");
@@ -18108,7 +18112,7 @@ requestAnimationFrame(gameLoop);
             laserBolts.push({
               x: s.x, y: s.isBerzerk ? -6 : s.y, z: s.z,
               vx: (dx / dTot) * boltSpd, vy: (dy / dTot) * boltSpd, vz: (dz / dTot) * boltSpd,
-              life: s.isBerzerk ? 2.5 : 1.8, isEnemy: true, damage: s.isBerzerk ? 185 : (s.isFrost ? 16 : 13), isSurface: true, isBerzerk: !!s.isBerzerk, isFrost: !!s.isFrost
+              life: s.isBerzerk ? 2.5 : 1.8, isEnemy: true, damage: s.isBerzerk ? 90 : (s.isFrost ? 13 : 10), isSurface: true, isBerzerk: !!s.isBerzerk, isFrost: !!s.isFrost
             });
           }
         }
@@ -23012,7 +23016,20 @@ requestAnimationFrame(gameLoop);
     berzerk: { charge: 0.95, shots: 1, gap: 0,    cool: [2.6, 3.6] }
   };
   // squad rhythm: an assault wave, then a lull where nobody starts a new attack
-  const G = { phase: 'lull', t: 1.2 };
+  const G = { phase: 'lull', t: 1.2, bzGap: 1.5 };
+  // Dark Matter worlds: only 5-6 berzerkers, and they fire strictly one at a time
+  const prevLand = window.landOnPlanet;
+  window.landOnPlanet = function(planet) {
+    const r = prevLand.apply(this, arguments);
+    try {
+      if (planet && planet.ore && planet.ore.name === "Dark Matter" && surfaceSentinels.length > 6) {
+        const keep = 5 + (Math.random() < 0.5 ? 1 : 0);
+        surfaceSentinels.splice(keep);
+      }
+      G.bzGap = 1.5;
+    } catch (e) {}
+    return r;
+  };
   const rr = (a, b) => a + Math.random() * (b - a);
   const kind = s => s.isBerzerk ? P.berzerk : (s.isFrost ? P.frost : P.normal);
   function st(s) { return s.__atk || (s.__atk = { phase: 'idle', t: rr(0.4, 2.5), shots: 0, armed: false }); }
@@ -23025,13 +23042,19 @@ requestAnimationFrame(gameLoop);
     let attackers = 0;
     G.t -= d;
     if (G.t <= 0) { if (G.phase === 'lull') { G.phase = 'assault'; G.t = rr(1.8, 2.6); } else { G.phase = 'lull'; G.t = rr(1.6, 2.6); } }
-    for (const s of surfaceSentinels) { const A = st(s); if (A.phase === 'charge' || A.phase === 'burst') attackers++; }
+    let bzBusy = false;
+    for (const s of surfaceSentinels) { const A = st(s); if (A.phase === 'charge' || A.phase === 'burst') { if (s.isBerzerk) bzBusy = true; else attackers++; } }
+    G.bzGap -= d;
     // ---- before the base AI runs: decide who may fire this frame ----
     for (const s of surfaceSentinels) {
       const A = st(s), k = kind(s);
       if (!s.alert) { if (A.phase !== 'idle') { A.phase = 'idle'; A.t = rr(0.3, 1.2); } }
       A.t -= d;
-      if (A.phase === 'idle' && s.alert && A.t <= 0) {
+      if (A.phase === 'idle' && s.alert && A.t <= 0 && s.isBerzerk) {
+        // berzerkers alternate: one fires, a breather, then the next one - hard, but you can dodge
+        if (!bzBusy && G.bzGap <= 0) { A.phase = 'charge'; A.t = k.charge; A.shots = k.shots; bzBusy = true; G.bzGap = 0.5 + Math.random() * 0.4 + k.charge; }
+        else A.t = rr(0.15, 0.4);
+      } else if (A.phase === 'idle' && s.alert && A.t <= 0) {
         if (G.phase === 'assault' && attackers < MAX_ATTACKERS) { A.phase = 'charge'; A.t = k.charge; A.shots = k.shots; attackers++; }
         else A.t = rr(0.2, 0.6);             // queue: try again shortly
       }
@@ -23049,7 +23072,8 @@ requestAnimationFrame(gameLoop);
           if (A.shots > 0) A.t = k.gap;
           else { A.phase = 'idle'; A.t = rr(k.cool[0], k.cool[1]) * (s.provoked > 0 ? 0.8 : 1); }
         } else if (!A.armed && s.reload < 98) {                // provoked (hit by you): snap round and return fire fast
-          if (A.phase === 'idle') { A.phase = 'charge'; A.t = 0.22; A.shots = k.shots; }
+          if (A.phase === 'idle' && !s.isBerzerk) { A.phase = 'charge'; A.t = 0.22; A.shots = k.shots; }
+          else if (A.phase === 'idle' && s.isBerzerk) A.t = Math.min(A.t, 0.1);   // jumps the queue, still waits its turn
         }
       }
     } catch (e) {}
