@@ -6048,6 +6048,7 @@ function burstRifleTick(dt) {
   const endBurst = rifleState.round % 3 === 0;
   rifleState.timer = endBurst ? RIFLE.burstGap : RIFLE.roundGap;
   rifleState.flash = 1; rifleState.kick = 1;
+  rifleState.heat = Math.min(1, (rifleState.heat || 0) + 0.045);   // barrel heat: sustained fire makes the tip smoke
   rifleShotSfx(endBurst);
   rifleNoiseAlert();
   vibrateGamepad(45, 0.35, 0.45);
@@ -12869,7 +12870,8 @@ function drawRifleFP(band, L, now) {
   band(L * 0.46, L * 0.475, -0.06, 0.06, "#ef4444", S);
   // vented shroud, vents glow on each shot
   band(L * 0.55, L * 0.88, -0.42, 0.42, "#334155", S * 0.9); band(L * 0.55, L * 0.88, -0.5, -0.42, "#0f172a", S * 0.9); band(L * 0.55, L * 0.88, 0.38, 0.5, "#64748b", S * 0.9);
-  const vg = rifleState.flash > 0 ? hhMix("#020617", "#fb923c", rifleState.flash) : "#020617";
+  const flashBlue = rifleState.round % 2 === 1;   // rounds alternate: neon blue flash, white flash
+  const vg = rifleState.flash > 0 ? hhMix("#020617", flashBlue ? "#22d3ee" : "#ffffff", rifleState.flash) : "#020617";
   for (let i = 0; i < 3; i++) { const x0 = L * (0.59 + i * 0.09); band(x0, x0 + 2.5, -0.3, 0.3, vg, S * 0.9); }
   // muzzle brake
   band(L * 0.88, L, -0.36, 0.36, "#475569", S * 0.75); band(L * 0.88, L, -0.5, -0.36, "#1f2937", S * 0.75);
@@ -12877,26 +12879,39 @@ function drawRifleFP(band, L, now) {
   band(L - 1.5, L + 0.5, -0.22, 0.22, "#0b0b0d", S * 0.75);
   // muzzle flash
   if (rifleState.flash > 0.05) {
-    const f = rifleState.flash, r = (13 + Math.random() * 8) * f;
+    const f = rifleState.flash, r = (16 + Math.random() * 9) * (0.4 + 0.6 * f), mx = L + 1;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(mx - 0.5, -200, 400, 400); ctx.clip();   // nothing draws back over the barrel
     ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = `rgba(251, 146, 60, ${0.9 * f})`;
-    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.random() * 0.3, rr = r * (k % 2 ? 0.5 : 1.25) * (k === 0 ? 1.6 : 1); ctx.beginPath(); ctx.moveTo(L + 1, -2.5); ctx.lineTo(L + 1 + Math.cos(a) * rr, Math.sin(a) * rr); ctx.lineTo(L + 1, 2.5); ctx.fill(); }
-    ctx.fillStyle = `rgba(254, 243, 199, ${f})`; ctx.beginPath(); ctx.arc(L + 1, 0, r * 0.5, 0, Math.PI * 2); ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
+    // soft glow halo, pushed out in front of the nozzle
+    ctx.fillStyle = flashBlue ? `rgba(34, 211, 238, ${0.35 * f})` : `rgba(255, 255, 255, ${0.3 * f})`;
+    ctx.beginPath(); ctx.ellipse(mx + r * 0.7, 0, r * 1.1, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    // spikes fan forward only (within ~65 degrees of the barrel line), long one straight ahead
+    ctx.fillStyle = flashBlue ? `rgba(34, 211, 238, ${0.95 * f})` : `rgba(240, 249, 255, ${0.95 * f})`;
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 6 - 0.5) * 2.3 + (Math.random() - 0.5) * 0.2;
+      const rr = r * (k === 3 ? 2.0 : (k % 2 ? 0.6 : 1.15));
+      ctx.beginPath(); ctx.moveTo(mx, -2.2); ctx.lineTo(mx + Math.cos(a) * rr, Math.sin(a) * rr); ctx.lineTo(mx, 2.2); ctx.fill();
+    }
+    // hot core sits just past the muzzle
+    ctx.fillStyle = flashBlue ? `rgba(165, 243, 252, ${f})` : `rgba(255, 255, 255, ${f})`;
+    ctx.beginPath(); ctx.ellipse(mx + r * 0.3, 0, r * 0.5, r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 }
 
 function drawHandheldRig() {
   const now = performance.now();
   let dt = HH.t ? (now - HH.t) / 1000 : 0; HH.t = now;
-  if (now - HH.lastDraw > 400) { HH.raise = 0; HH.lastYaw = null; HH.steam.length = 0; HH.heat = 0; }   // just picked up: swing it up
+  if (!HH.smoke) HH.smoke = [];
+  if (now - HH.lastDraw > 400) { HH.raise = 0; HH.lastYaw = null; HH.steam.length = 0; HH.heat = 0; HH.smoke.length = 0; }   // just picked up: swing it up
   HH.lastDraw = now;
   dt = Math.min(0.05, Math.max(0, dt));
   const W = V_WIDTH, H = V_HEIGHT;
   const src = cabin || playerFoot;
   const active = !!miningLaserState.active;
   const weap = (cabin && cabin.wreck) ? 'laser' : fieldWeapon;
-  rifleState.flash = Math.max(0, rifleState.flash - dt * 16); rifleState.kick = Math.max(0, rifleState.kick - dt * 10);
+  rifleState.flash = Math.max(0, rifleState.flash - dt * 9); rifleState.kick = Math.max(0, rifleState.kick - dt * 10);
 
   // --- motion: walk bob, turn lag, breathing ---
   let spd = 0, yawRate = 0, pitchRate = 0;
@@ -12950,6 +12965,19 @@ function drawHandheldRig() {
   if (!active && HH.wasActive && HH.heat > 0.12) for (let i = 0; i < 6 + HH.heat * 14; i++) HH.steam.push({ x: vent[0], y: vent[1], vx: -6 - Math.random() * 14, vy: -10 - Math.random() * 18, life: 0, max: 0.7 + Math.random() * 0.8, s: 2 + Math.floor(Math.random() * 3) });
   if (!active && HH.heat > 0.25 && Math.random() < dt * 14 * HH.heat) HH.steam.push({ x: vent[0], y: vent[1], vx: -3 - Math.random() * 6, vy: -8 - Math.random() * 10, life: 0, max: 0.6 + Math.random() * 0.6, s: 2 });
   HH.wasActive = active;
+  // pulse rifle cool-down smoke: curls off the muzzle after sustained fire, thins out as the barrel cools
+  try {
+    const rifleUp = weap === 'rifle', firingRifle = rifleUp && active;
+    rifleState.heat = Math.max(0, (rifleState.heat || 0) - dt * (firingRifle ? 0.05 : 0.2));
+    const rh = rifleState.heat || 0;
+    if (rifleUp && rh > 0.22 && rifleState.flash < 0.25) {
+      const rate = (firingRifle ? 5 : 22) * rh;
+      if (Math.random() < dt * rate) HH.smoke.push({ x: tip[0] + (Math.random() - 0.5) * 2, y: tip[1] - 1, vx: (Math.random() - 0.5) * 6, vy: -9 - Math.random() * 9, life: 0, max: 1.1 + Math.random() * 1.1, s: 1.2 + Math.random() * 1.2, w: Math.random() * 6.28 });
+    }
+    for (const q of HH.smoke) { q.life += dt; q.w += dt * 3; q.x += (q.vx + Math.sin(q.w) * 5) * dt; q.y += q.vy * dt; q.vy *= 0.985; }
+    HH.smoke = HH.smoke.filter(q => q.life < q.max);
+    if (HH.smoke.length > 60) HH.smoke.splice(0, HH.smoke.length - 60);
+  } catch (e) {}
   for (const q of HH.steam) { q.life += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.97; }
   HH.steam = HH.steam.filter(q => q.life < q.max);
   if (HH.steam.length > 80) HH.steam.splice(0, HH.steam.length - 80);
@@ -13015,6 +13043,12 @@ function drawHandheldRig() {
   }
   ctx.restore();
 
+  // rifle smoke wisps (screen space): soft grey puffs that swell and fade as they rise
+  for (const q of HH.smoke) {
+    const k = q.life / q.max, a = 0.32 * (1 - k) * Math.min(1, q.life * 6);
+    ctx.fillStyle = `rgba(203, 213, 225, ${a})`;
+    ctx.beginPath(); ctx.arc(q.x, q.y, q.s + k * 6, 0, Math.PI * 2); ctx.fill();
+  }
   // steam puffs (screen space)
   for (const q of HH.steam) { const k = q.life / q.max; ctx.fillStyle = `rgba(226, 232, 240, ${0.55 * (1 - k)})`; const sz = q.s + Math.floor(k * 3); ctx.fillRect(Math.round(q.x), Math.round(q.y), sz, sz); }
 }
@@ -19571,7 +19605,7 @@ requestAnimationFrame(gameLoop);
 
   const LASER = { z: 7.5 * T, x0: 5 * T, x1: 6 * T, period: 3.8 };
   const LASER2 = { z: 29.6 * T, x0: 9 * T, x1: 10 * T, period: 3.0, phase: 1.1 };   // guards the way into engineering - faster
-  const VENT2 = { x: 5.5 * T, z: 26.6 * T };                                         // cryo bay ceiling vent: wakes up with the power
+  const VENT2 = { x: 5.325 * T, z: 26.0 * T };   // cryo bay ceiling vent, right above where you stand to look into empty pod 07
   const REACTOR = { x0: 4.6 * T, x1: 6.4 * T, z0: 32.3 * T, z1: 33.9 * T };
   const LEVER = { x: 1 * T + 1.6, z: 33 * T };
   const PODS = [];      // cryo pods: [x0, x1, z0, z1, facing(+1 north wall pods face south, -1 face north), id]
@@ -20666,16 +20700,21 @@ requestAnimationFrame(gameLoop);
     const v2 = W.vent2, dV2 = Math.hypot(W.x - VENT2.x, W.z - VENT2.z);
     v2.t += dt;
     if (powered()) {
-      if (v2.state === 'idle' && dV2 < 7) { v2.state = 'arm'; v2.t = 0; blip('sawtooth', 1800, 600, 0.3, 0.05); try { cabinSfx('crackle'); } catch (e) {} }
+      // trigger: walk up to the empty pod 07 and look into it (no need to look up at the vent)
+      const podX = 5.325 * T, podZ = 25.25 * T + 2.45;
+      const pdx = podX - W.x, pdz = podZ - W.z, pd = Math.hypot(pdx, pdz) || 1;
+      const facingPod = (Math.sin(W.yaw) * pdx + Math.cos(W.yaw) * pdz) / pd > 0.55;
+      const atPod = pd < 6 || (pd < 19 && facingPod);   // a couple of steps back is enough - no need to press your face to the glass
+      if (v2.state === 'idle' && (atPod || dV2 < 7)) { v2.state = 'arm'; v2.t = 0; blip('sawtooth', 1800, 600, 0.3, 0.05); try { cabinSfx('crackle'); } catch (e) {} }
       else if (v2.state === 'arm' && v2.t > 0.45) { v2.state = 'drop'; v2.t = 0; blip('sawtooth', 500, 1500, 0.2, 0.08); }
       else if (v2.state === 'drop') {
         v2.y = CEIL + Math.min(1, v2.t / 0.22) * 10;
         if (v2.t >= 0.22) {
-          if (dV2 < 7.5) { W.deathCryo = true; return die('vent'); }
-          v2.state = 'miss'; v2.t = 0; blip('square', 1400, 300, 0.4, 0.07); addPopup("!!! IT CAME OUT OF THE POD!", "#f472b6"); screenShake = 0.25;
+          if (dV2 < 17) { W.deathCryo = true; return die('vent'); }   // it lunges: only backing off hard gets you clear
+          v2.state = 'miss'; v2.t = 0; blip('square', 1400, 300, 0.4, 0.07); addPopup("!!! IT CAME OUT OF THE VENT!", "#f472b6"); screenShake = 0.25;
         }
       } else if (v2.state === 'miss') { v2.y = v2.t < 0.3 ? CEIL + 10 + v2.t / 0.3 * 7 : -1 - (v2.t - 0.3) / 1.0 * 17; if (v2.t > 1.3) { v2.state = 'gone'; v2.t = 0; v2.y = CEIL; } }
-      else if (v2.state === 'gone' && v2.t > 10) v2.state = 'idle';
+      else if (v2.state === 'gone' && v2.t > 3) v2.state = 'idle';
     }
     // blast door
     const k = t % CRUSH.period, b = crushBottom(t), dC = Math.hypot(W.x - (CRUSH.x0 + CRUSH.x1) / 2, W.z - CRUSH.z);
@@ -23055,15 +23094,53 @@ requestAnimationFrame(gameLoop);
         if (!bzBusy && G.bzGap <= 0) { A.phase = 'charge'; A.t = k.charge; A.shots = k.shots; bzBusy = true; G.bzGap = 0.5 + Math.random() * 0.4 + k.charge; }
         else A.t = rr(0.15, 0.4);
       } else if (A.phase === 'idle' && s.alert && A.t <= 0) {
-        if (G.phase === 'assault' && attackers < MAX_ATTACKERS) { A.phase = 'charge'; A.t = k.charge; A.shots = k.shots; attackers++; }
+        if (A.retaliate) { A.phase = 'charge'; A.t = 0.3; A.shots = k.shots; attackers++; }
+        else if (G.phase === 'assault' && attackers < MAX_ATTACKERS) { A.phase = 'charge'; A.t = k.charge; A.shots = k.shots; attackers++; }
         else A.t = rr(0.2, 0.6);             // queue: try again shortly
       }
-      if (A.phase === 'charge' && A.t <= 0) { A.phase = 'burst'; A.t = 0; }
+      if (A.phase === 'charge' && A.t <= 0) { A.phase = 'burst'; A.t = 0; A.hurried = false; A.retaliate = false; }
       A.cd = (A.cd || 0) - d;              // hard per-sentinel refire floor, whatever else touches reload
       A.armed = A.phase === 'burst' && A.t <= 0 && A.cd <= 0;
       s.reload = A.armed ? 0 : 99;
     }
+    // ---- accuracy: track how you're moving, and stop fast bolts skipping through you ----
+    try {
+      if (d > 0) {
+        if (G.px !== undefined) {
+          const ivx = (playerFoot.x - G.px) / d, ivz = (playerFoot.z - G.pz) / d;
+          const ok = Math.hypot(ivx, ivz) < 200;            // ignore teleports / respawns
+          const k2 = Math.min(1, d * 8);
+          G.pvx += ((ok ? ivx : 0) - G.pvx) * k2; G.pvz += ((ok ? ivz : 0) - G.pvz) * k2;
+        } else { G.pvx = 0; G.pvz = 0; }
+        G.px = playerFoot.x; G.pz = playerFoot.z;
+      }
+      // swept hit test: at low frame rates a 360-speed bolt could hop clean over the 4-unit hitbox
+      for (const b of laserBolts) {
+        if (!b.isSurface || !b.isEnemy) continue;
+        const sx = b.vx * d, sz = b.vz * d, L2 = sx * sx + sz * sz;
+        if (L2 < 1) continue;
+        const u = Math.max(0, Math.min(1, ((playerFoot.x - b.x) * sx + (playerFoot.z - b.z) * sz) / L2));
+        if (u > 0 && Math.hypot(b.x + sx * u - playerFoot.x, b.z + sz * u - playerFoot.z) < 3.6) {
+          // park it on the closest point (minus this frame's step, which the base update re-applies)
+          b.x += sx * (u - 1); b.y += b.vy * d * (u - 1); b.z += sz * (u - 1);
+        }
+      }
+    } catch (e) {}
     const r = prevUpdate.apply(this, arguments);
+    // ---- partial lead: new shots aim a little ahead of where you're heading (still dodgeable) ----
+    try {
+      const LEAD = 0.65;                                     // 0 = aim at you, 1 = perfect lead
+      for (const b of laserBolts) {
+        if (!b.isSurface || !b.isEnemy || b.__aimed) continue;
+        b.__aimed = true;
+        const spd = Math.hypot(b.vx, b.vy, b.vz) || 1;
+        const tx = playerFoot.x - b.x, tz = playerFoot.z - b.z, ty = (playerFoot.y - (b.isBerzerk ? 6 : 3)) - b.y;
+        const tt = Math.hypot(tx, tz) / spd;
+        const ax = tx + (G.pvx || 0) * tt * LEAD, az = tz + (G.pvz || 0) * tt * LEAD;
+        const dd = Math.hypot(ax, ty, az) || 1;
+        b.vx = ax / dd * spd; b.vy = ty / dd * spd; b.vz = az / dd * spd;
+      }
+    } catch (e) {}
     // ---- after: see who actually fired / who just got shot ----
     try {
       for (const s of surfaceSentinels) {
@@ -23076,9 +23153,14 @@ requestAnimationFrame(gameLoop);
           A.shots--;
           if (A.shots > 0) A.t = k.gap;
           else { A.phase = 'idle'; A.t = rr(k.cool[0], k.cool[1]) * (s.provoked > 0 ? 0.8 : 1); }
-        } else if (!A.armed && s.reload < 98) {                // provoked (hit by you): snap round and return fire fast
-          if (A.phase === 'idle' && !s.isBerzerk) { A.phase = 'charge'; A.t = 0.22; A.shots = k.shots; }
-          else if (A.phase === 'idle' && s.isBerzerk) A.t = Math.min(A.t, 0.1);   // jumps the queue, still waits its turn
+        } else if (!A.armed && s.reload < 98) {                // provoked (hit by you)
+          // Being hit only hurries its NEXT burst, once per cooldown. It used to start a fresh
+          // burst on every hit, so a sentinel you kept shooting answered every hit = rapid fire.
+          if (A.phase === 'idle' && !A.hurried) {
+            A.hurried = true;
+            A.t = Math.min(A.t, s.isBerzerk ? 0.1 : rr(1.1, 1.5));
+            if (!s.isBerzerk) A.retaliate = true;              // may skip the squad queue, not the cooldown
+          }
         }
       }
     } catch (e) {}
