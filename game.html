@@ -22176,11 +22176,26 @@ requestAnimationFrame(gameLoop);
 
   // ---------- wildlife ----------
   let lifeKey = "", critters = [], flocks = [], lastT = 0;
+  // each planet type has its own creature (Home World keeps its little crabs)
+  const SPECIES_COLS = {
+    roller:  [["#a8a29e", "#57534e", "#fbbf24"], ["#b45309", "#78350f", "#fde68a"], ["#94a3b8", "#334155", "#f87171"], ["#d6d3d1", "#78716c", "#38bdf8"]],
+    jelly:   [["#e879f9", "#a21caf", "#fdf4ff"], ["#c084fc", "#7e22ce", "#f3e8ff"], ["#f472b6", "#be185d", "#fce7f3"], ["#a78bfa", "#5b21b6", "#ede9fe"]],   // glo jellies (plasma)
+    blob:    [["#38bdf8", "#0369a1", "#f0f9ff"], ["#7dd3fc", "#0284c7", "#ffffff"], ["#94a3b8", "#334155", "#f8fafc"], ["#22d3ee", "#0e7490", "#ecfeff"]],   // titanium blobs
+    stalker: [["#1f1f23", "#3f0d12", "#ef4444"], ["#18181b", "#27272a", "#a855f7"], ["#292524", "#450a0a", "#f97316"], ["#0c0a09", "#1e1b4b", "#22d3ee"]],
+    waddler: [["#a5f3fc", "#0f766e", "#67e8f9"], ["#e9d5ff", "#4c1d95", "#f0abfc"], ["#bfdbfe", "#1e3a8a", "#a3e635"], ["#fbcfe8", "#155e75", "#fde047"]]   // [icy belly, body, glow]
+  };
+  function speciesFor(pl) {
+    if (!pl || pl.isHomeWorld || pl.name === "Home World") return 'crab';
+    if (isCryo(pl)) return 'waddler';
+    const ore = pl.ore && pl.ore.name;
+    return { "Iron": 'roller', "Titanium": 'blob', "Plasma Crystal": 'jelly', "Dark Matter": 'stalker' }[ore] || 'crab';
+  }
   function spawnGroup(pl, r, ang, dist) {
-    const col = CRITTER_COLS[Math.floor(r() * CRITTER_COLS.length)];
+    const sp = speciesFor(pl);
+    const col = sp === 'crab' ? CRITTER_COLS[Math.floor(r() * CRITTER_COLS.length)] : SPECIES_COLS[sp][Math.floor(hashStr(planetKey(pl)) % SPECIES_COLS[sp].length)];
     const cryo = isCryo(pl), gx = playerFoot.x + Math.cos(ang) * dist, gz = playerFoot.z + Math.sin(ang) * dist;
     const n = 3 + Math.floor(r() * 3), g = [];
-    for (let i = 0; i < n; i++) g.push({ x: gx + (r() - 0.5) * 30, z: gz + (r() - 0.5) * 30, h: r() * Math.PI * 2, spd: 0, turnT: r() * 2, flee: 0, ph: r() * 10, col: cryo ? ["#f1f5f9", "#94a3b8"] : col, size: 0.8 + r() * 0.4 });
+    for (let i = 0; i < n; i++) g.push({ x: gx + (r() - 0.5) * 30, z: gz + (r() - 0.5) * 30, h: r() * Math.PI * 2, spd: 0, turnT: r() * 2, flee: 0, ph: r() * 10, col: (cryo && sp === 'crab') ? ["#f1f5f9", "#94a3b8"] : col, size: 0.8 + r() * 0.4, sp, alt: 7 + r() * 4 });
     return g;
   }
   function buildLife(pl) {
@@ -22191,7 +22206,8 @@ requestAnimationFrame(gameLoop);
     const nf = 1 + (r() < 0.6 ? 1 : 0);
     for (let k = 0; k < nf; k++) {
       const col = isCryo(pl) ? ["#e0f2fe", "#64748b"] : CRITTER_COLS[Math.floor(r() * CRITTER_COLS.length)];
-      const f = { cx: playerFoot.x + (r() - 0.5) * 500, cz: playerFoot.z + (r() - 0.5) * 500, rad: 70 + r() * 70, alt: -70 - r() * 30, spin: (r() < 0.5 ? 1 : -1) * (0.25 + r() * 0.2), scare: 0, col, birds: [] };
+      const sp = speciesFor(pl);
+      const f = { kind: sp === 'stalker' ? 'bat' : (sp === 'jelly' ? 'moth' : 'bird'), cx: playerFoot.x + (r() - 0.5) * 500, cz: playerFoot.z + (r() - 0.5) * 500, rad: 70 + r() * 70, alt: -70 - r() * 30, spin: (r() < 0.5 ? 1 : -1) * (0.25 + r() * 0.2), scare: 0, col, birds: [] };
       for (let i = 0; i < 5 + Math.floor(r() * 3); i++) f.birds.push({ a: i / 6 * Math.PI * 2 + r() * 0.4, ro: (r() - 0.5) * 24, yo: (r() - 0.5) * 10, ph: r() * 6 });
       flocks.push(f);
     }
@@ -22240,6 +22256,113 @@ requestAnimationFrame(gameLoop);
     lastT += dt;
   }
   function drawCritter(c, proj) {
+    const sp = c.sp || 'crab';
+    if (sp === 'crab') return drawCrab(c, proj);
+    const cx = Math.round(proj.x), cy = Math.round(proj.y), u = Math.max(0.7, proj.scale * c.size);
+    const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(cx + x * u), Math.round(cy + y * u), Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u))); };
+    const sx = Math.cos(c.h + playerFoot.yaw) >= 0 ? 1 : -1;
+    const fast = c.spd > 20, [A, B, C] = c.col;
+    const shadow = (w) => { ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(Math.round(cx - w / 2 * u), Math.round(cy - 0.4 * u), Math.round(w * u), Math.max(1, Math.round(1.1 * u))); };
+    if (sp === 'roller') {
+      // armoured rock-roller: plods about on stubby legs, curls into a rolling ball when spooked
+      shadow(7);
+      if (fast) {
+        const rot = Math.floor(c.ph * 1.5) % 4;
+        R(-2.5, -6, 5, 6, A); R(-3.5, -5, 7, 4, A); R(-2.5, -6, 5, 1, C === "#fbbf24" ? "#d6d3d1" : A);
+        for (let i = 0; i < 3; i++) { const yy = -5 + ((i + rot) % 4) * 1.3; if (yy < -0.5) R(-3.5, yy, 7, 0.6, B); }
+        R(-1.5, -5.5, 1, 1, "#ffffff");
+      } else {
+        const leg = Math.sin(c.ph * 2) > 0 ? 0.4 : 0;
+        R(-3, -1.2 + leg, 1, 1.2 - leg, B); R(-0.5, -1.2, 1, 1.2, B); R(2, -1.2 + (0.4 - leg), 1, 1.2 - (0.4 - leg), B);
+        R(-4, -4, 8, 3, A); R(-3, -5, 6, 1, A); R(-2, -5.6, 4, 0.6, A);
+        R(-1.6, -5, 0.6, 4, B); R(0.6, -5, 0.6, 4, B);                       // armour bands
+        const hx = sx > 0 ? 3.6 : -5.2;
+        R(hx, -3.2, 1.6, 1.8, B); R(hx + (sx > 0 ? 1 : 0), -2.8, 0.5, 0.5, C);   // snout + eye
+      }
+    } else if (sp === 'jelly') {
+      // floating sky-jelly: drifts at head height, bell pulsing, tentacles trailing; rises when startled
+      shadow(5);
+      const lift = c.alt + Math.sin(c.ph * 0.7) * 1.4 + (c.flee > 0 ? 6 : 0);
+      const pulse = Math.sin(c.ph * 1.6) * 0.5;
+      const y0 = -lift;
+      // glo jelly: soft plasma glow around the bell
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 + 0.2 * Math.sin(c.ph * 1.6);
+      { const gx = cx, gy = cy + (y0 - 1) * u, gr = 7 * u, rg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+        rg.addColorStop(0, A); rg.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = rg; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); }
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.85;
+      for (let i = 0; i < 4; i++) { const tx = -2.2 + i * 1.4, w = Math.sin(c.ph * 2 + i) * 0.6;
+        R(tx + w * 0.3, y0 + 0.5, 0.5, 1.4, B); R(tx + w, y0 + 1.9, 0.5, 1.4, B); R(tx + w * 1.4, y0 + 3.3, 0.5, 1.1, B); }
+      R(-3 - pulse, y0 - 2.2, 6 + pulse * 2, 2.6, A); R(-2.2 - pulse * 0.6, y0 - 3.2, 4.4 + pulse * 1.2, 1, A); R(-3 - pulse, y0 + 0.2, 6 + pulse * 2, 0.6, B);
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(c.ph * 3); R(-1, y0 - 1.8, 2, 1.2, C);
+      ctx.restore();
+    } else if (sp === 'blob') {
+      // glowing plasma slime: hops along, squashes on landing
+      const hopK = Math.abs(Math.sin(c.ph * (fast ? 1.1 : 0.7)));
+      const hop = hopK * (fast ? 5 : 2.5), squash = hopK < 0.2 ? 0.7 : 1;
+      shadow(5 - hop * 0.3);
+      const w = 5 / squash * (squash < 1 ? 1.1 : 1), h = 4 * squash, y0 = -hop;
+      R(-w / 2, y0 - h, w, h, A); R(-w / 2 + 0.6, y0 - h - 0.8, w - 1.2, 0.8, A); R(-w / 2, y0 - 1, w, 1, B);
+      // specks of titanium suspended in the jelly body, glinting as it moves
+      const SPK = [[-1.6, 0.35], [0.9, 0.55], [-0.4, 0.75], [1.5, 0.3], [-1.9, 0.7], [0.2, 0.45]];
+      SPK.forEach((q, i) => { const glint = Math.sin(c.ph * 2 + i * 1.7) > 0.6;
+        R(q[0] * w / 5, y0 - h * q[1] - 0.25, 0.5, 0.5, glint ? "#ffffff" : (i % 2 ? "#cbd5e1" : "#94a3b8")); });
+      R(-w / 2 + 0.8, y0 - h + 0.4, 1, 1, C);                                  // shine
+      const ex = sx > 0 ? 0.4 : -1.8;
+      R(ex, y0 - h + 1.2, 0.7, 0.9, "#0b0b10"); R(ex + 1.3, y0 - h + 1.2, 0.7, 0.9, "#0b0b10");
+    } else if (sp === 'stalker') {
+      // dark-matter skitterer: low black body on spindly legs, glowing eyes
+      shadow(8);
+      const step = Math.sin(c.ph * 3) > 0 ? 1 : 0;
+      for (let i = 0; i < 3; i++) { const lx = -2.6 + i * 2.2, up = (i + step) % 2 ? 0.6 : 0;
+        R(lx - 1.4, -2.6 - up, 1.4, 0.5, B); R(lx - 1.6, -2.4 - up, 0.5, 2.4 + up, B);          // left-hand knee + shin
+        R(lx + 0.6, -2.6 - (0.6 - up), 1.4, 0.5, B); R(lx + 1.6, -2.4 - (0.6 - up), 0.5, 2.4 + (0.6 - up), B); }
+      R(-3, -3.6, 6, 1.8, A); R(-2, -4.2, 4, 0.6, A);
+      const ex = sx > 0 ? 1.4 : -2.6;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5; R(ex - 0.5, -4, 2.2, 1.4, C); ctx.restore();
+      R(ex, -3.6, 0.5, 0.5, C); R(ex + 0.8, -3.6, 0.5, 0.5, C); R(ex + 0.4, -3.0, 0.4, 0.4, C);
+    } else if (sp === 'waddler') {
+      // ice waddler: chubby alien puffball - one big glowing eye, antenna stalks with glowing tips,
+      // a see-through icy belly with a glowing core inside
+      const glowDot = (x, y, r, a) => { const gx = cx + x * u, gy = cy + y * u, gr = r * u, rg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+        rg.addColorStop(0, C); rg.addColorStop(1, "rgba(0,0,0,0)"); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; ctx.fillStyle = rg; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); ctx.restore(); };
+      const pulse = 0.6 + 0.4 * Math.sin(c.ph * 2.6 + c.size * 9);
+      if (fast) {
+        shadow(7);
+        R(-3.5, -2.6, 7, 2.4, B);                                                    // body flat on the ice
+        ctx.save(); ctx.globalAlpha = 0.55; R(-2.8, -1.6, 5.6, 1.4, A); ctx.restore();   // icy belly underneath
+        R(-0.4, -1.2, 0.8, 0.6, C); glowDot(0, -1, 2.2, 0.6 * pulse);
+        const hx = sx > 0 ? 3.0 : -5.0;
+        R(hx, -3.2, 2, 2, B); R(hx + (sx > 0 ? 0.9 : 0.1), -2.6, 1, 0.9, "#ffffff"); R(hx + (sx > 0 ? 1.3 : 0.3), -2.4, 0.4, 0.4, "#0b0b10");
+        glowDot(hx + 1, -2.2, 1.8, 0.5);
+        const bx = hx + (sx > 0 ? 0.2 : 1.6);                                        // antennae swept back
+        R(bx - sx * 1.2, -3.8, 1.2, 0.3, B); R(bx - sx * 2.2, -4.2, 1.2, 0.3, B);
+        R(bx - sx * 2.6, -4.4, 0.6, 0.6, C); glowDot(bx - sx * 2.3, -4.1, 1.4, 0.7);
+        ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.fillRect(Math.round(cx - sx * 5 * u), Math.round(cy - 0.6 * u), Math.max(1, Math.round(1.2 * u)), Math.max(1, Math.round(0.6 * u)));
+      } else {
+        shadow(5);
+        const sway = Math.sin(c.ph * 2.2) * 0.4, f = Math.sin(c.ph * 2.2) > 0;
+        R(-1.6, -0.6, 1.2, 0.6, f ? B : "#0b0b10"); R(0.4, -0.6, 1.2, 0.6, f ? "#0b0b10" : B);   // feet
+        R(-2.2 + sway, -5, 4.4, 4.4, B);                                             // body
+        ctx.save(); ctx.globalAlpha = 0.55; R(-1.5 + sway, -4.4, 3, 3.6, A); ctx.restore();   // see-through icy belly
+        ctx.save(); ctx.globalAlpha = 0.35; R(-1.2 + sway, -4.2, 0.6, 1.4, "#ffffff"); ctx.restore();   // frosty shine
+        R(-0.4 + sway, -2.9, 0.8, 0.8, C); glowDot(sway, -2.5, 2.4, 0.7 * pulse);  // glowing core inside
+        R(-2.8 + sway, -4.2, 0.6, 2, B); R(2.2 + sway, -4.2, 0.6, 2, B);           // flippers
+        R(-1.9 + sway, -7.2, 3.8, 2.4, B);                                           // big round head
+        const ex = (sx > 0 ? 0.25 : -0.25) + sway;                                   // ONE big eye
+        R(ex - 0.9, -6.8, 1.8, 1.5, "#ffffff"); R(ex - 0.5 + (sx > 0 ? 0.4 : 0), -6.4, 0.8, 0.8, C);
+        R(ex - 0.2 + (sx > 0 ? 0.4 : 0), -6.2, 0.4, 0.4, "#0b0b10");
+        glowDot(ex, -6, 2, 0.45);
+        // antenna stalks, bobbing with the waddle
+        const bob = Math.sin(c.ph * 2.2 + 1) * 0.35;
+        R(-1.3 + sway, -8.6, 0.35, 1.4, B); R(-1.5 + sway - bob, -9.6, 0.35, 1.1, B);
+        R(0.95 + sway, -8.6, 0.35, 1.4, B); R(1.15 + sway + bob, -9.6, 0.35, 1.1, B);
+        R(-1.75 + sway - bob, -10.3, 0.75, 0.75, C); R(1.0 + sway + bob, -10.3, 0.75, 0.75, C);
+        glowDot(-1.35 + sway - bob, -9.9, 1.5, 0.8 * pulse); glowDot(1.4 + sway + bob, -9.9, 1.5, 0.8 * pulse);
+      }
+    }
+  }
+  function drawCrab(c, proj) {
     const cx = Math.round(proj.x), cy = Math.round(proj.y), u = Math.max(0.7, proj.scale * 1.0 * c.size);
     const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(cx + x * u), Math.round(cy + y * u), Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u))); };
     const hop = c.spd > 20 ? Math.abs(Math.sin(c.ph)) * 2.2 : Math.abs(Math.sin(c.ph * 0.6)) * 0.4, leg = Math.sin(c.ph * 2) > 0 ? 1 : 0;
@@ -22256,6 +22379,22 @@ requestAnimationFrame(gameLoop);
     R(ex + 0.3, y0 - 5.6, 0.5, 1.6, c.col[1]); R(ex, y0 - 6.2, 1.1, 1, "#ffffff"); R(ex + (sx > 0 ? 0.6 : 0), y0 - 5.9, 0.5, 0.5, "#0b0b10");
   }
   function drawBird(f, b, proj) {
+    if (f.kind === 'bat' || f.kind === 'moth') {
+      const cx = Math.round(proj.x), cy = Math.round(proj.y), u = Math.max(0.8, proj.scale * 1.5);
+      const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(cx + x * u), Math.round(cy + y * u), Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u))); };
+      const up = Math.sin(b.ph * (f.kind === 'bat' ? 1.4 : 2)) > 0;
+      if (f.kind === 'bat') {
+        R(-0.8, -0.8, 1.6, 1.6, "#111114"); R(-0.6, -0.4, 0.4, 0.4, "#ef4444"); R(0.2, -0.4, 0.4, 0.4, "#ef4444");
+        if (up) { R(-4, -2, 3.2, 0.8, "#1c1917"); R(0.8, -2, 3.2, 0.8, "#1c1917"); R(-4, -1.2, 0.8, 0.8, "#1c1917"); R(3.2, -1.2, 0.8, 0.8, "#1c1917"); }
+        else { R(-4, 0, 3.2, 0.8, "#1c1917"); R(0.8, 0, 3.2, 0.8, "#1c1917"); R(-2.4, 0.8, 0.8, 0.6, "#1c1917"); R(1.6, 0.8, 0.8, 0.6, "#1c1917"); }
+      } else {
+        const glow = 0.6 + 0.4 * Math.sin(b.ph * 3 + b.a * 5);
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4 * glow; R(-2.5, -2.5, 5, 5, f.col[0]); ctx.restore();
+        R(-0.4, -1, 0.8, 2, f.col[1]);
+        if (up) { R(-2.4, -2, 2, 1.6, f.col[0]); R(0.4, -2, 2, 1.6, f.col[0]); } else { R(-2, -0.6, 1.6, 1.4, f.col[0]); R(0.4, -0.6, 1.6, 1.4, f.col[0]); }
+      }
+      return;
+    }
     const cx = Math.round(proj.x), cy = Math.round(proj.y), u = Math.max(0.8, proj.scale * 1.5);
     const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(cx + x * u), Math.round(cy + y * u), Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u))); };
     const up = Math.sin(b.ph) > 0;
