@@ -10,6 +10,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
 <style>
+  /* === DESKTOP UI SCALING ===
+     All DOM UI lives in #ui-scale, laid out at a phone-sized virtual screen and
+     scaled up as one piece, so a desktop monitor looks like a big Android phone.
+     --ui-s is set in fitUiScale(): 1 on phones, ~2.6 on a 1080p monitor. */
+  #ui-scale { position: absolute; left: 0; top: 0; width: calc(100vw / var(--ui-s, 1)); height: calc(100vh / var(--ui-s, 1));
+              transform: scale(var(--ui-s, 1)); transform-origin: 0 0; pointer-events: none; z-index: 10; container-type: size; }
+  #ui-scale > * { pointer-events: auto; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
   body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
   canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
@@ -64,13 +72,13 @@
   #single-menu-modal { z-index: 175; }
   #starmap-modal { z-index: 170; }
 
-  .controls-frame, .shop-frame { width: 95%; max-width: 530px; background: #0b1329; border: 3px solid #0284c7; box-shadow: 4px 4px 0 #000; padding: 12px 14px; color: #fff; display: flex; flex-direction: column; gap: 8px; max-height: 94vh; overflow-y: auto; }
+  .controls-frame, .shop-frame { width: 95%; max-width: 530px; background: #0b1329; border: 3px solid #0284c7; box-shadow: 4px 4px 0 #000; padding: 12px 14px; color: #fff; display: flex; flex-direction: column; gap: 8px; max-height: 94cqh; overflow-y: auto; }
   .controls-header, .shop-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; }
   .controls-header h2, .shop-header h2 { font-size: 14px; color: #38bdf8; letter-spacing: 1px; }
   .controls-tabs { display: flex; gap: 6px; }
   .tab-btn { flex: 1; background: #111e38; border: 1px solid #1e3a8a; color: #94a3b8; padding: 5px; font-size: 10px; font-weight: 900; cursor: pointer; text-align: center; }
   .tab-btn.active { background: #0284c7; border-color: #38bdf8; color: #fff; }
-  .controls-list { display: flex; flex-direction: column; gap: 4px; max-height: 44vh; overflow-y: auto; }
+  .controls-list { display: flex; flex-direction: column; gap: 4px; max-height: 44cqh; overflow-y: auto; }
   .control-row { background: #111e38; border: 1px solid #1e3a8a; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
   .bind-btn { background: #1e293b; border: 1px solid #38bdf8; color: #facc15; font-size: 10px; font-weight: 900; padding: 4px 10px; cursor: pointer; min-width: 105px; text-align: center; box-shadow: 1px 1px 0 #000; }
   .bind-btn.listening { background: #f59e0b !important; color: #000 !important; border-color: #fff !important; }
@@ -113,13 +121,12 @@
   .single-menu-resume { margin-top: 3px; background: #22c55e !important; border: 2px solid #fff !important; color: #000 !important; font-weight: 900; justify-content: center; }
 
   /* STAR MAP MODAL */
-  .starmap-frame { width: 96%; max-width: 680px; height: 92vh; background: #080e1e; border: 3px solid #0284c7; box-shadow: 0 0 24px rgba(2, 132, 199, 0.4), inset 0 0 16px rgba(14, 165, 233, 0.15); display: flex; flex-direction: column; color: #fff; overflow: hidden; }
+  .starmap-frame { width: 96%; max-width: 680px; height: 92cqh; background: #080e1e; border: 3px solid #0284c7; box-shadow: 0 0 24px rgba(2, 132, 199, 0.4), inset 0 0 16px rgba(14, 165, 233, 0.15); display: flex; flex-direction: column; color: #fff; overflow: hidden; }
   .starmap-header { padding: 8px 12px; background: #0b152d; border-bottom: 2px solid #1e3a8a; display: flex; justify-content: space-between; align-items: center; }
   .starmap-title { font-size: 13px; font-weight: 900; color: #38bdf8; letter-spacing: 1.5px; }
   .starmap-sub { font-size: 8px; color: #94a3b8; display: block; margin-top: 1px; }
   .starmap-body { flex: 1; display: flex; position: relative; overflow: hidden; }
   #starmap-canvas { flex: 1 1 0; min-width: 0; width: 0; height: 100%; cursor: crosshair; touch-action: none; }
-  @media (min-width: 1000px) { .starmap-frame { max-width: min(1400px, 94vw); } }
   .starmap-sidebar { 
     width: clamp(210px, 34%, 270px); 
     background: rgba(11, 19, 41, 0.96); 
@@ -158,6 +165,7 @@
 
 <div id="launch-screen"></div>
 
+<div id="ui-scale">
 <div id="hud" style="display:none;">
   <div class="hud-box">
     <div>CREDITS: <span id="stat-cred" style="color:#38bdf8">$100</span></div>
@@ -336,6 +344,7 @@
     <button id="restart-btn" class="close-ctrl-btn" style="max-width:200px;">NEW GALAXY RUN</button>
   </div>
 </div>
+</div>
 
 <div id="crt-overlay"></div>
 <canvas id="game"></canvas>
@@ -398,6 +407,17 @@ function resize() {
   joy.baseY = V_HEIGHT - 55;
 }
 window.addEventListener("resize", resize);
+
+// Scale the DOM UI so it fills a desktop screen the way it fills a phone.
+// 412px is a typical Android landscape height; the width cap stops very wide-but-short windows over-scaling.
+const UI_REF_H = 412, UI_REF_W = 732;
+let uiScale = 1;
+function fitUiScale() {
+  uiScale = Math.max(1, Math.min(window.innerHeight / UI_REF_H, window.innerWidth / UI_REF_W));
+  document.documentElement.style.setProperty('--ui-s', uiScale.toFixed(4));
+}
+fitUiScale();
+window.addEventListener("resize", fitUiScale);
 resize();
 
 function setRenderResMode(mode) {
@@ -495,6 +515,10 @@ function handleTitleInput(e) {
     titleLaunchProgress = 0.01;
   }
 }
+function resumeLockedAudio() {
+  try { if (actx && (actx.state === 'suspended' || actx.state === 'interrupted')) actx.resume(); } catch (e) {}
+}
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, resumeLockedAudio, { passive: true }));
 window.addEventListener('keydown', handleTitleInput);
 window.addEventListener('click', handleTitleInput);
 
@@ -2135,6 +2159,7 @@ window.addEventListener("keydown", (e) => {
 
 let activeGamepadIndex = null;
 const prevGamepadButtons = new Array(32).fill(false);
+const titlePrevGpButtons = new Array(32).fill(false);
 const prevGamepadAxes = new Array(8).fill(0);
 const currentGpButtons = new Array(32).fill(false);
 const currentGpAxes = new Array(8).fill(0);
@@ -2274,6 +2299,8 @@ function getFormationSlot(type, i, count) {
   }
 }
 const planetDepletionCache = new Map();
+// surface ore veins remember what you've mined: "<planetId>_surf_<n>" -> ore left. No respawning, so no farming one planet.
+const surfaceNodeDepletion = new Map();
 
 // Global crash-proof evacuation state
 window.destroyedPlanets = new Set();
@@ -5587,7 +5614,7 @@ function initGame() {
       if (el) el.style.display = '';
     });
   }
-  galaxySeed = Math.floor(Math.random() * 999999); planetDepletionCache.clear();
+  galaxySeed = Math.floor(Math.random() * 999999); planetDepletionCache.clear(); surfaceNodeDepletion.clear();
   destroyedPlanets.clear();
   liberatedSectors.clear();
   planetEvacState.active = false;
@@ -5850,6 +5877,8 @@ function landOnPlanet(planet) {
       size: 5 + Math.floor(pRand() * 4)
     });
   }
+
+  for (const n of surfaceNodes) if (surfaceNodeDepletion.has(n.id)) n.amount = surfaceNodeDepletion.get(n.id);   // veins you've mined stay mined
 
   const isDarkMatter = planet.ore && planet.ore.name === "Dark Matter";
   const sentinelCount = isDarkMatter ? (4 + Math.floor(pRand() * 2)) : (3 + Math.floor(pRand() * 2));
@@ -6167,7 +6196,8 @@ function buildSurfacePreview(planet) {
     if (tooClose) continue;
     const initialOre = 6 + Math.floor(pRand() * 9);
     const nodeOre = isHome ? (nodes.length % 2 === 0 ? RESOURCE_TYPES[0] : RESOURCE_TYPES[1]) : planet.ore;
-    nodes.push({ id: `preview_${nodes.length}`, x: nx, y: 0, z: nz, ore: nodeOre, amount: initialOre, maxAmount: initialOre, size: 5 + Math.floor(pRand() * 4) });
+    const realId = `${planet.id}_surf_${nodes.length}`;
+    nodes.push({ id: `preview_${nodes.length}`, x: nx, y: 0, z: nz, ore: nodeOre, amount: surfaceNodeDepletion.has(realId) ? surfaceNodeDepletion.get(realId) : initialOre, maxAmount: initialOre, size: 5 + Math.floor(pRand() * 4) });
   }
   // 25% chance of an ancient Monolith, rolled here so it's visible during the
   // descent. Placed in the forward arc (the way you face on touchdown) so the
@@ -7522,11 +7552,16 @@ function cabinCollide(x, z) {
   if (z > SHELF.z0 - 0.4 && z < SHELF.z1 + 0.4) x = Math.max(x, SHELF.x0 + SHELF.depth + R); // trophy shelf, port
   if (z > LAVA.z - 2 - R && z < LAVA.z + 2 + R && x < LAVA.x + 2 + R) x = LAVA.x + 2 + R;  // lava lamp table
   if (x > PDESK.x0 - R && x < PDESK.x1 + R && z > PDESK.z0 - R) z = PDESK.z0 - R;          // camera desk
+  if (z > JUKEBOX.z0 - 0.3 - R && z < JUKEBOX.z1 + 0.3 + R) x = Math.max(x, JUKEBOX.x1 + 0.3 + R);   // jukebox, port
+  if (z > RECORD_CRATE.z0 - R && z < RECORD_CRATE.z1 + R) x = Math.max(x, RECORD_CRATE.x1 + R);           // record crate, port
   return [x, z];
 }
 
 function getCabinAction() {
   const c = cabin;
+  if ((rackSpeakers || rackShutter > 0.02) && c.z < -32 && Math.abs(c.x) < 11)
+    return { label: "PARTY", banner: ">> EVA RACK STOWED FOR THE PARTY: SWITCH THE LIGHTS OUT OF RGB TO GET YOUR GEAR <<", enabled: false,
+      hint: "SWITCH THE CABIN LIGHTS OUT OF RGB MODE TO BRING THE RACK BACK", run: () => {} };
   const nearRack = c.z < -32 && Math.abs(c.x) < 11;
   const nearDoor = c.x > CAB_HW - 9 && c.z > AL.z0 - 1 && c.z < AL.z1 + 1;
   const nearSeat = c.z > 4 && Math.abs(c.x) < 8;
@@ -7559,13 +7594,17 @@ function getCabinAction() {
       } };
     }
   }
-  if (nearDoor) {
+  if (nearDoor && c.lookAirlock !== false) {
     const geared = c.hasHelmet && c.hasLaser;
     return { label: "AIRLOCK", banner: geared ? ">> AIRLOCK READY: TAP AIRLOCK <<" : ">> SUIT UP AT THE AFT RACK BEFORE EVA <<", enabled: geared,
       hint: "GRAB YOUR HELMET & A WEAPON FROM THE RACK FIRST!", run: startAirlockOut };
   }
+  if (c.lookJuke && c.x < -5 && c.z > JUKEBOX.z0 - 3 && c.z < JUKEBOX.z1 + 3.5) return jukeboxAction();
+  if (Math.hypot(c.x - DANCE_SPOT.x, c.z - DANCE_SPOT.z) < DANCE_SPOT.r) {
+    return { label: "DANCE", banner: ">> DANCE FLOOR: TAP DANCE TO BUST A MOVE <<", enabled: true, run: startDance };
+  }
   if (c.x > 4 && c.x < 16 && c.z > 6.5) {
-    return { label: "LIGHTS", banner: `>> CABIN LIGHTS: TAP TO SWITCH ${cabinLightsOn ? 'OFF' : 'ON'} <<`, enabled: true, run: toggleCabinLights };
+    return { label: "LIGHTS", banner: `>> CABIN LIGHTS: TAP FOR ${({ on: 'LIGHTS OFF', off: 'RGB MODE', rgb: 'LIGHTS ON' })[cabinLightMode]} <<`, enabled: true, run: toggleCabinLights };
   }
   if (c.x < PDESK.x1 + 2.5 && c.z > PDESK.z0 - 7) {
     return { label: "SNAP!", banner: `>> POLAROID WALL: ${photosTaken.size}/${PHOTOS.length} SNAPSHOTS - TAP THE CAMERA <<`, enabled: true, run: () => {
@@ -7670,6 +7709,12 @@ function updateCabin(dt, walkX, walkZ, interact) {
   c.mist = Math.max(0, c.mist - dt * 0.6);
   stepCabinLights(dt);
   updateCabinAmbience(c, dt);
+  if (c.time > 3 && actx) Jukebox.warm();
+  {   // turntable: platter spins up / winds down, tone arm swings on and off the record
+    const on = typeof Jukebox !== 'undefined' && Jukebox.playing >= 0;
+    tonearmOn += ((on ? 1 : 0) - tonearmOn) * Math.min(1, dt * 3);
+    recordSpin += dt * Math.PI * 2 * 0.55 * Math.min(1, tonearmOn * 1.4);
+  }                       // pre-render the jukebox tracks while you look around
   if (c.lights === 'red' && c.seq && c.seq.type === 'airlockIn' && c.seq.t < 2.2) {} // held red while repressurising
 
   if (c.anim) {
@@ -7690,6 +7735,20 @@ function updateCabin(dt, walkX, walkZ, interact) {
   if (!cabin) return;
   if (c.seq) stepCabinSeq(dt);
   if (!cabin) return;
+
+  if (c.dance) {
+    const d = c.dance;
+    d.t += dt;
+    if (d.ending) { d.out += dt / 0.8; if (d.out >= 1) c.dance = null; }
+    else if (d.t > 0.6 && (Math.hypot(walkX, walkZ) > 0.4 || interact)) endDance();
+    if (c.dance) {
+      const banner = document.getElementById("nav-banner");
+      if (banner) banner.style.display = 'none';   // keep the view clear while he dances (normal cabin update shows it again)
+      btn3.innerText = "STOP"; btn3.className = "cockpit-btn action active";
+      c.action = null;
+      return;
+    }
+  }
 
   const locked = !!c.anim || !!c.seq;
   if (!locked) {
@@ -7727,6 +7786,7 @@ function updateCabin(dt, walkX, walkZ, interact) {
 }
 
 function cabinInteract() {
+  if (cabin && cabin.dance) { if (cabin.dance.t > 0.6) endDance(); return; }
   if (!cabin || cabin.anim || cabin.seq) return;
   const act = getCabinAction();
   if (!act) return;
@@ -8057,16 +8117,50 @@ function drawInstantCamera(x, y, s, time) {
    ceiling strips a fluorescent start-up flicker.
    ========================================================================== */
 let cabinLightsOn = true, cabinLightLevel = 1, cabinLightFlicker = 0;
+// 3-way switch: 'on' -> 'off' -> 'rgb' (groovy neon strips + rainbow wash) -> 'on'
+let cabinLightMode = 'on', cabinRgbMix = 0;
+// disco ball: 0 = hatch shut, 0..0.4 = hatch doors sliding open, 0.4..1 = ball lowering on its chain
+let cabinDisco = 0, cabinDiscoSpin = 0;
+const DISCO = { x: 0, z: -22, hw: 2.0, hd: 1.8, ballY: -15.0, r: 1.25 };   // in the ceiling gap just aft of the dance floor
+const CABIN_LIGHT_NEXT = { on: 'off', off: 'rgb', rgb: 'on' };
+// fully saturated rainbow colour for hue 0..1 (cheap, no allocations beyond the array)
+function rgbHue(h) {
+  h = ((h % 1) + 1) % 1 * 6;
+  const cl = v => Math.max(0, Math.min(1, v)) * 255;
+  return [cl(Math.abs(h - 3) - 1), cl(2 - Math.abs(h - 2)), cl(2 - Math.abs(h - 4))];
+}
 const LPANEL = { x0: 8.6, x1: 11.8, yTop: -12.4, yBot: -6.4, z: 13.75 };
 const LAVA_GLOW = () => [LAVA.x, LAVA.tableTop - 3.5, LAVA.z];
 function toggleCabinLights() {
-  cabinLightsOn = !cabinLightsOn;
+  cabinLightMode = CABIN_LIGHT_NEXT[cabinLightMode] || 'on';
+  cabinLightsOn = cabinLightMode === 'on';
   if (cabinLightsOn) cabinLightFlicker = 0.75;
   playSfx('hullClang'); vibrateGamepad(70, 0.3, 0.2);
-  addPopup(cabinLightsOn ? "CABIN LIGHTS ON" : (lavaLampOn ? "LIGHTS OFF. MOOD: GROOVY" : "LIGHTS OFF"), cabinLightsOn ? "#e0f2fe" : "#ff2bd6");
+  if (cabinLightMode === 'rgb') { try { playSfx('upgrade'); } catch (e) {} addPopup("GROOVY BABY... VERY GROOVY... YEAH!", "#ff2bd6"); }
+  else if (cabinLightMode === 'on') addPopup("CABIN LIGHTS ON", "#e0f2fe");
+  else addPopup(lavaLampOn ? "LIGHTS OFF. MOOD: LAVA LAMP" : "LIGHTS OFF", "#94a3b8");
 }
 function stepCabinLights(dt) {
-  const tgt = (cabin && !cabin.wreck && planetEvacState.active) ? 0.1 : (cabinLightsOn ? 1 : 0);   // core collapse: main lights die
+  const evac = cabin && !cabin.wreck && planetEvacState.active;
+  const tgt = evac ? 0.1 : (cabinLightMode === 'on' ? 1 : (cabinLightMode === 'rgb' ? 0.3 : 0));   // core collapse: main lights die
+  const rgbTgt = (!evac && cabinLightMode === 'rgb') ? 1 : 0;
+  cabinRgbMix += (rgbTgt - cabinRgbMix) * Math.min(1, dt * 4);
+  {   // roller shutter: lower, swap rack <-> speakers while it's down, raise again
+    const want = !!rgbTgt, before = rackShutter;
+    if (want !== rackSpeakers) {
+      rackShutter = Math.min(1, rackShutter + dt / 2.2);
+      if (before === 0 && rackShutter > 0) { try { cabinSfx('servo'); } catch (e) {} }
+      if (rackShutter >= 1) {
+        rackSpeakers = want;
+        try { cabinSfx('servo'); playSfx('hullClang'); } catch (e) {}
+        if (want) addPopup("PARTY SPEAKERS DEPLOYED", "#39ff14");
+      }
+    } else if (rackShutter > 0) rackShutter = Math.max(0, rackShutter - dt / 2.6);
+  }
+  if (rgbTgt && cabinDisco === 0) { try { cabinSfx('servo'); } catch (e) {} }
+  if (!rgbTgt && cabinDisco === 1) { try { cabinSfx('servo'); } catch (e) {} }
+  cabinDisco = Math.max(0, Math.min(1, cabinDisco + (rgbTgt ? 1 : -1) * dt / 2.4));
+  cabinDiscoSpin += dt * 0.9;
   if (cabinLightFlicker > 0) {
     cabinLightFlicker -= dt;
     cabinLightLevel = Math.random() < 0.45 ? 1 : 0.15;
@@ -8122,9 +8216,1008 @@ function drawLightPanelLabel(x, y, s) {
   ctx.font = `bold ${Math.max(4, Math.min(9, s * 0.5))}px monospace`; ctx.textAlign = "center";
   ctx.fillStyle = cabinLightLevel > 0.5 ? "#cbd5e1" : "#7dd3fc";
   ctx.fillText("CABIN LIGHTS", x, y);
-  ctx.font = `bold ${Math.max(3, Math.min(7, s * 0.38))}px monospace`;
-  ctx.fillStyle = cabinLightsOn ? "#4ade80" : "#475569"; ctx.fillText("ON", x + s * 1.3, y + s * 1.45);
-  ctx.fillStyle = cabinLightsOn ? "#475569" : "#f87171"; ctx.fillText("OFF", x + s * 1.3, y + s * 3.2);
+  ctx.restore();
+}
+// one switch-position label on the panel face (ON / OFF / RGB), lit up when selected
+function drawLightPosLabel(mode, x, y, s) {
+  if (s < 2.2) return;
+  const on = cabinLightMode === mode;
+  ctx.save();
+  ctx.font = `bold ${Math.max(4, Math.min(8, s * 0.42))}px monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  let col = "#64748b";
+  if (on) col = mode === 'on' ? "#4ade80" : (mode === 'off' ? "#f87171" : hueHex(Math.round((Date.now() / 1400 % 1) * 12) / 12));
+  ctx.fillStyle = "#0f172a"; ctx.fillText(mode.toUpperCase(), Math.round(x) + 1, Math.round(y) + 1);
+  ctx.fillStyle = col; ctx.fillText(mode.toUpperCase(), Math.round(x), Math.round(y));
+  if (on) { ctx.fillStyle = col; ctx.fillRect(Math.round(x - s * 0.32), Math.round(y - 1), Math.max(2, Math.round(s * 0.18)), 2); }   // little pointer at the selected one
+  ctx.restore();
+}
+
+/* ==========================================================================
+   RETRO JUKEBOX + DANCE FLOOR
+   The jukebox stands on the port wall between the trophy shelf and the camera
+   desk: tap it to cycle through four procedural tracks (then off). Stand in the
+   middle of the hold and tap DANCE: the camera pulls back to third person and
+   the spaceman dances to the beat, helmet on or off. Move or tap to stop.
+   ========================================================================== */
+const JUKEBOX = { x0: -CAB_HW, x1: -14.6, z0: 3.0, z1: 7.6, zc: 5.3, top: -8.3 };
+// wall-mounted neon sign above the jukebox: a flat panel on the port wall (not a floating sprite), so it can't slip behind the wall
+// crate of old vinyl on the floor between the trophy shelf and the jukebox
+const RECORD_CRATE = { x0: -CAB_HW + 0.2, x1: -14.3, z0: -0.7, z1: 2.55, h: 3.0 };
+const RECORD_SLEEVES = [   // [colour, extra height above the rim, accent stripe]
+  ["#dc2626", 1.2, "#fde68a"], ["#2563eb", 0.9, "#f8fafc"], ["#f59e0b", 1.35, "#7c2d12"], ["#16a34a", 0.8, "#fef08a"],
+  ["#db2777", 1.15, "#0f172a"], ["#7c3aed", 1.0, "#f0abfc"], ["#0891b2", 1.3, "#fde047"], ["#e5e7eb", 0.85, "#ef4444"],
+  ["#ea580c", 1.1, "#1e293b"], ["#facc15", 0.95, "#be185d"]
+];
+function sleeveX(i) { const C = RECORD_CRATE, n = RECORD_SLEEVES.length; return C.x0 + 0.45 + i * (C.x1 - C.x0 - 0.95) / n; }   // i = 0 at the wall, n-1 at the front
+function sleeveTop(i) { return -RECORD_CRATE.h - (1.45 - i * 0.085 + ((i * 7) % 3) * 0.06); }
+// turntable on top of the jukebox: a flat record that spins at 33 rpm while a track plays
+const TURNTABLE = { x: -16.55, z: 5.3, y: -8.3, r: 1.1 };
+let recordSpin = 0, tonearmOn = 0;
+// EVA rack party swap: a roller shutter comes down over the rack, the rack is swapped for speakers, the shutter goes back up
+let rackShutter = 0, rackSpeakers = false;
+const RACK_OPEN = { x0: -8.7, x1: 8.7, yTop: -15.6, z: -41.0 };
+const NEON_SIGN = { x: -CAB_HW + 0.06, z0: 2.1, z1: 8.5, yTop: -13.5, yBot: -9.2 };
+const neonSignTex = document.createElement("canvas"); neonSignTex.width = 256; neonSignTex.height = 172;
+let neonSignKey = '';
+function updateNeonSign(t) {
+  const playing = typeof Jukebox !== 'undefined' && Jukebox.playing >= 0;
+  const hueStep = playing ? Math.floor(t * 3) % 12 : -1;
+  const flick = !playing && Math.sin(t * 13) > 0.985;                    // the odd buzz-flicker when idle
+  const key = `${playing}|${hueStep}|${flick}|${playing ? Jukebox.playing : ''}`;
+  if (key === neonSignKey) return;
+  neonSignKey = key;
+  const g = neonSignTex.getContext("2d"), W = neonSignTex.width, H = neonSignTex.height;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = "#07030f"; g.fillRect(0, 0, W, H);                          // dark backing board
+  g.strokeStyle = "#1e1b2e"; g.lineWidth = 4; g.strokeRect(2, 2, W - 4, H - 4);
+  const tube = playing ? hueHex(hueStep / 12) : "#22d3ee";
+  const glowLine = (draw, col, blur) => { g.save(); g.shadowColor = col; g.shadowBlur = blur; g.strokeStyle = col; g.fillStyle = col; draw(); g.restore(); };
+  // neon border tube
+  glowLine(() => { g.lineWidth = 5; g.beginPath(); g.roundRect ? g.roundRect(14, 14, W - 28, H - 28, 16) : g.rect(14, 14, W - 28, H - 28); g.stroke(); }, tube, 14);
+  glowLine(() => { g.lineWidth = 2; g.strokeStyle = "#ecfeff"; g.beginPath(); g.roundRect ? g.roundRect(14, 14, W - 28, H - 28, 16) : g.rect(14, 14, W - 28, H - 28); g.stroke(); }, tube, 4);
+  // JUKEBOX in hot pink tubing (white-hot core)
+  const pink = flick ? "#5b1146" : "#ff2bd6";
+  g.textAlign = "center"; g.textBaseline = "middle"; g.font = "bold 46px monospace";
+  glowLine(() => g.fillText("JUKEBOX", W / 2, H / 2 - (playing ? 12 : 0)), pink, flick ? 0 : 18);
+  g.save(); g.fillStyle = flick ? "#7a2160" : "#ffd1f3"; g.font = "bold 46px monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.globalAlpha = 0.55; g.fillText("JUKEBOX", W / 2, H / 2 - (playing ? 12 : 0)); g.restore();
+  // music notes either side, and the track name in yellow while it plays
+  g.font = "bold 30px monospace";
+  glowLine(() => { g.fillText("♪", 36, H / 2 - (playing ? 12 : 0)); g.fillText("♫", W - 36, H / 2 - (playing ? 12 : 0)); }, tube, 10);
+  if (playing) {
+    g.font = "bold 17px monospace";
+    glowLine(() => g.fillText(JUKE_TRACKS[Jukebox.playing].name, W / 2, H / 2 + 34), "#facc15", 8);
+  }
+}
+const DANCE_SPOT = { x: 0, z: -12, r: 5.5 };
+function hueHex(h, k = 1) { const c = rgbHue(h); return '#' + c.map(v => Math.round(v * k).toString(16).padStart(2, '0')).join(''); }
+
+// Four tracks, each a 4-bar loop of 16th-note steps. Notes are MIDI numbers.
+const JUKE_TRACKS = [
+  { name: "NEBULA NIGHT FEVER", bpm: 118, swing: 0,
+    chords: [[57, 60, 64, 67], [57, 60, 62, 65], [57, 60, 64, 65], [56, 59, 62, 64]],
+    bass: { roots: [45, 50, 41, 40], wave: 'sawtooth', cut: 700, pat: [[0,0,1],[2,12,1],[4,0,1],[6,12,1],[8,0,1],[10,12,1],[12,0,1],[14,12,1]] },
+    stab: { wave: 'sawtooth', vol: 0.032, hits: [[0, 6], [10, 2]] },
+    drums: { kick: "x...x...x...x...", clap: "....x.......x...", ohat: "..x...x...x...x.", chat: "x.x.x.x.x.x.x.x." },
+    lead: { wave: 'square', vol: 0.03, notes: [[0,76,2],[2,81,2],[4,79,2],[6,76,2],[10,74,2],[12,76,4],[16,72,2],[18,74,2],[20,76,4],[26,72,2],[28,69,4],
+                                              [32,77,2],[34,76,2],[36,74,2],[38,72,2],[42,74,2],[44,76,4],[48,76,2],[50,80,2],[52,83,2],[54,80,2],[56,76,6]] } },
+  { name: "ASTEROID FUNK", bpm: 100, swing: 0.14,
+    chords: [[59, 62, 64, 67], [59, 62, 64, 67], [57, 61, 64, 67], [57, 61, 64, 67]],
+    bass: { roots: [40, 40, 45, 45], wave: 'sawtooth', cut: 900, pat: [[0,0,2],[3,12,1],[4,0,1],[6,10,1],[7,12,1],[10,7,2],[12,0,1],[14,3,1],[15,5,1]] },
+    stab: { wave: 'square', vol: 0.022, hits: [[2, 1], [5, 1], [9, 1], [11, 1], [13, 1]] },
+    drums: { kick: "x......x..x.....", snare: "....x.......x...", ghost: "......x......x..", chat: "x.x.x.x.x.x.x.x.", ohat: "...............x" },
+    lead: { wave: 'sawtooth', vol: 0.024, notes: [[48,71,1],[49,74,1],[50,76,2],[52,79,2],[54,76,2],[56,74,1],[57,71,3]] } },
+  { name: "WARP DRIVE '85", bpm: 96, swing: 0,
+    chords: [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]],
+    bass: { roots: [45, 41, 48, 43], wave: 'sawtooth', cut: 520, pat: [[0,0,1],[2,0,1],[4,0,1],[6,0,1],[8,0,1],[10,0,1],[12,0,1],[14,0,1]] },
+    pad: { wave: 'sawtooth', vol: 0.02 },
+    arp: { wave: 'square', vol: 0.018 },
+    drums: { kick: "x.......x.......", snare: "....x.......x...", chat: "x.x.x.x.x.x.x.x." } },
+  { name: "LUNAR LOUNGE", bpm: 84, swing: 0.18,
+    chords: [[53, 57, 60, 64], [53, 57, 59, 64], [52, 55, 59, 62], [55, 61, 64, 65]],
+    bass: { roots: [50, 55, 48, 45], wave: 'triangle', cut: 1400, pat: [[0,0,3],[4,7,3],[8,12,3],[12,10,3]] },
+    stab: { wave: 'sine', vol: 0.05, hits: [[0, 6], [10, 4]] },
+    drums: { kick: "x.........x.....", rim: "....x.......x...", chat: "xxxxxxxxxxxxxxxx" },
+    lead: { wave: 'triangle', vol: 0.04, notes: [[0,72,4],[6,74,2],[8,76,6],[16,79,4],[22,77,2],[24,76,6],[32,74,4],[38,72,2],[40,71,6],[48,73,4],[54,76,4],[58,69,6]] } },
+  // original heavy metal in E: 4 bars of galloping riff, then 4 bars of slow, crushing half-time breakdown
+  { name: "VOID SHREDDER", bpm: 160, swing: 0, steps: 128,
+    drums: { kick: "x.xxx.xxx.xxx.xx", snare: "....x.......x...", chat: "x.x.x.x.x.x.x.x.", crash: [0] },
+    breakdown: { from: 4, drums: { kick: "x...x.x..xx.x...", snare: "........x.......", ohat: "x...x...x...x...", crash: [4, 6] } },
+    metal: { root: 40,      // E2; riff = [step, semitones above E, length in 16ths, palm-muted]; negative = drop below E
+      riffs: [
+        [[0,0,1,1],[1,0,1,1],[2,0,1,1],[3,3,2,0],[5,0,1,1],[6,0,1,1],[7,5,2,0],[9,0,1,1],[10,6,2,0],[12,5,2,0],[14,3,2,0]],
+        [[0,0,1,1],[1,0,1,1],[2,0,1,1],[3,3,2,0],[5,0,1,1],[6,0,1,1],[7,5,2,0],[9,0,1,1],[10,10,3,0],[13,7,3,0]],
+        [[0,0,1,1],[1,0,1,1],[2,0,1,1],[3,0,1,1],[4,7,2,0],[6,6,2,0],[8,5,4,0],[12,3,2,0],[14,6,2,0]],
+        // breakdown: big open hits, gaps, chug stabs and a low drop
+        [[0,0,4,0],[4,0,1,1],[6,0,2,0],[9,0,1,1],[10,0,1,1],[12,1,4,0]],
+        [[0,0,4,0],[4,0,1,1],[6,0,2,0],[9,0,1,1],[10,0,1,1],[12,-2,4,0]],
+        [[0,0,4,0],[4,0,1,1],[5,0,1,1],[6,1,3,0],[10,0,1,1],[11,0,1,1],[12,3,2,0],[14,1,2,0]],
+        [[0,-2,8,0],[8,0,1,1],[9,0,1,1],[10,0,1,1],[11,0,1,1],[12,0,1,1],[13,0,1,1],[14,0,1,1],[15,0,1,1]]
+      ],
+      order: [0, 1, 0, 2, 3, 4, 5, 6] } },
+  // original slow melodic hardcore in E minor: ringing Em-C-G-D with a twin-guitar melody, then a crushing half-time breakdown
+  { name: "VOID DESCENT", bpm: 90, swing: 0, steps: 128,
+    drums: { kick: "x.....x.x.......", snare: "........x.......", chat: "x.x.x.x.x.x.x.x.", crash: [0, 1, 2, 3] },
+    breakdown: { from: 4, drums: { kick: "x..x..x...x.x...", snare: "........x.......", ohat: "x...x...x...x...", crash: [4, 6] } },
+    metal: { root: 40,
+      riffs: [
+        [[0,0,6,0],[6,0,1,1],[7,0,1,1],[8,0,6,0],[14,0,1,1],[15,0,1,1]],          // Em
+        [[0,-4,6,0],[6,-4,1,1],[7,-4,1,1],[8,-4,6,0],[14,-4,1,1],[15,-4,1,1]],    // C
+        [[0,3,6,0],[6,3,1,1],[7,3,1,1],[8,3,6,0],[14,3,1,1],[15,3,1,1]],          // G
+        [[0,-2,6,0],[6,-2,1,1],[7,-2,1,1],[8,-2,6,0],[14,-2,1,1],[15,-2,1,1]],    // D
+        [[0,0,3,0],[3,0,1,1],[4,0,1,1],[6,0,2,0],[8,1,4,0],[12,0,1,1],[13,0,1,1],[14,-2,2,0]],   // breakdown
+        [[0,0,3,0],[3,0,1,1],[4,0,1,1],[6,0,2,0],[8,-4,8,0]],
+        [[0,-2,8,0],[8,0,1,1],[10,0,1,1],[12,0,1,1],[14,0,1,1]]
+      ],
+      order: [0, 1, 2, 3, 4, 5, 4, 6] },
+    lead: { harm: -5, notes: [                       // slow, singing melody; second guitar harmonises a fourth below
+      [0,71,6,1],[6,74,2],[8,76,8,1],
+      [16,79,6,1],[22,76,2],[24,72,8,1],
+      [32,74,6,1],[38,71,2],[40,67,8,1],
+      [48,69,4],[52,71,4],[56,74,4,1],[60,72,4]] } },
+  // original French-house / robot disco: four-on-the-floor, pumping 7th chords, chicken-scratch funk guitar,
+  // a resonant filter that opens over the first half, then a talkbox robot lead once it's wide open
+  { name: "ROBOT DISCO 3000", bpm: 118, swing: 0, steps: 128, house: true, guitar: true,
+    guitarMoves: [5, 2, 5, 4],
+    drums: { kick: "x...x...x...x...", clap: "....x.......x...", ohat: "..x...x...x...x.", chat: "x.xxx.xxx.xxx.xx" },
+    chords: [[57, 60, 64, 67], [54, 57, 60, 64], [53, 57, 60, 64], [52, 56, 59, 62]],      // Am7  D9  Fmaj7  E7
+    bass: { roots: [45, 38, 41, 40], pat: [[0,0,1],[2,12,1],[3,0,1],[6,12,1],[7,0,1],[10,12,1],[11,10,1],[14,7,1]] },
+    funk: { hits: [2, 6, 10, 13, 14] },
+    lead: { notes: [
+      [64,76,2],[66,74,2],[68,72,4],[72,69,2],[74,72,2],[76,74,4],[80,76,2],[82,79,2],[84,76,4],[88,74,4],
+      [96,76,2],[98,74,2],[100,72,4],[104,69,2],[106,72,2],[108,67,4],[112,69,6],[118,72,2],[120,71,8]] } },
+  // HALLOWEEN SPECIAL - original spooky 80s funk in D minor: thunder crack, slinky synth bass, horror chords
+  // (Dm Bb Gm A), brassy stabs, 80s claps, and an eerie theremin melody in the second half
+  { name: "GRAVEYARD GROOVE", bpm: 116, swing: 0, steps: 128, spooky: true, thunder: true,
+    chords: [[62, 65, 69], [58, 62, 65], [55, 58, 62], [57, 61, 64]],
+    bass: { roots: [38, 34, 31, 33], wave: 'square', cut: 900, pat: [[0,0,2],[3,12,1],[6,0,1],[7,0,1],[8,10,2],[11,12,1],[14,7,2]] },
+    stab: { wave: 'sawtooth', vol: 0.03, hits: [[2, 1], [6, 1], [10, 1], [13, 2]] },
+    drums: { kick: "x.......x.x.....", clap: "....x.......x...", chat: "x.x.x.x.x.x.x.x.", ohat: "......x.......x." },
+    lead: { theremin: true, notes: [
+      [64,74,6],[70,77,2],[72,76,4],[76,73,4],
+      [80,74,6],[86,70,2],[88,69,8],
+      [96,74,6],[102,77,2],[104,81,4],[108,79,4],
+      [112,77,4],[116,76,4],[120,73,8]] } }
+];
+
+const Jukebox = (() => {
+  // A = the audio context the voices build into. Normally the live actx; swapped for an
+  // OfflineAudioContext while a track is pre-rendered into a loop (much lighter on phones).
+  let A = null, out = null, playing = -1, timer = null, nextT = 0, step = 0, t0 = 0, leadAt = null;
+  let loopSrc = null;
+  const bufs = [], rendering = [];
+  const VOL = 0.34;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  const steps = tr => tr.steps || 64;
+  function noise() {
+    if (!A.__jbNoise) {
+      const b = A.createBuffer(1, A.sampleRate, A.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      A.__jbNoise = b;
+    }
+    const s = A.createBufferSource(); s.buffer = A.__jbNoise; return s;
+  }
+  function decay(g, t, peak, len, attack = 0.004) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + len);
+  }
+  function tone(t, freq, len, wave, vol, cut) {
+    const o = A.createOscillator(), g = A.createGain();
+    o.type = wave; o.frequency.setValueAtTime(freq, t);
+    let head = o;
+    if (cut) { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(cut * 2.2, t); f.frequency.exponentialRampToValueAtTime(cut, t + Math.min(0.12, len)); o.connect(f); head = f; }
+    head.connect(g); g.connect(out);
+    decay(g, t, vol, len, 0.006);
+    o.start(t); o.stop(t + len + 0.05);
+  }
+  function kick(t, v) {
+    const o = A.createOscillator(), g = A.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.11);
+    o.connect(g); g.connect(out); decay(g, t, v, 0.26, 0.002); o.start(t); o.stop(t + 0.3);
+  }
+  function noiseHit(t, v, len, type, freq, q = 0.8) {
+    const s = noise(), f = A.createBiquadFilter(), g = A.createGain();
+    f.type = type; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
+    s.connect(f); f.connect(g); g.connect(out); decay(g, t, v, len, 0.002);
+    s.start(t, Math.random() * 0.5); s.stop(t + len + 0.05);
+  }
+  function snare(t, v, len) { noiseHit(t, v, len, 'bandpass', 1900, 0.7); tone(t, 190, 0.07, 'triangle', v * 0.6); }
+  function clap(t, v) { for (let i = 0; i < 3; i++) noiseHit(t + i * 0.011, v * (i === 2 ? 1 : 0.6), i === 2 ? 0.12 : 0.02, 'bandpass', 1200, 1.1); }
+  // --- metal amp: drive -> tanh shaper -> scooped, bitey cab sim (one per audio context) ---
+  function amp() {
+    if (A.__jbAmp && A.__jbAmpOut === out) return A.__jbAmp;
+    const inp = A.createGain(), drive = A.createGain(); drive.gain.value = 11;
+    const sh = A.createWaveShaper(), n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = Math.tanh(x * 3.4); }
+    sh.curve = curve; sh.oversample = '2x';
+    const hp = A.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    const scoop = A.createBiquadFilter(); scoop.type = 'peaking'; scoop.frequency.value = 700; scoop.Q.value = 0.9; scoop.gain.value = -6;
+    const pres = A.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 2500; pres.Q.value = 1.1; pres.gain.value = 5;
+    const cab = A.createBiquadFilter(); cab.type = 'lowpass'; cab.frequency.value = 3800; cab.Q.value = 0.7;
+    const post = A.createGain(); post.gain.value = 0.1;
+    inp.connect(drive); drive.connect(sh); sh.connect(hp); hp.connect(scoop); scoop.connect(pres); pres.connect(cab); cab.connect(post); post.connect(out);
+    A.__jbAmp = inp; A.__jbAmpOut = out;
+    return inp;
+  }
+  function guitar(t, midi, len, mute) {
+    const f = mtof(midi), lp = A.createBiquadFilter(), g = A.createGain();
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(mute ? 700 : 3200, t);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(mute ? 0.5 : 0.42, t + 0.004);
+    g.gain.setValueAtTime(mute ? 0.5 : 0.42, t + len * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    for (const [mul, det] of [[1, -8], [1, 8], [1.4983, 0], [2, 0]]) {      // power chord: root (double-tracked), fifth, octave
+      const o = A.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f * mul, t); o.detune.setValueAtTime(det, t);
+      o.connect(lp); o.start(t); o.stop(t + len + 0.03);
+    }
+    lp.connect(g); g.connect(amp());
+    tone(t, f / 2, Math.max(len, 0.09), 'sawtooth', mute ? 0.06 : 0.075, 360);   // bass guitar doubles the root
+  }
+  function leadNote(t, midi, len, bend, vol = 0.16) {
+    const f = mtof(midi), o = A.createOscillator(), o2 = A.createOscillator(), g = A.createGain(), lfo = A.createOscillator(), lg = A.createGain();
+    o.type = 'sawtooth'; o2.type = 'square';
+    o.frequency.setValueAtTime(bend ? f * 0.94 : f, t); o2.frequency.setValueAtTime(bend ? f * 0.94 : f, t);
+    if (bend) { o.frequency.exponentialRampToValueAtTime(f, t + 0.09); o2.frequency.exponentialRampToValueAtTime(f, t + 0.09); }
+    if (len > 0.25) { lfo.frequency.value = 6.5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.018, t + len * 0.6); lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency); lfo.start(t); lfo.stop(t + len + 0.05); }
+    o.connect(g); o2.connect(g); g.connect(amp());
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+    g.gain.setValueAtTime(vol, t + len * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.start(t); o2.start(t); o.stop(t + len + 0.03); o2.stop(t + len + 0.03);
+  }
+
+  // --- house voices: write to `pad` (sidechain-pumped, filtered) or `out` (filtered) / `kickOut` (dry) ---
+  let pad = null, kickOut = null;
+  function houseKick(t) {
+    const o = A.createOscillator(), g = A.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.09);
+    o.connect(g); g.connect(kickOut || out); decay(g, t, 1.0, 0.3, 0.002); o.start(t); o.stop(t + 0.35);
+  }
+  function chordPad(t, notes, len) {      // warm detuned saw chord, into the pump
+    for (const m of notes) for (const det of [-9, 9]) {
+      const o = A.createOscillator(), f = A.createBiquadFilter(), g = A.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(mtof(m), t); o.detune.setValueAtTime(det, t);
+      f.type = 'lowpass'; f.frequency.setValueAtTime(2400, t); f.Q.value = 0.7;
+      o.connect(f); f.connect(g); g.connect(pad || out);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.022, t + 0.01);
+      g.gain.setValueAtTime(0.022, t + len * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.start(t); o.stop(t + len + 0.05);
+    }
+  }
+  function funkGuitar(t, notes, hit) {     // clean single-coil chicken scratch: chord "chk" or a muted scratch
+    const bp = A.createBiquadFilter(), hp = A.createBiquadFilter(), g = A.createGain();
+    bp.type = 'bandpass'; bp.frequency.setValueAtTime(hit ? 1500 : 2200, t); bp.Q.value = hit ? 0.9 : 1.6;
+    hp.type = 'highpass'; hp.frequency.value = 300;
+    bp.connect(hp); hp.connect(g); g.connect(pad || out);
+    const len = hit ? 0.085 : 0.03;
+    decay(g, t, hit ? 0.2 : 0.09, len, 0.002);
+    if (hit) notes.forEach((m, i) => {                             // strummed: each string a few ms after the last
+      const k = i * 0.004, o = A.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(mtof(m + 12), t + k);
+      o.connect(bp); o.start(t + k); o.stop(t + len + 0.03);
+    });
+    const n = noise(); n.connect(bp); n.start(t, Math.random() * 0.5); n.stop(t + len + 0.02);
+  }
+  let talkPrev = null;
+  function talkbox(t, midi, len) {          // robot-voice lead: saw+square through two vowel formants, gliding between notes
+    const f = mtof(midi), o = A.createOscillator(), o2 = A.createOscillator(), g = A.createGain();
+    o.type = 'sawtooth'; o2.type = 'square'; o2.detune.value = 7;
+    const from = talkPrev ? mtof(talkPrev) : f;
+    for (const osc of [o, o2]) { osc.frequency.setValueAtTime(from, t); osc.frequency.exponentialRampToValueAtTime(f, t + 0.06); }
+    talkPrev = midi;
+    const f1 = A.createBiquadFilter(), f2 = A.createBiquadFilter(), lp = A.createBiquadFilter(), mix = A.createGain();
+    f1.type = 'bandpass'; f1.Q.value = 5; f1.frequency.setValueAtTime(650, t); f1.frequency.linearRampToValueAtTime(900, t + len);   // "oh" opening to "ah"
+    f2.type = 'bandpass'; f2.Q.value = 6; f2.frequency.setValueAtTime(1100, t); f2.frequency.linearRampToValueAtTime(1400, t + len);
+    lp.type = 'lowpass'; lp.frequency.value = 3200;
+    o.connect(f1); o.connect(f2); o2.connect(f1); o2.connect(f2); f1.connect(mix); f2.connect(mix); mix.gain.value = 2.2;
+    mix.connect(lp); lp.connect(g); g.connect(out);
+    if (len > 0.3) { const lfo = A.createOscillator(), lg = A.createGain(); lfo.frequency.value = 5.5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.012, t + len); lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency); lfo.start(t); lfo.stop(t + len + 0.05); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11, t + 0.02);
+    g.gain.setValueAtTime(0.11, t + len * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.start(t); o2.start(t); o.stop(t + len + 0.05); o2.stop(t + len + 0.05);
+  }
+  function playHouse(tr, st, t) {
+    const sd = 60 / tr.bpm / 4, s16 = st & 15, bar = st >> 4, D = tr.drums;
+    const on = (p) => p && p[s16] === 'x';
+    if (on(D.kick)) houseKick(t);
+    if (on(D.clap)) clap(t, 0.42);
+    if (on(D.ohat)) noiseHit(t, 0.08, 0.14, 'highpass', 7000);
+    if (on(D.chat)) noiseHit(t, s16 % 4 === 2 ? 0.05 : 0.03, 0.025, 'highpass', 9000);
+    const ch = tr.chords[bar % tr.chords.length], root = tr.bass.roots[bar % tr.bass.roots.length];
+    for (const [ps, off, len] of tr.bass.pat) if (ps === s16) tone(t, mtof(root + off), len * sd * 0.8, 'sawtooth', 0.2, 520);
+    if (s16 === 0 || s16 === 8) chordPad(t, ch, 8 * sd);
+    funkGuitar(t, ch, tr.funk.hits.includes(s16));
+    const ld = leadAt && leadAt[st];
+    if (ld) talkbox(t, ld[0], ld[1] * sd * 0.95);
+  }
+
+  let therPrev = null;
+  function theremin(t, midi, len) {          // wobbly sine with slow glides between notes
+    const f = mtof(midi), o = A.createOscillator(), o2 = A.createOscillator(), g = A.createGain();
+    o.type = 'sine'; o2.type = 'triangle';
+    const from = therPrev ? mtof(therPrev) : f * 0.9;
+    for (const osc of [o, o2]) { osc.frequency.setValueAtTime(from, t); osc.frequency.exponentialRampToValueAtTime(f, t + 0.14); }
+    therPrev = midi;
+    const lfo = A.createOscillator(), lg = A.createGain(); lfo.frequency.value = 5.8; lg.gain.value = f * 0.022;
+    lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
+    const mix = A.createGain(); mix.gain.value = 1; o.connect(mix); o2.connect(g); mix.connect(g);
+    g.connect(out);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.08);
+    g.gain.setValueAtTime(0.09, t + len * 0.8); g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.15);
+    for (const n of [o, o2, lfo]) { n.start(t); n.stop(t + len + 0.2); }
+  }
+  function thunder(t) {                      // rolling thunder crack under the downbeat
+    const s = noise(), lp = A.createBiquadFilter(), g = A.createGain();
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(1800, t); lp.frequency.exponentialRampToValueAtTime(160, t + 2.4);
+    s.connect(lp); lp.connect(g); g.connect(out);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55, t + 0.03);
+    g.gain.setValueAtTime(0.3, t + 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+    s.loop = true; s.start(t); s.stop(t + 2.7);
+  }
+
+  function playStep(tr, st, t) {
+    if (tr.house) return playHouse(tr, st, t);
+    if (tr.thunder && st === 0) thunder(t);
+    const sd = 60 / tr.bpm / 4, s16 = st & 15, bar = st >> 4;
+    const D = (tr.breakdown && bar >= tr.breakdown.from) ? tr.breakdown.drums : tr.drums;
+    const on = (p) => p && p[s16] === 'x';
+    if (on(D.kick)) kick(t, tr.metal ? 0.5 : 0.9);              // double-kick gallop sits lower in the mix
+    if (on(D.snare)) snare(t, 0.45, tr.bpm < 98 ? 0.26 : 0.16);
+    if (on(D.ghost)) snare(t, 0.1, 0.06);
+    if (on(D.rim)) noiseHit(t, 0.22, 0.05, 'bandpass', 3200, 2);
+    if (on(D.clap)) clap(t, 0.5);
+    if (on(D.chat)) noiseHit(t, s16 % 4 === 0 ? 0.09 : 0.055, 0.035, 'highpass', 7500);
+    if (on(D.ohat)) noiseHit(t, 0.1, 0.17, 'highpass', 6500);
+    if (D.crash && s16 === 0 && D.crash.includes(bar)) noiseHit(t, 0.16, 1.2, 'highpass', 4200);
+    if (tr.metal) {
+      const riff = tr.metal.riffs[tr.metal.order[bar % tr.metal.order.length]];
+      for (const [ps, off, len, mute] of riff) if (ps === s16) guitar(t, tr.metal.root + off, len * sd * 0.92, mute);
+    } else {
+      const root = tr.bass.roots[bar % tr.bass.roots.length];
+      for (const [ps, off, len] of tr.bass.pat) if (ps === s16) tone(t, mtof(root + off), len * sd * 0.9, tr.bass.wave, 0.22, tr.bass.cut);
+      const ch = tr.chords[bar % tr.chords.length];
+      if (tr.stab) for (const [hs, len] of tr.stab.hits) if (hs === s16) for (const m of ch) tone(t, mtof(m), len * sd * 0.95, tr.stab.wave, tr.stab.vol, 2600);
+      if (tr.pad && s16 === 0) for (const m of ch) { tone(t, mtof(m), 16 * sd, tr.pad.wave, tr.pad.vol, 1500); tone(t, mtof(m) * 1.004, 16 * sd, tr.pad.wave, tr.pad.vol * 0.7, 1500); }
+      if (tr.arp) tone(t, mtof(ch[s16 % ch.length] + 12 + (s16 >= 8 ? 12 : 0)), sd * 0.8, tr.arp.wave, tr.arp.vol, 3200);
+    }
+    const ld = leadAt && leadAt[st];
+    if (ld) { if (tr.metal) { leadNote(t, ld[0], ld[1] * sd * 0.95, ld[2], tr.lead.harm ? 0.13 : 0.16); if (tr.lead.harm) leadNote(t, ld[0] + tr.lead.harm, ld[1] * sd * 0.95, ld[2], 0.1); } else if (tr.lead.theremin) theremin(t, ld[0], ld[1] * sd * 0.95); else tone(t, mtof(ld[0]), ld[1] * sd * 0.92, tr.lead.wave, tr.lead.vol, 3600); }
+  }
+  function leadMap(tr) {
+    if (!tr.lead) return null;
+    const m = []; for (const [s, n, l, b] of tr.lead.notes) m[s] = [n, l, !!b]; return m;
+  }
+  // render one full loop of a track offline, folding the ring-out back onto the start so it loops seamlessly
+  async function prerender(i) {
+    if (bufs[i] || rendering[i] || typeof OfflineAudioContext === 'undefined') return;
+    rendering[i] = true;
+    try {
+      const tr = JUKE_TRACKS[i], sd = 60 / tr.bpm / 4, n = steps(tr), SR = 22050, len = n * sd;
+      const off = new OfflineAudioContext(1, Math.ceil((len + 1.5) * SR), SR);
+      const offOut = off.createGain(); offOut.gain.value = 1; offOut.connect(off.destination);
+      let voiceOut = offOut, padBus = null, kickBus = null;
+      if (tr.house) {
+        // resonant low-pass that opens over the first 4 bars, stays open, then dips back down in the last bar for the loop
+        const sweep = off.createBiquadFilter(); sweep.type = 'lowpass'; sweep.Q.value = 5;
+        const tOpen = 0.01 + 64 * sd, tClose = 0.01 + 112 * sd, tEnd = 0.01 + n * sd;
+        sweep.frequency.setValueAtTime(420, 0); sweep.frequency.exponentialRampToValueAtTime(16000, tOpen);
+        sweep.frequency.setValueAtTime(16000, tClose); sweep.frequency.exponentialRampToValueAtTime(420, tEnd);
+        sweep.connect(offOut); voiceOut = sweep;
+        // sidechain pump: chords + guitar duck on every kick
+        padBus = off.createGain(); padBus.connect(sweep);
+        for (let b = 0; b < n / 4; b++) { const tb = 0.01 + b * 4 * sd; padBus.gain.setValueAtTime(0.25, tb); padBus.gain.linearRampToValueAtTime(1, tb + 0.2); }
+        kickBus = off.createGain(); kickBus.gain.value = 0.9; kickBus.connect(offOut);   // kick stays dry, under the filter
+      }
+      talkPrev = null; therPrev = null;
+      for (let s0 = 0; s0 < n; s0 += 16) {                      // build the score a bar at a time between frames
+        const save = { A, out, leadAt, pad, kickOut };
+        try {
+          A = off; out = voiceOut; pad = padBus; kickOut = kickBus; leadAt = leadMap(tr);
+          for (let st = s0; st < Math.min(n, s0 + 16); st++) playStep(tr, st, 0.01 + st * sd + ((st & 1) ? tr.swing * sd : 0));
+        } finally { A = save.A; out = save.out; leadAt = save.leadAt; pad = save.pad; kickOut = save.kickOut; }
+        await new Promise(r => setTimeout(r, 16));
+      }
+      const buf = await off.startRendering();
+      const d = buf.getChannelData(0), N = Math.round(len * SR);
+      for (let k = N; k < d.length; k++) d[k - N] += d[k];
+      const loop = actx.createBuffer(1, N, SR); loop.getChannelData(0).set(d.subarray(0, N));
+      bufs[i] = loop;
+    } catch (e) {} finally { rendering[i] = false; }
+    if (playing === i && !loopSrc) beginLoop();                 // someone pressed play while it was rendering
+  }
+  // render every track in the background (one after another, gently) so PLAY starts instantly and cleanly
+  let warming = false;
+  async function warm() {
+    if (warming || !actx || typeof OfflineAudioContext === 'undefined') return;
+    warming = true;
+    for (let i = 0; i < JUKE_TRACKS.length; i++) {
+      if (!bufs[i]) { await prerender(i); await new Promise(r => setTimeout(r, 250)); }
+    }
+  }
+  function beginLoop() {
+    if (playing < 0 || !bufs[playing] || !actx) return;
+    killLoop();
+    loopSrc = actx.createBufferSource(); loopSrc.buffer = bufs[playing]; loopSrc.loop = true;
+    const t = actx.currentTime + 0.06;
+    loopSrc.connect(out); loopSrc.start(t);
+    t0 = t;                                                      // beat clock starts with the loop
+    out.gain.cancelScheduledValues(actx.currentTime);
+    out.gain.setValueAtTime(0, actx.currentTime); out.gain.setTargetAtTime(VOL, t, 0.03);   // tiny fade-in: no click
+  }
+  function tick() {
+    if (playing < 0 || !actx) return;
+    if (!cabin || gameOver) { stop(); return; }
+    if (!loopSrc) return;                                        // still rendering: stays silent rather than crackling
+    // louder the closer you stand to it
+    const dist = cabin.dance ? Math.hypot(cabin.dance.x - JUKEBOX.x1, cabin.dance.z - JUKEBOX.zc) : Math.hypot(cabin.x - JUKEBOX.x1, cabin.z - JUKEBOX.zc);
+    out.gain.setTargetAtTime(VOL * (0.5 + 0.5 * Math.max(0, 1 - dist / 45)), actx.currentTime, 0.2);
+  }
+  function killLoop() { if (loopSrc) { try { loopSrc.stop(actx.currentTime + 0.05); } catch (e) {} loopSrc = null; } }
+  function start(i) {
+    try { ensureAudio(); } catch (e) {}
+    if (!actx) return;
+    A = actx;
+    if (!out) { out = actx.createGain(); out.gain.value = 0; out.connect(audioOut()); }
+    killLoop();
+    playing = i; t0 = actx.currentTime + 1e6;                    // beat clock waits for the loop
+    out.gain.cancelScheduledValues(actx.currentTime); out.gain.setTargetAtTime(0, actx.currentTime, 0.02);
+    if (ambientDuckGain) { ambientDuckGain.gain.cancelScheduledValues(actx.currentTime); ambientDuckGain.gain.setTargetAtTime(0, actx.currentTime, 0.15); }   // ambient music cuts out
+    if (musicMasterGain) { musicMasterGain.gain.cancelScheduledValues(actx.currentTime); musicMasterGain.gain.setTargetAtTime(0, actx.currentTime, 0.15); }   // ...and the cabin's music mood with it
+    if (!timer) timer = setInterval(tick, 25);
+    if (bufs[i]) beginLoop(); else prerender(i);
+  }
+  function stop() {
+    playing = -1;
+    if (timer) { clearInterval(timer); timer = null; }
+    killLoop();
+    if (actx && out) { out.gain.cancelScheduledValues(actx.currentTime); out.gain.setTargetAtTime(0, actx.currentTime, 0.08); }
+    if (actx && ambientDuckGain) ambientDuckGain.gain.setTargetAtTime(1, actx.currentTime, 0.6);
+    if (actx && musicMasterGain) musicMasterGain.gain.setTargetAtTime(musicEnabled ? BGM_VOLUME : 0, actx.currentTime, 0.6);
+  }
+  // beats since the track started (for dancing in time)
+  function beat() { return (playing < 0 || !actx || !loopSrc) ? -1 : Math.max(0, (actx.currentTime - t0) * JUKE_TRACKS[playing].bpm / 60); }
+  return { start, stop, beat, warm, get loopReady() { return playing >= 0 && !!bufs[playing]; }, get looping() { return !!loopSrc; }, get playing() { return playing; }, get isMetal() { return playing >= 0 && !!(JUKE_TRACKS[playing].metal || JUKE_TRACKS[playing].guitar); } };
+})();
+
+function jukeboxAction() {
+  const cur = Jukebox.playing, next = cur + 1 >= JUKE_TRACKS.length ? -1 : cur + 1;
+  return {
+    label: next < 0 ? "STOP" : (cur < 0 ? "PLAY" : "NEXT"),
+    banner: cur < 0 ? `>> JUKEBOX: TAP PLAY FOR "${JUKE_TRACKS[0].name}" <<`
+                    : `>> ♪ ${JUKE_TRACKS[cur].name} ♪ TAP ${next < 0 ? 'STOP' : 'NEXT FOR "' + JUKE_TRACKS[next].name + '"'} <<`,
+    enabled: true,
+    run: () => {
+      try { playSfx('coin'); vibrateGamepad(70, 0.25, 0.25); } catch (e) {}
+      if (next < 0) { Jukebox.stop(); addPopup("JUKEBOX OFF", "#94a3b8"); }
+      else { Jukebox.start(next); addPopup(`♪ NOW PLAYING: ${JUKE_TRACKS[next].name}`, "#ff2bd6"); }
+    }
+  };
+}
+
+// ---------- dancing ----------
+const DANCE_MOVES = ["NIGHT FEVER", "THE ROBOT", "RAISE THE ROOF", "BOOGIE SHUFFLE", "SPACE SPIN"];
+const SPOOKY_MOVES = ["MOONWALK", "ZOMBIE SHUFFLE", "SPIN & POSE", "HIP POP"];
+// the opening pose holds for the first bar after you hit DANCE
+function spookyIntro(c) { return !!(c && c.dance && Jukebox.playing >= 0 && c.dance.t < 4 * 60 / JUKE_TRACKS[Jukebox.playing].bpm + 0.25); }
+const SHRED_MOVES = ["SHRED!", "BREAKDOWN", "WINDMILL", "SHRED!", "POWER SLIDE", "FUNK STRUM"];
+// metal track = 32 beats: beats 0-15 riff, 16-31 breakdown (always the slow headbang)
+function shredMoveAt(beat) {
+  const tr = Jukebox.playing >= 0 ? JUKE_TRACKS[Jukebox.playing] : null;
+  if (tr && tr.guitarMoves) return tr.guitarMoves[Math.floor(beat / 8) % tr.guitarMoves.length];
+  const inLoop = beat % 32, loop = Math.floor(beat / 32);
+  if (inLoop >= 16) return 1;
+  return inLoop < 8 ? 0 : (loop % 2 ? 4 : 2);
+}
+function danceMoveName(c) {
+  const b = danceBeat(c);
+  const funky = Jukebox.playing >= 0 && JUKE_TRACKS[Jukebox.playing].house;
+  if (Jukebox.playing >= 0 && JUKE_TRACKS[Jukebox.playing].spooky) return `🎃 ${spookyIntro(c) ? "..." : SPOOKY_MOVES[Math.floor(b / 8) % SPOOKY_MOVES.length]} 🎃`;
+  return Jukebox.isMetal ? (funky ? `🎸 ${SHRED_MOVES[shredMoveAt(b)]} 🎸` : `🤘 ${SHRED_MOVES[shredMoveAt(b)]} 🤘`) : `★ ${DANCE_MOVES[Math.floor(b / 8) % DANCE_MOVES.length]} ★`;
+}
+function startDance() {
+  const c = cabin;
+  if (!c) return;
+  c.dance = { t: 0, x: c.x, z: c.z, ending: false, out: 0,
+              from: { x: c.x, z: c.z, eyeY: c.eyeY, yaw: playerFoot.yaw, pitch: playerFoot.pitch } };
+  if (Jukebox.playing < 0) { Jukebox.start(0); addPopup(`♪ NOW PLAYING: ${JUKE_TRACKS[0].name}`, "#ff2bd6"); }
+  addPopup("DANCE MODE! MOVE OR TAP TO STOP", "#facc15");
+  try { playSfx('upgrade'); vibrateGamepad(120, 0.3, 0.4); } catch (e) {}
+}
+function endDance() {
+  const d = cabin && cabin.dance;
+  if (d && !d.ending) { d.ending = true; d.out = 0; }
+}
+function danceBeat(c) {
+  const b = Jukebox.beat();
+  return b >= 0 ? b : c.dance.t * 2;   // no music: dance at 120 bpm anyway
+}
+// third-person camera: pulls back from your eyes to a slow sway in front of the dancer
+function danceCamera(c) {
+  const d = c.dance, f = d.from;
+  const kk = d.ending ? 1 - Math.min(1, d.out) : Math.min(1, d.t / 1.3);
+  const e = kk * kk * (3 - 2 * kk);
+  const R = 21, sw = 0.28 * Math.sin(d.t * 0.42);
+  const cx = Math.max(-9.5, Math.min(9.5, d.x + Math.sin(sw) * R));
+  const cz = Math.min(12, d.z + Math.cos(sw) * R);
+  const ey = -13.2;
+  const yaw = Math.atan2(d.x - cx, d.z - cz);
+  const pitch = Math.atan2(-6 - ey, Math.hypot(d.x - cx, d.z - cz));
+  let dy = yaw - f.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  return { x: f.x + (cx - f.x) * e, z: f.z + (cz - f.z) * e, eyeY: f.eyeY + (ey - f.eyeY) * e, yaw: f.yaw + dy * e, pitch: f.pitch + (pitch - f.pitch) * e };
+}
+
+// The dancer, drawn as a billboard. x,y = hip-ish anchor, s = pixels per world unit.
+function drawDancer(x, y, s, c) {
+  if (s < 0.8) return;
+  const beat = danceBeat(c), bi = Math.floor(beat), b = beat - bi;
+  const mv = Math.floor(beat / 8) % DANCE_MOVES.length;
+  const A = bi % 2 === 0;                       // which half of the move we're in
+  const snap = Math.min(1, b / 0.28), sm = snap * snap * (3 - 2 * snap);
+  const pulse = Math.sin(b * Math.PI);
+  const lerp = (p, q, k) => p + (q - p) * k;
+  const L = (pa, pb) => pa.map((v, i) => lerp(v, pb[i], sm));   // ease from the last pose into this beat's pose
+  let hipX = 0, drop = 0.3 * pulse, lean = 0, headX = 0, flip = 1, la = [-0.25, -0.15], ra = [0.25, 0.15], ll = [-0.14, -0.08], rl = [0.14, 0.08], mouthO = pulse > 0.6;
+  if (mv === 0) {            // NIGHT FEVER: point to the sky, point to the floor
+    const up = { ra: [2.45, 2.6], hip: 0.45 }, dn = { ra: [-0.55, -0.75], hip: -0.45 };
+    const P0 = A ? dn : up, P1 = A ? up : dn;
+    ra = L(P0.ra, P1.ra); hipX = lerp(P0.hip, P1.hip, sm);
+    la = [-0.95, 0.85]; lean = hipX * -0.12;
+    rl = A ? [0.4, -0.05] : [0.16, 0.08];
+  } else if (mv === 1) {     // THE ROBOT: stiff 90 degree arms, snapping on the beat
+    const k = Math.min(1, b / 0.12);
+    const pA = { la: [-1.57, Math.PI], ra: [1.57, 0] }, pB = { la: [-1.57, 0], ra: [1.57, Math.PI] };
+    const P0 = A ? pB : pA, P1 = A ? pA : pB;
+    la = P0.la.map((v, i) => lerp(v, P1.la[i], k)); ra = P0.ra.map((v, i) => lerp(v, P1.ra[i], k));
+    headX = A ? 0.35 : -0.35; drop = 0.08; mouthO = false;
+  } else if (mv === 2) {     // RAISE THE ROOF: push both hands up on every beat
+    const hi = { la: [-2.5, -3.05], ra: [2.5, 3.05] }, lo = { la: [-2.05, -2.35], ra: [2.05, 2.35] };
+    la = L(lo.la, hi.la); ra = L(lo.ra, hi.ra);
+    drop = 0.55 * pulse; ll = [-0.3, 0.1]; rl = [0.3, -0.1];
+  } else if (mv === 3) {     // BOOGIE SHUFFLE: side to side, arms swinging opposite
+    const pA = { la: [-0.65, -1.5], ra: [0.35, 1.45], hip: 0.6 }, pB = { la: [-0.35, -1.45], ra: [0.65, 1.5], hip: -0.6 };
+    const P0 = A ? pB : pA, P1 = A ? pA : pB;
+    la = L(P0.la, P1.la); ra = L(P0.ra, P1.ra); hipX = lerp(P0.hip, P1.hip, sm);
+    ll = A ? [-0.45, 0.05] : [-0.12, -0.05]; rl = A ? [0.12, 0.05] : [0.45, -0.05];
+  } else {                   // SPACE SPIN: arms out, a full turn every two beats
+    flip = Math.cos(beat * Math.PI);
+    la = [-1.45, -1.65]; ra = [1.45, 1.65]; drop = 0.15;
+  }
+  let sideOn = null, introTilt = 0;
+  if (Jukebox.playing >= 0 && JUKE_TRACKS[Jukebox.playing].spooky) {
+    // HALLOWEEN: iconic 80s pop moves
+    const sm = Math.floor(beat / 8) % SPOOKY_MOVES.length;
+    flip = 1; lean = 0; headX = 0; hipX = 0; drop = 0.2; mouthO = false;
+    if (spookyIntro(c)) {      // OPENING POSE: frozen for the first bar - head bowed, arms straight out to the sides
+      la = [-1.57, -1.57]; ra = [1.57, 1.57]; ll = [-0.12, -0.12]; rl = [0.12, 0.12]; drop = 0;
+      introTilt = 1;
+    } else if (sm === 0) {     // MOONWALK: side-on, gliding backwards for 6 beats, then a spin back round to face you
+      const mb = beat % 8;
+      if (mb < 6) {
+        const g = mb / 6, ph = mb % 1, swap = Math.floor(mb) % 2;
+        sideOn = { dir: 1, glide: 9 - 18 * g, swap, ph };              // facing right, sliding left
+      } else {
+        const k = (mb - 6) / 2;                                       // spin out: side-on -> full turn -> facing you
+        flip = Math.cos(k * Math.PI * 2); la = [-1.3, -1.5]; ra = [1.3, 1.5]; drop = 0.1;
+        hipX = (-9 + 9 * k) / 3.3;                                    // drift back to centre while spinning
+      }
+    } else if (sm === 1) {     // ZOMBIE SHUFFLE: hunched, claws up to one side, stomp, then the other
+      const s = A ? -1 : 1, k = sm;
+      la = s < 0 ? [-2.4, -1.3] : [1.9, 2.7]; ra = s < 0 ? [-1.9, -2.7] : [2.4, 1.3];   // both claws raised up to one side
+      lean = 0.12 * s; headX = 0.4 * s; drop = 0.45 + 0.25 * pulse; mouthO = true;
+      ll = [-0.35 + (s < 0 ? -0.15 : 0), 0.15]; rl = [0.35 + (s > 0 ? 0.15 : 0), -0.15];
+      hipX = 0.5 * s * sm / k;
+    } else if (sm === 2) {     // SPIN & POSE: whip round, then freeze - hand on the hat, toe pointed
+      const ph = beat % 2;
+      if (ph < 0.6) { flip = Math.cos(ph / 0.6 * Math.PI * 2); la = [-1.3, -1.5]; ra = [1.3, 1.5]; drop = 0.1; }
+      else { ra = [2.7, -2.4]; la = [-0.45, -0.3]; ll = [0.12, 0.12]; rl = [0.5, 0.5]; drop = 0.05; mouthO = true; headX = 0.25; }
+    } else {                   // HIP POP: snap into a power stance - one arm straight up, the other hand on the grab - one hip thrust, then hold
+      const mb = beat % 8;
+      la = [-2.65, -2.8]; ra = [-0.23, -0.73];                        // arm up / hand on the belt buckle
+      ll = [-0.42, -0.42]; rl = [0.42, 0.42]; drop = 0; headX = -0.15;  // legs straight, feet apart
+      if (mb > 1 && mb < 1.6) {                                       // the one thrust
+        const k = Math.sin((mb - 1) / 0.6 * Math.PI);
+        lean = -0.2 * k; drop = 0.3 * k; mouthO = k > 0.3;
+      }
+    }
+  }
+  let shred = null;
+  if (Jukebox.isMetal) {
+    // METAL: he grabs the neon axe. Strum hand moves every 16th, head bangs on the beat.
+    const smv = shredMoveAt(beat), q = beat * 4;
+    flip = 1; lean = 0; headX = 0; hipX = 0; mouthO = true;
+    const bang = Math.pow(Math.max(0, Math.cos(b * Math.PI * 2)), 3);      // sharp nod right on the beat
+    shred = { move: smv, strum: (Math.floor(q) % 2) ? 1 : -1, nod: 0, wind: 0, neckLift: 0, hard: 0, up: 0,
+              sway: Math.sin(beat * Math.PI) * 1.5 };
+    ll = [-0.55, 0.12]; rl = [0.55, -0.12]; drop = 0.35 + 0.25 * bang;      // wide power stance
+    if (smv === 1) {                                                                                 // BREAKDOWN: slow, heavy headbang - one big nod every 2 beats
+      const hb = (beat / 2) % 1;
+      // slow wind-up as the head rises, then a heavy slam down onto the downbeat and a held hang
+      const hard = hb < 0.18 ? 1 - hb / 0.18 * 0.15 : (hb < 0.75 ? 0.85 * Math.pow(1 - (hb - 0.18) / 0.57, 1.6) : Math.pow((hb - 0.75) / 0.25, 3));
+      shred.nod = 8 * hard; lean = 0.38 * hard; drop = 0.6 + 0.65 * hard;
+      ll = [-0.7, 0.25];                                                // front leg: deep bent crouch
+      const ra = 0.5 + 0.12 * hard; rl = [ra, ra];                      // screen-right leg locked straight out to the side...
+      shred.rStraight = true; shred.rLen = 0.88;                        // ...and set back (foreshortened)
+      shred.strum = (Math.floor(beat * 2) % 2) ? 1 : -1;               // heavier, slower pick strokes
+      shred.lost = true; mouthO = false;                                 // eyes shut, mouth shut: lost in the riff
+      shred.side = 5 * hard; shred.tilt = hard;                          // head swings down over the right shoulder, pitched forward
+    }
+    else if (smv === 2) { shred.wind = (beat % 1) * Math.PI * 2; shred.nod = 1.5 * bang; shred.straight = true; ll = [-0.42, -0.42]; rl = [0.42, 0.42]; drop = 0.3; }   // WINDMILL: strum arm whirls round, power stance
+    else if (smv === 4) { drop = 1.1 + 0.15 * bang; ll = [-0.95, 0.35]; rl = [0.95, -0.35]; shred.neckLift = 4; lean = -0.1; }   // POWER SLIDE: deep lunge, neck to the sky
+    else if (smv === 5) {                                                                            // FUNK STRUM: groove on the hips, easy knee bounce, grinning
+      shred.nod = 1.5 * bang; hipX = 0.55 * Math.sin(beat * Math.PI); drop = 0.25 + 0.35 * bang; mouthO = false;
+      ll = [-0.3 + 0.15 * Math.sin(beat * Math.PI), 0.05]; rl = [0.3 + 0.15 * Math.sin(beat * Math.PI), -0.05];
+    }
+    else { shred.nod = 1.2 * bang; shred.straight = true; ll = [-0.42, -0.42]; rl = [0.42, 0.42]; drop = 0.3; }   // SHRED!: power stance, legs locked straight, feet wide
+  }
+  const facingBack = flip < 0;
+  const sq = Math.max(0.3, Math.abs(flip));               // horizontal squash for the spin
+  paintDancerSprite(c, { hipX, drop, lean, headX, la, ra, ll, rl, mouthO, facingBack, beat, bi, shred, sideOn, introTilt });
+  const k = s * 13.5 / 46;                                // sprite pixels -> screen (spaceman is ~13.5 world units tall)
+  const footY = y + 5.75 * s;
+  ctx.save();
+  // floor: coloured spotlight while the music's on, plus a soft shadow
+  if (Jukebox.playing >= 0) {
+    const g = getGlow([cabinRgbMix > 0.3 ? hueHex(Math.floor(beat * 0.125 * 12) / 12) + "99" : "rgba(250,204,21,0.45)", "rgba(0,0,0,0)"]);
+    ctx.drawImage(g, x - 5 * s, footY - 1.2 * s, 10 * s, 2.4 * s);
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.beginPath(); ctx.ellipse(x, footY, 2.6 * s, 0.55 * s, 0, 0, Math.PI * 2); ctx.fill();
+  if (shred) {
+    const pulse = 0.75 + 0.25 * Math.sin(beat * Math.PI * 2);
+    ctx.globalAlpha = pulse;
+    ctx.drawImage(getGlow(["rgba(255,43,214,0.55)", "rgba(57,255,20,0.18)", "rgba(0,0,0,0)"]), x - 4.5 * s, footY - 9.5 * s, 9 * s, 7 * s);
+    ctx.globalAlpha = 1;
+  }
+  ctx.imageSmoothingEnabled = false;
+  const W = DANCER_CV.width * k * sq, H = DANCER_CV.height * k;
+  ctx.drawImage(DANCER_CV, Math.round(x - DANCER_O.x * k * sq), Math.round(footY - DANCER_O.y * k), Math.round(W), Math.round(H));
+  ctx.restore();
+}
+
+// ---- the dancer as real pixel art: same palette + proportions as the game's spaceman,
+// and with the helmet off, the same face as the Doom-style HUD portrait ----
+const DANCER_CV = document.createElement("canvas"); DANCER_CV.width = 64; DANCER_CV.height = 70;
+const DANCER_O = { x: 32, y: 67 };                       // feet centre inside the sprite canvas
+const DANCER_TMP = document.createElement("canvas"); DANCER_TMP.width = 64; DANCER_TMP.height = 70;
+function paintDancerSprite(c, P) {
+  const K = 3.3;                                         // pose units -> sprite pixels
+  const g = DANCER_TMP.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, 64, 70);
+  g.translate(DANCER_O.x, DANCER_O.y);
+  const R = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), w, h); };
+  const seg = (j, len, a) => [j[0] + Math.sin(a) * len, j[1] + Math.cos(a) * len];
+  // chunky pixel limb: square brush stamped along the segment (keeps the blocky look at any angle)
+  const limb = (a, b, w, col, shade) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+    for (let i = 0; i <= n; i++) {
+      const px = a[0] + (b[0] - a[0]) * i / n, py = a[1] + (b[1] - a[1]) * i / n;
+      R(px - w / 2, py - w / 2, w, w, col);
+      if (shade) R(px + w / 2 - 1, py - w / 2, 1, w, shade);
+    }
+  };
+  const SUIT = "#e2e8f0", SHADE = "#cbd5e1", HI = "#f8fafc", BOOT = "#334155", GLOVE = "#334155", RING = "#94a3b8";
+  if (P.sideOn) {
+    // ---- PROFILE VIEW (moonwalk): facing d, one leg straight sliding back flat-footed, the other bent on its toes ----
+    const S = P.sideOn, d = S.dir, X = v => S.glide + v * d;
+    const ease = Math.min(1, S.ph / 0.35), e = ease * ease * (3 - 2 * ease);
+    const hipY = -17 + 1;
+    const legPose = (bent) => bent ? { thigh: 0.38, shin: -0.12, toe: true } : { thigh: -0.22, shin: -0.22, toe: false };
+    const A0 = legPose(S.swap === 0), B0 = legPose(S.swap === 1);           // swap which leg pops each beat (eased)
+    const A1 = legPose(S.swap !== 0), B1 = legPose(S.swap !== 1);
+    const mix = (p, q) => ({ thigh: q.thigh + (p.thigh - q.thigh) * e, shin: q.shin + (p.shin - q.shin) * e, toe: e > 0.5 ? p.toe : q.toe });
+    const legs = [mix(A0, A1), mix(B0, B1)];
+    const drawLeg = (L, col, shade) => {
+      const h0 = [X(0), hipY];
+      const knee = seg(h0, 7.5, L.thigh * d), foot0 = seg(knee, 7.5, L.shin * d);
+      const foot = [foot0[0], Math.min(foot0[1], -3)];
+      limb(h0, knee, 4, col, null); limb(knee, foot, 4, col, null);
+      if (L.toe) { R(foot[0] - 1 + d * 1, foot[1] - 1, 4, 3, BOOT); R(foot[0] + d * 3 - (d < 0 ? 1 : 0), foot[1] + 1, 2, 2, BOOT); }   // heel up, weight on the toe
+      else R(Math.min(foot[0] - 2, foot[0] - 2 + d * 2), foot[1], 6, 3, BOOT);                                                      // flat foot sliding back
+      if (shade) R(foot[0] - 1, foot[1] - 6, 1, 4, shade);
+    };
+    // far arm + far leg first (a touch darker), then torso, near leg, near arm, head
+    const armSwing = 0.25 * Math.sin((S.ph + S.swap) * Math.PI);
+    const sh = [X(0), hipY - 13.5];
+    const farHand = seg(seg(sh, 7, -0.25 * d - armSwing * d), 6.5, -0.05 * d - armSwing * d);
+    limb(sh, seg(sh, 7, -0.25 * d - armSwing * d), 3, "#94a3b8", null); limb(seg(sh, 7, -0.25 * d - armSwing * d), farHand, 3, "#94a3b8", null);
+    drawLeg(legs[1], "#b6c0cd", null);
+    R(X(-6) - (d > 0 ? 0 : 2), hipY - 14, 3, 11, "#94a3b8"); R(X(-6) - (d > 0 ? 0 : 2), hipY - 10, 3, 1, "#64748b"); R(X(-5) - (d > 0 ? 0 : 1), hipY - 13, 1, 1, "#22c55e");   // backpack
+    R(X(-3.5) - (d > 0 ? 0 : 7), hipY - 15, 8, 15, SUIT); R(X(2.5) - (d > 0 ? 0 : 2), hipY - 15, 2, 15, SHADE);                   // torso
+    R(X(-3.5) - (d > 0 ? 0 : 7), hipY - 2, 8, 2, "#475569");                                                                      // belt
+    R(X(1.5) - (d > 0 ? 0 : 2), hipY - 12, 2, 2, "#38bdf8");                                                                      // chest light, front side
+    drawLeg(legs[0], SUIT, null);
+    const nearEl = seg(sh, 7, 0.2 * d + armSwing * d), nearHand = seg(nearEl, 6.5, 0.05 * d + armSwing * d);
+    limb(sh, nearEl, 3, SUIT, null); limb(nearEl, nearHand, 3, SUIT, null); R(nearHand[0] - 1.5, nearHand[1] - 1.5, 3, 3, GLOVE);
+    R(X(-2) - (d > 0 ? 0 : 3), hipY - 15, 4, 3, "#ea580c");                                                                       // shoulder patch
+    // head in profile
+    const hx = X(0.5), hy = hipY - 17;
+    R(hx - 3, hy, 7, 2, RING);                                                                                                    // neck ring
+    if (c.hasHelmet) {
+      R(hx - 5, hy - 12, 11, 12, HI); R(hx - 5 + (d > 0 ? 0 : 9), hy - 12, 2, 12, SHADE);
+      R(hx + (d > 0 ? 1 : -5), hy - 9, 5, 6, "#0284c7"); R(hx + (d > 0 ? 5 : -5), hy - 9, 1, 6, "#075985"); R(hx + (d > 0 ? 2 : -3), hy - 8, 2, 1, "#7dd3fc");   // visor on the front
+      R(hx + (d > 0 ? -4 : 4), hy - 14, 1, 2, RING);                                                                             // antenna at the back
+    } else {
+      const skin = "#f1c27d", skinD = "#d39e5a", hair = "#5b3a1e";
+      const F = (fx, fy, w, h, col) => R(d > 0 ? hx - 4 + fx : hx + 4 - fx - w + 1, hy - 11 + fy, w, h, col);   // 9x10 profile head, mirrored for d<0
+      F(0, 0, 9, 10, skin); F(0, 0, 9, 3, hair); F(0, 3, 4, 3, hair);       // hair over the top and down the back
+      F(0, 8, 9, 2, skinD); F(3, 4, 2, 2, skinD);                           // jaw shade + ear
+      F(6, 4, 2, 2, "#ffffff"); F(7, 4, 1, 2, "#1e293b"); F(6, 3, 3, 1, "#3f2a14");   // eye looking forward + brow
+      F(9, 5, 1, 2, skin);                                                  // nose
+      F(6, 7, 3, 1, "#7c2d12");                                             // mouth
+    }
+    return finishDancerSprite();
+  }
+  const dropPx = Math.round(P.drop * K), hipX = Math.round(P.hipX * K);
+  const hip = [hipX, -17 + dropPx];
+  // legs (thigh + shin) and boots; knees splay a little more as the hips drop
+  for (const [side, lg] of [[-1, P.ll], [1, P.rl]]) {
+    const h0 = [hip[0] + side * 2.5, hip[1]];
+    const locked = P.shred && (P.shred.straight || (side > 0 && P.shred.rStraight));
+    const bend = locked ? 0 : side * P.drop * 0.35;                         // power stance keeps the knees locked
+    const L = (side > 0 && P.shred && P.shred.rLen) ? 7.5 * P.shred.rLen : 7.5;
+    const knee = seg(h0, L, lg[0] + bend);
+    let foot = seg(knee, L, lg[1] - bend);
+    foot = [foot[0], Math.min(foot[1], -3)];
+    limb(h0, knee, 4, SUIT, side > 0 ? SHADE : null); limb(knee, foot, 4, SUIT, side > 0 ? SHADE : null);
+    R(foot[0] - 2.5 + side * 0.5, foot[1], 5, 3, BOOT);
+  }
+  // torso (moves with the hips, leans a touch)
+  const tx = hip[0] + Math.round(P.lean * 8), ty = hip[1];
+  R(tx - 6, ty - 15, 12, 15, SUIT); R(tx + 4, ty - 15, 2, 15, SHADE); R(tx - 6, ty - 15, 12, 1, HI);
+  R(tx - 6, ty - 2, 12, 2, "#475569");                                       // belt
+  if (P.facingBack) {
+    R(tx - 4, ty - 14, 8, 11, RING); R(tx - 4, ty - 10, 8, 1, "#64748b"); R(tx - 3, ty - 13, 1, 1, "#22c55e");   // backpack
+  } else {
+    const panel = cabinRgbMix > 0.3 ? hueHex(Math.floor(P.beat) * 0.25) : "#38bdf8";
+    R(tx - 3, ty - 12, 3, 3, panel); R(tx + 1, ty - 12, 2, 2, (P.bi % 2) ? "#ef4444" : "#7f1d1d");                  // chest panel
+  }
+  R(tx - 7, ty - 15, 2, 2, "#ea580c"); R(tx + 5, ty - 15, 2, 2, "#ea580c");                                         // shoulder patches
+  // head
+  const paintHead = () => {
+  const sideX = P.shred && P.shred.side ? Math.round(P.shred.side) : (P.shred ? Math.round(P.shred.nod * 0.25) : 0);
+  const hx = tx + Math.round(P.headX * 3) + sideX, hy = ty - 17 + (P.shred ? Math.round(P.shred.nod) : 0) + (P.introTilt ? 2 : 0);   // hy = top of neck ring
+  const tilt = P.introTilt ? P.introTilt : (P.shred && P.shred.tilt ? P.shred.tilt : 0);   // 0 = facing you, 1 = pitched right forward
+  const tr = Math.round(tilt * 4);                                           // rows of "top of head" that come into view
+  R(tx - 4, ty - 17, 8, 2, RING);                                           // neck ring stays on the suit
+  if (c.hasHelmet) {
+    R(hx - 6, hy - 12, 12, 12, HI); R(hx - 6, hy - 12, 2, 12, SHADE); R(hx - 6, hy - 1, 12, 1, SHADE);
+    R(hx - 7, hy - 7, 1, 4, "#64748b"); R(hx + 6, hy - 7, 1, 4, "#64748b");   // ear pods
+    R(hx + 3, hy - 14, 1, 2, RING); R(hx + 3, hy - 15, 1, 1, (P.bi % 2) ? "#38bdf8" : "#ef4444");   // antenna + status lamp
+    if (!P.facingBack) {
+      const vh = 6 - Math.round(tr * 0.75);                                   // visor drops and squashes as the helmet tips forward
+      R(hx - 4, hy - 9 + tr, 8, vh, "#0284c7"); R(hx + 3, hy - 9 + tr, 1, vh, "#075985"); if (tr < 3) R(hx + 1, hy - 8 + tr, 2, 1, "#7dd3fc");
+      if (tr > 0) R(hx - 5, hy - 12, 10, Math.min(3, tr), SHADE);            // top of the helmet catching the light
+      if (cabinRgbMix > 0.3 && tr < 3) R(hx - 3, hy - 6 + tr, 5, 1, hueHex(Math.floor(P.beat) * 0.25 + 0.5));   // disco lights reflecting off the visor
+    }
+  } else {
+    // the HUD portrait's face, pixel for pixel (its 10x10 face box = x 7..16, y 8..17)
+    const F = (fx, fy, w, h, col) => R(hx - 12 + fx, hy - 18 + fy, w, h, col);
+    const skin = "#f1c27d", skinD = "#d39e5a", hair = "#5b3a1e", ink = "#1e293b";
+    if (P.facingBack) {
+      F(7, 8, 10, 10, hair); F(8, 7, 8, 1, hair); F(7, 16, 10, 2, "#4a2f18");
+    } else {
+      F(8, 7, 8, 1, hair);                                                   // crown of the hair
+      F(7, 8, 10, 10, skin); F(7, 8, 10, 2 + tr, hair); F(7, 10 + tr, 1, 3, hair); F(16, 10 + tr, 1, 3, hair);   // tipped forward: more of the top of his head shows
+      F(7, 16, 10, 2, skinD);
+      F(6, 12 + Math.round(tr / 2), 1, 2, skin); F(17, 12 + Math.round(tr / 2), 1, 2, skin);   // ears
+      const ey = 12 + Math.round(tr * 0.75), look = P.headX > 0.1 ? 1 : (P.headX < -0.1 ? -1 : 0);
+      if ((P.shred && P.shred.lost) || (P.bi % 8 === 7 && (P.beat % 1) < 0.15)) {   // eyes shut (headbanging) or the odd blink
+        F(9, ey, 3, 1, ink); F(13, ey, 3, 1, ink);
+      } else {
+        F(9, ey, 3, 2, "#ffffff"); F(10 + look, ey, 1, 1, ink);
+        F(13, ey, 3, 2, "#ffffff"); F(14 + look, ey, 1, 1, ink);
+      }
+      if (tr < 3) { F(9, ey - 2, 3, 1, "#3f2a14"); F(13, ey - 2, 3, 1, "#3f2a14"); }   // raised, having-a-good-time brows (hidden under the hair when tipped)
+      const my = 15 + Math.round(tr * 0.5);
+      if (P.shred && P.shred.lost) { if (tr < 3) F(10, my, 4, 1, ink); }       // mouth shut tight (tucked away when his chin's on his chest)
+      else if (P.mouthO) { F(10, my - 1, 4, 3, ink); F(11, my, 2, 1, "#7f1d1d"); }  // "ooh!"
+      else { F(9, my - 1, 1, 1, ink); F(14, my - 1, 1, 1, ink); F(10, my, 4, 1, "#f8fafc"); F(10, my + 1, 4, 1, ink); }   // Doom grin
+    }
+  }
+  };
+  if (!P.shred) paintHead();
+  if (P.shred) {
+    // guitar mode: head drawn last so it's in front of the shoulder as it bangs down -
+    // except the windmill (spinning arm) and power slide (neck raised past his face), which sweep in front of his head
+    if (P.shred.move === 2 || P.shred.move === 4) { paintHead(); paintShredder(R, limb, tx, ty, P.shred, P.beat); }
+    else { paintShredder(R, limb, tx, ty, P.shred, P.beat); paintHead(); }
+    return finishDancerSprite();
+  }
+  // arms last so they read over the torso
+  for (const [side, ar] of [[-1, P.la], [1, P.ra]]) {
+    const sh = [tx + side * 6.5, ty - 13.5];
+    const el = seg(sh, 7, ar[0]), hd = seg(el, 6.5, ar[1]);
+    limb(sh, el, 3, SUIT, "#94a3b8"); limb(el, hd, 3, SUIT, "#94a3b8");       // 1px shade edge so arms read across the white suit
+    R(hd[0] - 1.5, hd[1] - 1.5, 3, 3, GLOVE);
+  }
+  R(tx - 7.5, ty - 15, 3, 3, SUIT); R(tx + 4.5, ty - 15, 3, 3, SHADE);       // shoulder pads cover the joints
+  R(tx - 7, ty - 15, 2, 2, "#ea580c"); R(tx + 5, ty - 15, 2, 2, "#ea580c");
+  finishDancerSprite();
+}
+// guitar + arms for shred mode (sprite space, y up is negative, tx/ty = hip)
+function paintShredder(R, limb, tx, ty, S, beat) {
+  const PINK = "#ff2bd6", PINK_D = "#be185d", GREEN = "#39ff14", GREEN_D = "#15803d", SUIT = "#e2e8f0", GLOVE = "#334155";
+  // flying-V slung low across the body: joint at the right hip, neck rising to his left
+  const joint = [tx + 4, ty - 6];
+  const nAng = -0.62 - S.neckLift * 0.12;                                  // neck angle (radians above horizontal, to the left)
+  const nd = [-Math.cos(nAng), Math.sin(nAng)];                              // unit vector along the neck
+  const head = [joint[0] + nd[0] * 17, joint[1] + nd[1] * 17];
+  const back = [-nd[0], -nd[1]], perp = [-nd[1], nd[0]];
+  const prong = (k) => [joint[0] + (back[0] * Math.cos(k) - back[1] * Math.sin(k)) * 12, joint[1] + (back[0] * Math.sin(k) + back[1] * Math.cos(k)) * 12];
+  const p1 = prong(0.55), p2 = prong(-0.55);
+  // body: dark ink edge, neon green trim, hot pink fill, darker inner bevel - two clear prongs of a flying V
+  const INK = "#0f172a";
+  limb(joint, p1, 6, INK, null); limb(joint, p2, 6, INK, null);
+  limb(joint, p1, 4, GREEN, null); limb(joint, p2, 4, GREEN, null);
+  limb(joint, p1, 2, PINK, null); limb(joint, p2, 2, PINK, null);
+  R(joint[0] - 2, joint[1] - 2, 4, 4, GREEN); R(joint[0] - 1, joint[1] - 1, 2, 2, PINK);
+  R(p1[0] - 1, p1[1] - 1, 2, 2, PINK_D); R(p2[0] - 1, p2[1] - 1, 2, 2, PINK_D);
+  const drawNeck = () => {
+  // neck + frets, headstock
+  limb(joint, head, 4, INK, null); limb(joint, head, 2, GREEN, null);
+  for (let f = 4; f < 17; f += 3) R(joint[0] + nd[0] * f, joint[1] + nd[1] * f - 1, 1, 1, "#d9f99d");
+  limb(head, [head[0] + nd[0] * 4 + perp[0] * 2, head[1] + nd[1] * 4 + perp[1] * 2], 5, "#0f172a", null);
+  limb(head, [head[0] + nd[0] * 4 + perp[0] * 2, head[1] + nd[1] * 4 + perp[1] * 2], 3, PINK, null);
+  R(head[0] + nd[0] * 2 - 1, head[1] + nd[1] * 2 - 2, 1, 1, "#ffffff"); R(head[0] + nd[0] * 3, head[1] + nd[1] * 3 - 1, 1, 1, "#ffffff");   // tuning pegs
+  };
+  drawNeck();
+  // pickups + strings glinting
+  R(joint[0] + back[0] * 3 - 1, joint[1] + back[1] * 3 - 1, 3, 2, "#0f172a");
+  limb([joint[0] + back[0] * 5, joint[1] + back[1] * 5], head, 1, "#f5d0fe", null);
+  // 2-bone arm reaching for a target (elbow bends outward/down)
+  // side = -1 for his screen-left arm, +1 for the right: the elbow always bends down and away from the body
+  const arm = (sh, tgt, side) => {
+    const l1 = 7, l2 = 6.5, dx = tgt[0] - sh[0], dy = tgt[1] - sh[1];
+    const d = Math.max(1, Math.min(l1 + l2 - 0.01, Math.hypot(dx, dy)));
+    const a = Math.atan2(dy, dx), cosA = (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), off = Math.acos(Math.max(-1, Math.min(1, cosA)));
+    const cand = [a + off, a - off].map(ea => [sh[0] + Math.cos(ea) * l1, sh[1] + Math.sin(ea) * l1]);
+    const score = e => (e[1] - sh[1]) + 0.8 * side * (e[0] - sh[0]);
+    const el = score(cand[0]) >= score(cand[1]) ? cand[0] : cand[1];
+    const hd = [sh[0] + Math.cos(a) * d, sh[1] + Math.sin(a) * d];
+    limb(sh, el, 5, "#0f172a", null); limb(el, hd, 5, "#0f172a", null);
+    limb(sh, el, 3, SUIT, null); limb(el, hd, 3, SUIT, null); R(hd[0] - 1.5, hd[1] - 1.5, 3, 3, GLOVE);
+    return hd;
+  };
+  // fretting hand slides up and down the neck through the solo
+  const fretPos = 9 + 3 * Math.sin(beat * Math.PI * 0.5) + ((Math.floor(beat * 4) % 3) - 1);
+  const fretHand = arm([tx - 6.5, ty - 13.5], [joint[0] + nd[0] * fretPos, joint[1] + nd[1] * fretPos + 1], -1);
+  // strumming hand: 16th-note pick strokes over the pickups, or a full windmill
+  let pick;
+  if (S.move === 2) pick = [tx + 6.5 + Math.cos(-S.wind - Math.PI / 2) * 11, ty - 13.5 + Math.sin(-S.wind - Math.PI / 2) * 11];   // windmill spins the other way: up, out, down onto the strings
+  else pick = [joint[0] + back[0] * 3 + perp[0] * 1.5 * S.strum, joint[1] + back[1] * 3 + perp[1] * 2.5 * S.strum - 1];
+  arm([tx + 6.5, ty - 13.5], pick, 1);
+  R(tx - 7.5, ty - 15, 3, 3, SUIT); R(tx + 4.5, ty - 15, 3, 3, "#cbd5e1");
+  R(tx - 7, ty - 15, 2, 2, "#ea580c"); R(tx + 5, ty - 15, 2, 2, "#ea580c");
+  // fretboard back on top so his left shoulder sits behind it, then his fretting hand over the strings
+  drawNeck();
+  arm([tx + 6.5, ty - 13.5], pick, 1);                                       // strumming arm back over the guitar
+  R(tx + 4.5, ty - 15, 3, 3, "#cbd5e1"); R(tx + 5, ty - 15, 2, 2, "#ea580c"); // ...with its shoulder pad
+  R(fretHand[0] - 2.5, fretHand[1] - 2.5, 5, 5, "#0f172a"); R(fretHand[0] - 1.5, fretHand[1] - 1.5, 3, 3, GLOVE);
+  // sparks off the strings on the beat
+  if ((beat % 1) < 0.18) for (let i = 0; i < 3; i++) R(joint[0] + back[0] * 4 + (i - 1) * 3, joint[1] - 4 - i * 2, 1, 1, i % 2 ? GREEN : "#ffffff");
+}
+function finishDancerSprite() {
+  // 1px dark outline (same ink as the HUD portrait) so he pops off the RGB floor
+  const o = DANCER_CV.getContext("2d");
+  o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, 64, 70);
+  o.globalCompositeOperation = "source-over";
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) o.drawImage(DANCER_TMP, dx, dy);
+  o.globalCompositeOperation = "source-in"; o.fillStyle = "#0f172a"; o.fillRect(0, 0, 64, 70);
+  o.globalCompositeOperation = "source-over"; o.drawImage(DANCER_TMP, 0, 0);
+}
+
+// ---- PARTY LASERS: two projectors drop out of the ceiling at the aft corners in RGB mode ----
+const LASER_RIGS = [{ x: -13.5, z: -34 }, { x: 13.5, z: -34 }];
+const LASER_COLS = ["#39ff14", "#ff1744", "#00e5ff", "#ff2bd6"];
+function laserDrop() { return Math.max(0, Math.min(1, (cabinDisco - 0.35) / 0.5)); }   // pops out just as the disco ball starts lowering
+function laserBeams(t) {
+  const drop = laserDrop(); if (drop < 0.95) return [];
+  const beat = typeof Jukebox !== 'undefined' ? Jukebox.beat() : -1, on = beat >= 0;
+  const out = [], N = 6;
+  const bar = on ? Math.floor(beat / 4) : Math.floor(t / 2);
+  const pulse = on ? 0.55 + 0.45 * Math.pow(1 - (beat % 1), 2) : 0.75;        // flash on every beat
+  LASER_RIGS.forEach((r, ri) => {
+    const side = r.x < 0 ? 1 : -1;                                               // aim back into the room
+    const ey = -16.2, sp = on ? 0.9 : 0.45;
+    for (let k = 0; k < N; k++) {
+      const fan = (k / (N - 1) - 0.5) * 1.1;
+      const az = Math.PI / 2 - side * 0.55 + fan + 0.55 * Math.sin(t * sp + ri * 1.7 + k * 0.35);   // sweeping fan, mostly forward (+z)
+      const el = 0.35 + 0.25 * Math.sin(t * sp * 0.7 + k * 0.9 + ri);            // tilt down toward the floor
+      const ce = Math.cos(el), dx = Math.cos(az) * ce, dz = Math.sin(az) * ce, dy = Math.sin(el);
+      let tt = 1e9;
+      if (dx > 0.001) tt = Math.min(tt, (CAB_HW - 0.3 - r.x) / dx); else if (dx < -0.001) tt = Math.min(tt, (-CAB_HW + 0.3 - r.x) / dx);
+      if (dz > 0.001) tt = Math.min(tt, (22 - r.z) / dz); else if (dz < -0.001) tt = Math.min(tt, (-43.5 - r.z) / dz);
+      if (dy > 0.001) tt = Math.min(tt, (-0.1 - ey) / dy);
+      const col = LASER_COLS[(k + ri + bar) % LASER_COLS.length];
+      out.push({ a: [r.x, ey, r.z], b: [r.x + dx * tt, ey + dy * tt, r.z + dz * tt], col, alpha: pulse });
+    }
+  });
+  return out;
+}
+
+// ---- DISCO BALL ----
+// fixed set of mirror-tile reflection directions (elevation mostly downward, all round)
+const DISCO_RAYS = (() => {
+  const out = []; let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 46; i++) out.push({ az: rnd() * Math.PI * 2, el: -0.15 + rnd() * 1.25, hue: rnd(), tw: rnd() * 6 });
+  return out;
+})();
+// where each reflected beam lands on the walls / floor / ceiling of the hold
+function discoSpecks(by) {
+  const res = [], rot = cabinDiscoSpin * 0.7;
+  for (const r of DISCO_RAYS) {
+    const a = r.az + rot, ce = Math.cos(r.el);
+    const dx = Math.cos(a) * ce, dz = Math.sin(a) * ce, dy = Math.sin(r.el);        // dy > 0 = towards the floor
+    let t = 1e9;
+    if (dx > 0.001) t = Math.min(t, (CAB_HW - 0.3 - DISCO.x) / dx); else if (dx < -0.001) t = Math.min(t, (-CAB_HW + 0.3 - DISCO.x) / dx);
+    if (dz > 0.001) t = Math.min(t, (22 - DISCO.z) / dz); else if (dz < -0.001) t = Math.min(t, (-43.5 - DISCO.z) / dz);
+    if (dy > 0.001) t = Math.min(t, (-0.1 - by) / dy); else if (dy < -0.001) t = Math.min(t, (-17.8 - by) / dy);
+    if (t > 1e8) continue;
+    const tw = 0.55 + 0.45 * Math.sin(cabinDiscoSpin * 3 + r.tw);
+    res.push([DISCO.x + dx * t, by + dy * t, DISCO.z + dz * t, hueHex(Math.round((r.hue + cabinDiscoSpin * 0.05) * 12) / 12), tw]);
+  }
+  return res;
+}
+function drawDiscoBall(x, y, s, by, t) {
+  const r = DISCO.r * s;
+  if (r < 1.5) return;
+  ctx.save();
+  // chain up to the hatch
+  const top = y - (by + 17.9) * s;
+  ctx.fillStyle = "#94a3b8";
+  const link = Math.max(1, Math.round(s * 0.18));
+  for (let yy = top; yy < y - r; yy += link * 2) ctx.fillRect(Math.round(x - link / 2), Math.round(yy), link, link);
+  // pixel mirror tiles: rows of facets that scroll sideways as it spins
+  const n = 8, tile = (2 * r) / n, spin = cabinDiscoSpin * 2.2;
+  for (let j = 0; j < n; j++) {
+    const v = (j + 0.5) / n * 2 - 1;                    // -1 top .. 1 bottom
+    const half = Math.sqrt(Math.max(0, 1 - v * v));     // row half-width (sphere)
+    const cols = Math.max(1, Math.round(n * half));
+    for (let i = 0; i < cols; i++) {
+      const u = ((i + 0.5) / cols) * 2 - 1;             // -1..1 across the row
+      const lon = Math.asin(Math.max(-1, Math.min(1, u))) + spin;
+      const facet = Math.floor(lon / (Math.PI / 5) + j * 0.5);
+      const shade = 0.55 + 0.3 * Math.cos(lon - spin) - 0.15 * v;   // lit from the front, darker underneath
+      let col;
+      const flash = ((facet * 7 + j * 3) % 11 === 0) && Math.sin(t * 6 + facet) > 0.2;
+      if (flash) col = "#ffffff";
+      else if ((facet + j) % 5 === 0 && cabinRgbMix > 0.3) col = hueHex(Math.round(((facet * 0.13 + t * 0.15) % 1) * 12) / 12, 0.85);
+      else { const g = Math.round(Math.max(60, Math.min(235, 255 * shade - ((facet + j) % 2) * 28))); col = `rgb(${g},${g},${Math.min(255, g + 12)})`; }
+      const px = x + u * r * half - tile * half / 2, py = y + v * r - tile / 2;
+      ctx.fillStyle = col; ctx.fillRect(Math.round(px), Math.round(py), Math.ceil(tile * half + 0.5), Math.ceil(tile + 0.5));
+    }
+  }
+  // dark rim + cap so it reads as a sphere
+  ctx.strokeStyle = "#0f172a"; ctx.lineWidth = Math.max(1, s * 0.12);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#64748b"; ctx.fillRect(Math.round(x - r * 0.25), Math.round(y - r - s * 0.25), Math.round(r * 0.5), Math.max(1, Math.round(s * 0.3)));
+  // star glint
+  const gl = 0.5 + 0.5 * Math.sin(t * 4.3);
+  if (gl > 0.55) {
+    const gx = Math.round(x - r * 0.4), gy = Math.round(y - r * 0.45), L = Math.max(2, Math.round(s * 0.45 * gl));
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(gx - L, gy, L * 2 + 1, 1); ctx.fillRect(gx, gy - L, 1, L * 2 + 1);
+  }
+  ctx.restore();
+}
+
+// Floating label + music notes above the jukebox
+function drawJukeLabel(x, y, s, t) {
+  if (s < 2) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.font = `bold ${Math.max(4, Math.min(9, s * 0.55))}px monospace`;
+  const on = Jukebox.playing >= 0;
+  ctx.fillStyle = on ? hueHex(t * 0.3) : "#f9a8d4";
+  ctx.fillText("♪ JUKEBOX ♪", x, y);
+  if (on) {
+    ctx.font = `bold ${Math.max(3, Math.min(7, s * 0.36))}px monospace`; ctx.fillStyle = "#fde68a";
+    ctx.fillText(JUKE_TRACKS[Jukebox.playing].name, x, y + s * 0.8);
+    ctx.font = `bold ${Math.max(5, Math.min(12, s * 0.8))}px monospace`;
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 0.45 + i / 3) % 1;
+      ctx.globalAlpha = Math.sin(ph * Math.PI);
+      ctx.fillStyle = hueHex(t * 0.2 + i * 0.33);
+      ctx.fillText(i % 2 ? "♫" : "♪", x + (i - 1) * s * 1.4 + Math.sin(t * 2 + i) * s * 0.4, y - ph * s * 3.5 - s * 0.6);
+    }
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
 
@@ -8242,9 +9335,9 @@ function buildCabinStatic() {
   // EVA suit rack against the engine bulkhead: slatted back panel, hazard posts,
   // header, helmet shelf, laser holster pegs, O2 tanks, power conduit
   const RK = "#374151", RKE = "#6b7280", RZ = -41.2;
-  cabBox(F, -9.4, 9.4, -0.5, -17, -44, -43.4, "#1f2937", { edge: "#4b5563", bias: -2 });   // rack layering: back panel < gear < posts/header
-  for (let x = -8.6; x < 8.6; x += 1.6) cabBox(F, x, x + 0.5, -1, -15.6, -43.4, -43.2, "#2b3544", { bias: -1.5 });
-  for (const x of [-2.9, 2.9]) cabBox(F, x - 0.2, x + 0.2, -0.5, -15.6, -43.4, -42.9, "#4b5563", { bias: -1 });   // bay dividers
+  cabBox(F, -9.4, 9.4, -0.5, -17, -44, -43.4, "#1f2937", { edge: "#4b5563", bias: -2 , rack: true });   // rack layering: back panel < gear < posts/header
+  for (let x = -8.6; x < 8.6; x += 1.6) cabBox(F, x, x + 0.5, -1, -15.6, -43.4, -43.2, "#2b3544", { bias: -1.5 , rack: true });
+  for (const x of [-2.9, 2.9]) cabBox(F, x - 0.2, x + 0.2, -0.5, -15.6, -43.4, -42.9, "#4b5563", { bias: -1 , rack: true });   // bay dividers
   for (const x0 of [-9.4, 8.7]) {
     cabBox(F, x0, x0 + 0.7, 0, -17, -44, RZ, RK, { edge: RKE, bias: 1.5 });
     // stripes sort from the post's own centre, so the top ones never drop behind the post
@@ -8252,15 +9345,15 @@ function buildCabinStatic() {
   }
   cabBox(F, -9.4, 9.4, -15.6, -17, -44, RZ, RK, { edge: RKE, bias: 1.5 });
   cabRect(F, 'z', RZ + 0.05, -8.7, 8.7, -15.75, -16.85, [0, 0, 1], "#0f172a", null, { edge: "#334155", bias: 1.8, anchor: [0, -16.3, RZ] });
-  cabBox(F, -2.3, 2.3, -10.6, -11.1, -43.4, -41.6, "#4b5563", { edge: RKE });       // helmet shelf
-  cabBox(F, -2.1, -1.5, -11.1, -12, -43.4, -42.6, "#4b5563");                      // shelf brackets
-  cabBox(F, 1.5, 2.1, -11.1, -12, -43.4, -42.6, "#4b5563");
-  cabBox(F, 3.9, 8.3, -10.6, -11.1, -43.4, -41.6, "#4b5563", { edge: RKE });       // headlamp shelf (right bay)
-  cabBox(F, 4.1, 4.7, -11.1, -12, -43.4, -42.6, "#4b5563"); cabBox(F, 7.5, 8.1, -11.1, -12, -43.4, -42.6, "#4b5563");
-    for (const x of [-7.12, -3.96]) cabBox(F, x, x + 0.5, -6.4, -13.6, -43.4, -43.1, "#4b5563", { bias: -1 });   // clamp rails: rifle + laser clamps line up on these
-  cabBox(F, 4.6, 5.7, -1.2, -7.2, -43.4, -42.3, "#ea580c", { top: "#f8fafc" }); // O2 tanks (right bay, under the headlamp)
-  cabBox(F, 6.2, 7.3, -1.2, -6.4, -42.2, -41.6, "#c2410c", { top: "#f8fafc" });
-  cabBox(F, 8.2, 8.5, -7.4, -15.4, -43.4, -43.0, "#facc15", { bias: -1 });                    // power conduit
+  cabBox(F, -2.3, 2.3, -10.6, -11.1, -43.4, -41.6, "#4b5563", { edge: RKE , rack: true });       // helmet shelf
+  cabBox(F, -2.1, -1.5, -11.1, -12, -43.4, -42.6, "#4b5563", { rack: true });                      // shelf brackets
+  cabBox(F, 1.5, 2.1, -11.1, -12, -43.4, -42.6, "#4b5563", { rack: true });
+  cabBox(F, 3.9, 8.3, -10.6, -11.1, -43.4, -41.6, "#4b5563", { edge: RKE , rack: true });       // headlamp shelf (right bay)
+  cabBox(F, 4.1, 4.7, -11.1, -12, -43.4, -42.6, "#4b5563", { rack: true }); cabBox(F, 7.5, 8.1, -11.1, -12, -43.4, -42.6, "#4b5563", { rack: true });
+    for (const x of [-7.12, -3.96]) cabBox(F, x, x + 0.5, -6.4, -13.6, -43.4, -43.1, "#4b5563", { bias: -1 , rack: true });   // clamp rails: rifle + laser clamps line up on these
+  cabBox(F, 4.6, 5.7, -1.2, -7.2, -43.4, -42.3, "#ea580c", { top: "#f8fafc" , rack: true }); // O2 tanks (right bay, under the headlamp)
+  cabBox(F, 6.2, 7.3, -1.2, -6.4, -42.2, -41.6, "#c2410c", { top: "#f8fafc" , rack: true });
+  cabBox(F, 8.2, 8.5, -7.4, -15.4, -43.4, -43.0, "#facc15", { bias: -1 , rack: true });                    // power conduit
   // CRT scan terminal on the port wall, straight across from the airlock
   const P = CAB_PO;
   cabBox(F, -12 + P, -9.6 + P, -5.4, -14.6, -27.2, -18.2, "#27272a", { edge: "#52525b" });
@@ -8301,6 +9394,32 @@ function buildCabinStatic() {
     cabBox(F, lx, lx + 0.3, 0, PDESK.top, lz, lz + 0.3, "#94a3b8");
   cabBox(F, PDESK.x0, PDESK.x1, PDESK.top, PDESK.top - 0.5, PDESK.z0, PDESK.z1, "#0d9488", { top: "#14b8a6", edge: "#facc15" });
   cabBox(F, PDESK.x0 + 0.4, PDESK.x1 - 0.4, -1.2, -1.5, PDESK.z0 + 0.4, PDESK.z1 - 0.4, "#0f766e");
+  {   // CRATE OF OLD RECORDS: slatted wooden crate, album sleeves standing up inside it
+    const C = RECORD_CRATE, WOOD = "#a16207", WOOD_D = "#713f12", WOOD_L = "#ca8a04";
+    cabBox(F, C.x0, C.x1, -0.01, -0.35, C.z0, C.z1, WOOD_D);                                                     // base
+    cabBox(F, C.x1 - 0.3, C.x1, 0, -C.h, C.z0, C.z1, WOOD, { top: WOOD_L, edge: "#422006" });                    // front panel
+    for (const y of [-0.95, -2.0]) cabBox(F, C.x1, C.x1 + 0.06, y, y - 0.12, C.z0 + 0.1, C.z1 - 0.1, "#422006", { bias: 0.4 });   // slat gaps
+    cabBox(F, C.x1 - 0.2, C.x1 + 0.05, -1.3, -1.75, (C.z0 + C.z1) / 2 - 0.55, (C.z0 + C.z1) / 2 + 0.55, "#1c1917", { bias: 0.45 });   // hand-hold slot
+    for (const zz of [C.z0, C.z1 - 0.3]) cabBox(F, C.x0, C.x1, 0, -C.h, zz, zz + 0.3, WOOD, { top: WOOD_L, edge: "#422006" });   // end panels
+    cabBox(F, C.x0, C.x0 + 0.3, 0, -C.h, C.z0, C.z1, WOOD_D);                                                    // back panel
+    // sleeves: stood up facing the room, front-to-back like a crate you flick through (back ones peek up taller)
+    const n = RECORD_SLEEVES.length;
+    RECORD_SLEEVES.forEach(([col, , acc], i) => {
+      const xa = sleeveX(i), top = sleeveTop(i);
+      cabBox(F, xa, xa + 0.2, -0.4, top, C.z0 + 0.45, C.z1 - 0.45, col, { top: acc, edge: "#0f172a" });
+      cabBox(F, xa + 0.2, xa + 0.24, top + 0.3, top + 0.75, C.z0 + 0.8, C.z1 - 0.8, acc, { bias: 0.25 });     // album title band across the cover
+    });
+  }
+  // NEON JUKEBOX SIGN on the port wall above the jukebox
+  cabRect(F, 'x', NEON_SIGN.x, NEON_SIGN.z0, NEON_SIGN.z1, NEON_SIGN.yTop, NEON_SIGN.yBot, [1, 0, 0], "#07030f", null,
+    { emissive: true, tex: neonSignTex, grid: [6, 3], anchor: [NEON_SIGN.x, (NEON_SIGN.yTop + NEON_SIGN.yBot) / 2, (NEON_SIGN.z0 + NEON_SIGN.z1) / 2], bias: 0.6 });
+  // RETRO JUKEBOX: walnut cabinet, chrome plinth, stepped arch crown, speaker grille + record window
+  cabBox(F, JUKEBOX.x0, JUKEBOX.x1 + 0.3, 0, -0.5, JUKEBOX.z0 - 0.2, JUKEBOX.z1 + 0.2, "#9ca3af", { top: "#e5e7eb" });
+  cabBox(F, JUKEBOX.x0, JUKEBOX.x1, -0.5, -6.2, JUKEBOX.z0, JUKEBOX.z1, "#7c2d12", { top: "#9a3412", side: "#92400e", edge: "#facc15" });
+  cabBox(F, JUKEBOX.x0, JUKEBOX.x1 - 0.3, -6.2, -7.4, JUKEBOX.z0 + 0.4, JUKEBOX.z1 - 0.4, "#7c2d12", { top: "#9a3412", edge: "#facc15" });
+  cabBox(F, JUKEBOX.x0, JUKEBOX.x1 - 0.6, -7.4, JUKEBOX.top, JUKEBOX.z0 + 1.1, JUKEBOX.z1 - 1.1, "#7c2d12", { top: "#9a3412", edge: "#facc15" });
+  cabBox(F, JUKEBOX.x1, JUKEBOX.x1 + 0.15, -1.0, -3.0, JUKEBOX.z0 + 0.8, JUKEBOX.z1 - 0.8, "#1c1917", { edge: "#a8a29e", bias: 1.2 });
+  cabBox(F, JUKEBOX.x1, JUKEBOX.x1 + 0.15, -3.5, -5.8, JUKEBOX.z0 + 0.7, JUKEBOX.z1 - 0.7, "#0c0a09", { edge: "#e5e7eb", bias: 1.2 });
   // ceiling light strips (emissive)
   for (let z = -40; z < 12; z += 10) {
     for (const lx of [0, -CAB_HW * 0.55, CAB_HW * 0.55]) {   // centre strip + port/starboard strips for the wider hold
@@ -8320,7 +9439,6 @@ function buildCabinStatic() {
   // blinking status lights
   const blink = [["#22c55e", 1.3], ["#f59e0b", 0.7], ["#38bdf8", 2.1], ["#ef4444", 0.9]];
   blink.forEach(([colr, rate], i) => {
-    cabBox(F, -CAB_HW, -CAB_HW + 0.4, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 4 + i * 2, 5 + i * 2, colr, { emissive: true, blink: { rate, phase: i } });
     cabBox(F, CAB_HW - 0.4, CAB_HW, -9 - (i % 2) * 1.6, -10 - (i % 2) * 1.6, 6 + i * 2, 7 + i * 2, blink[(i + 2) % 4][0], { emissive: true, blink: { rate: rate * 1.3, phase: i + 2 } });
     cabBox(F, -10 + i * 6, -9 + i * 6, -16.2, -16.8, -44, -43.6, "#f59e0b", { emissive: true, blink: { rate: 0.4 + i * 0.15, phase: i } });
   });
@@ -8371,13 +9489,136 @@ function buildCabinDynamic(c) {
     cabBox(F, AL.cx1 - 0.4, AL.cx1 + 0.4, -13, 0, AL.zc + hh * h, AL.z1 - 0.5, "#78716c", { side: "#a8a29e" });
   }
   // EVA rack: boots while the suit is racked, status LEDs on the header
-  // light switch lever: flipped up = on, down = off, plus a status LED
+  // light switch lever: up = on, middle = off, down = rgb, plus a status LED
   {
     const lx0 = (LPANEL.x0 + LPANEL.x1) / 2 - 0.45, lx1 = lx0 + 0.9, mid = (LPANEL.yTop + LPANEL.yBot) / 2;
-    const ly = cabinLightsOn ? [mid - 1.6, mid] : [mid, mid + 1.6];
+    const ly = cabinLightMode === 'on' ? [mid - 1.6, mid] : (cabinLightMode === 'off' ? [mid - 0.8, mid + 0.8] : [mid, mid + 1.6]);
+    const up = cabinLightMode === 'on';
     cabBox(F, lx0, lx1, ly[0], ly[1], LPANEL.z - 0.9, LPANEL.z - 0.08, "#e5e7eb", { top: "#f8fafc", side: "#cbd5e1", bias: 1.8 });
-    cabBox(F, lx0 - 0.15, lx1 + 0.15, cabinLightsOn ? ly[0] - 0.5 : ly[1], cabinLightsOn ? ly[0] : ly[1] + 0.5, LPANEL.z - 1.05, LPANEL.z - 0.08, "#ef4444", { bias: 1.9 });
-    cabBox(F, lx0 + 0.1, lx1 - 0.1, LPANEL.yTop + 0.5, LPANEL.yTop + 1.1, LPANEL.z - 0.12, LPANEL.z - 0.02, cabinLightsOn ? "#22c55e" : "#ef4444", { emissive: true, bias: 1.8 });
+    cabBox(F, lx0 - 0.15, lx1 + 0.15, up ? ly[0] - 0.5 : ly[1], up ? ly[0] : ly[1] + 0.5, LPANEL.z - 1.05, LPANEL.z - 0.08, cabinLightMode === 'rgb' ? "#d946ef" : "#ef4444", { bias: 1.9 });
+    let ledCol = cabinLightMode === 'on' ? "#22c55e" : "#ef4444";
+    if (cabinLightMode === 'rgb') { const hc = rgbHue(c.time * 0.7); ledCol = '#' + hc.map(v => (v | 0).toString(16).padStart(2, '0')).join(''); }
+    cabBox(F, lx0 + 0.1, lx1 - 0.1, LPANEL.yTop + 0.5, LPANEL.yTop + 1.1, LPANEL.z - 0.12, LPANEL.z - 0.02, ledCol, { emissive: true, bias: 1.8 });
+  }
+  {   // jukebox bubble tubes + record window: rainbow while playing, soft neon when idle
+    const on = Jukebox.playing >= 0, t = c.time;
+    const tube = (h, idle) => on ? hueHex(Math.round((t * 0.35 + h) * 24) / 24) : idle;
+    cabBox(F, JUKEBOX.x1, JUKEBOX.x1 + 0.35, -0.7, -6.0, JUKEBOX.z0 + 0.05, JUKEBOX.z0 + 0.5, tube(0, "#be185d"), { emissive: true, bias: 1.5 });
+    cabBox(F, JUKEBOX.x1, JUKEBOX.x1 + 0.35, -0.7, -6.0, JUKEBOX.z1 - 0.5, JUKEBOX.z1 - 0.05, tube(0.5, "#0e7490"), { emissive: true, bias: 1.5 });
+    cabBox(F, JUKEBOX.x1 - 0.3, JUKEBOX.x1 + 0.05, -6.25, -6.7, JUKEBOX.z0 + 0.4, JUKEBOX.z1 - 0.4, tube(0.25, "#a21caf"), { emissive: true, bias: 1.5 });
+    const glow = on ? Math.round(160 + 80 * Math.abs(Math.sin(t * Math.PI * JUKE_TRACKS[Jukebox.playing].bpm / 60))) : 70;
+    cabBox(F, JUKEBOX.x1 + 0.15, JUKEBOX.x1 + 0.2, -3.7, -5.6, JUKEBOX.z0 + 0.9, JUKEBOX.z1 - 0.9, '#' + [glow, Math.round(glow * 0.62), 20].map(v => v.toString(16).padStart(2, '0')).join(''), { emissive: true, bias: 1.3 });
+  }
+  {   // DISCO HATCH in the ceiling: doors slide apart, then the ball drops out on its chain
+    const open = Math.min(1, cabinDisco / 0.4), D = DISCO, y = -17.95;
+    cabRect(F, 'y', y - 0.02, D.x - D.hw - 0.35, D.x + D.hw + 0.35, D.z - D.hd - 0.35, D.z + D.hd + 0.35, [0, 1, 0], "#facc15", null, { layer: 1, bias: 0.25 });   // hazard-yellow frame
+    cabRect(F, 'y', y - 0.03, D.x - D.hw, D.x + D.hw, D.z - D.hd, D.z + D.hd, [0, 1, 0], "#020617", null, { layer: 1, bias: 0.3 });                       // the dark recess
+    if (open > 0.002) {   // a glow from up inside the recess once it's open
+      const hc = rgbHue(c.time * 0.22);
+      cabRect(F, 'y', y - 0.035, D.x - D.hw + 0.4, D.x + D.hw - 0.4, D.z - D.hd + 0.4, D.z + D.hd - 0.4, [0, 1, 0],
+        '#' + hc.map(v => Math.round(v * 0.35 * open).toString(16).padStart(2, '0')).join(''), null, { emissive: true, layer: 1, bias: 0.32 });
+    }
+    const slide = open * D.hw;
+    if (slide < D.hw - 0.05) {
+      cabRect(F, 'y', y - 0.04, D.x - D.hw, D.x - slide, D.z - D.hd, D.z + D.hd, [0, 1, 0], "#475569", null, { layer: 1, bias: 0.35, edge: "#1e293b" });
+      cabRect(F, 'y', y - 0.04, D.x + slide, D.x + D.hw, D.z - D.hd, D.z + D.hd, [0, 1, 0], "#475569", null, { layer: 1, bias: 0.35, edge: "#1e293b" });
+    }
+  }
+  {   // LASER RIG hatches at the aft corners: doors slide open, the projector drops out underneath
+    const drop = laserDrop(), y = -17.95, open = Math.min(1, cabinDisco / 0.35);
+    for (const r of LASER_RIGS) {
+      cabRect(F, 'y', y - 0.02, r.x - 1.6, r.x + 1.6, r.z - 1.6, r.z + 1.6, [0, 1, 0], "#facc15", null, { layer: 1, bias: 0.25 });
+      cabRect(F, 'y', y - 0.03, r.x - 1.3, r.x + 1.3, r.z - 1.3, r.z + 1.3, [0, 1, 0], "#020617", null, { layer: 1, bias: 0.3 });
+      const slide = open * 1.3;
+      if (slide < 1.25) {
+        cabRect(F, 'y', y - 0.04, r.x - 1.3, r.x - slide, r.z - 1.3, r.z + 1.3, [0, 1, 0], "#475569", null, { layer: 1, bias: 0.35, edge: "#1e293b" });
+        cabRect(F, 'y', y - 0.04, r.x + slide, r.x + 1.3, r.z - 1.3, r.z + 1.3, [0, 1, 0], "#475569", null, { layer: 1, bias: 0.35, edge: "#1e293b" });
+      }
+      if (drop > 0.01) {
+        const by = -17.9 + 1.4 * drop;                                            // housing bottom
+        cabBox(F, r.x - 0.25, r.x + 0.25, -17.9, by - 0.9, r.z - 0.25, r.z + 0.25, "#64748b");              // drop rod
+        cabBox(F, r.x - 0.9, r.x + 0.9, by - 0.9, by, r.z - 0.7, r.z + 0.7, "#1e293b", { top: "#334155", edge: "#0f172a" });   // projector body
+        const lc = LASER_COLS[Math.floor(c.time * 2) % LASER_COLS.length];
+        cabBox(F, r.x - 0.4, r.x + 0.4, by, by + 0.15, r.z - 0.3, r.z + 0.3, drop > 0.95 ? lc : "#334155", { emissive: drop > 0.95, bias: 0.4 });   // aperture
+      }
+    }
+  }
+  {   // TURNTABLE on the jukebox: vinyl with grooves + label, a spinning sheen so you can see it turn, and a tone arm
+    const T = TURNTABLE, N = 22, up = [0, -1, 0];
+    const disc = (r, y, col, bias, opts) => {
+      const pts = []; for (let k = 0; k < N; k++) { const a = k / N * Math.PI * 2; pts.push([T.x + Math.cos(a) * r, y, T.z + Math.sin(a) * r]); }
+      cabFace(F, pts, col, Object.assign({ n: up, bias, anchor: [T.x, y, T.z] }, opts || {}));
+    };
+    const y0 = T.y - 0.04;
+    disc(T.r + 0.12, y0, "#3f3f46", 0.55);                                                       // platter rim
+    [[T.r, "#0d0d10"], [T.r * 0.86, "#1c1c22"], [T.r * 0.8, "#0d0d10"], [T.r * 0.64, "#1c1c22"], [T.r * 0.58, "#0d0d10"]]
+      .forEach(([r, col], i) => disc(r, y0 - 0.005 * (i + 1), col, 0.57 + i * 0.01));         // vinyl + groove bands
+    disc(T.r * 0.36, y0 - 0.035, "#dc2626", 0.64);                                               // label
+    disc(T.r * 0.06, y0 - 0.04, "#d4d4d8", 0.66);                                                // spindle
+    const a = recordSpin;                                                                        // spinning sheen + label mark
+    const ca = Math.cos(a), sa = Math.sin(a), px = -sa, pz = ca;
+    const sheen = (r0, r1, w, col, bias) => cabFace(F, [
+      [T.x + ca * r0 + px * w, y0 - 0.045, T.z + sa * r0 + pz * w], [T.x + ca * r1 + px * w, y0 - 0.045, T.z + sa * r1 + pz * w],
+      [T.x + ca * r1 - px * w, y0 - 0.045, T.z + sa * r1 - pz * w], [T.x + ca * r0 - px * w, y0 - 0.045, T.z + sa * r0 - pz * w]],
+      col, { n: up, bias, anchor: [T.x, y0, T.z], emissive: true });
+    sheen(T.r * 0.42, T.r * 0.97, 0.06, "#71717a", 0.67);
+    sheen(-T.r * 0.97, -T.r * 0.42, 0.06, "#52525b", 0.67);
+    sheen(T.r * 0.12, T.r * 0.3, 0.07, "#fef3c7", 0.68);
+    // tone arm: base in the corner, arm swings from parked (along z) onto the record (along x)
+    const bx = T.x + 1.05, bz = T.z + 0.95;
+    cabBox(F, bx - 0.18, bx + 0.18, T.y, T.y - 0.32, bz - 0.18, bz + 0.18, "#a1a1aa", { top: "#e4e4e7", bias: 0.7 });
+    const swing = tonearmOn * 0.3;                                                              // 0 parked beside the record, 0.3 rad puts the needle on the outer grooves
+    const ang = Math.PI * 1.5 - swing, L = 1.25, ex = bx + Math.cos(ang) * L, ez = bz + Math.sin(ang) * L;
+    const ay = T.y - 0.38, w = 0.05, nx = -Math.sin(ang) * w, nz = Math.cos(ang) * w;
+    cabFace(F, [[bx + nx, ay, bz + nz], [ex + nx, ay, ez + nz], [ex - nx, ay, ez - nz], [bx - nx, ay, bz - nz]], "#d4d4d8", { n: up, bias: 0.75, anchor: [bx, ay, bz] });
+    cabBox(F, ex - 0.1, ex + 0.1, ay + 0.02, ay - 0.08, ez - 0.1, ez + 0.1, "#27272a", { bias: 0.76 });   // headshell
+  }
+  if (rackSpeakers) {   // PARTY SPEAKERS in the rack bay: two tall stacks, a sub, and a neon EQ - woofers pump with the beat
+    const beat = typeof Jukebox !== 'undefined' ? Jukebox.beat() : -1;
+    const kick = beat >= 0 ? Math.pow(1 - (beat % 1), 4) : 0;
+    const zF = -41.45, fwd = [0, 0, 1];
+    cabBox(F, -8.7, 8.7, -0.4, -15.6, -43.4, -43.2, "#0b0f19", { bias: -1 });                                    // dark backing
+    // every detail sorts from the centre of the panel it's mounted on (anchor), layered by bias - so nothing drops behind its cabinet
+    const ring = (cx, cy, r, z, col, bias, anchor, opts) => {
+      const pts = []; for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, z]); }
+      cabFace(F, pts, col, Object.assign({ n: fwd, bias, anchor }, opts || {}));
+    };
+    const neon = hueHex(Math.round(((c.time * 0.2) % 1) * 12) / 12);
+    const woofer = (cx, cy, r, anchor) => {
+      const p = 1 + 0.07 * kick;
+      ring(cx, cy, r * 1.08, zF + 0.01, "#27272a", 0.6, anchor);
+      ring(cx, cy, r * 1.0, zF + 0.02, neon, 0.62, anchor, { emissive: true });                                    // neon trim ring
+      ring(cx, cy, r * 0.92, zF + 0.03, "#18181b", 0.64, anchor);                                                  // surround
+      ring(cx, cy, r * 0.78 * p, zF + 0.04 + 0.12 * kick, "#3f3f46", 0.66, anchor);                                // cone (pumps out)
+      ring(cx, cy, r * 0.3 * p, zF + 0.05 + 0.18 * kick, "#71717a", 0.68, anchor);                                 // dust cap
+    };
+    for (const [x0, x1] of [[-8.4, -3.3], [3.3, 8.4]]) {
+      cabBox(F, x0, x1, 0, -14.8, -43.2, zF, "#111827", { top: "#1f2937", edge: "#374151" });
+      const cx = (x0 + x1) / 2, A = [cx, -7.4, zF];
+      woofer(cx, -3.4, 2.05, A); woofer(cx, -8.6, 1.6, A);
+      ring(cx, -12.6, 0.7, zF + 0.02, "#a1a1aa", 0.62, A); ring(cx, -12.6, 0.4, zF + 0.04, "#e4e4e7", 0.64, A);  // tweeter
+    }
+    cabBox(F, -3.0, 3.0, 0, -4.8, -43.2, zF, "#111827", { top: "#1f2937", edge: "#374151" });                      // sub
+    woofer(0, -2.4, 1.9, [0, -2.4, zF]);
+    // neon EQ bars on a dark panel above the sub
+    const EA = [0, -9.4, zF];
+    cabRect(F, 'z', zF + 0.02, -2.8, 2.8, -6.0, -12.8, fwd, "#05060c", null, { bias: 0.6, edge: neon, anchor: EA });
+    for (let k = 0; k < 7; k++) {
+      const lvl = beat >= 0 ? 0.25 + 0.75 * Math.abs(Math.sin(beat * Math.PI * (0.5 + k * 0.23) + k)) * (0.6 + 0.4 * kick) : 0.15;
+      const bx = -2.5 + k * 0.72, top = -6.4 - lvl * 6.0;
+      cabRect(F, 'z', zF + 0.04, bx, bx + 0.5, -6.4, top, fwd, hueHex(k / 7 * 0.8 + 0.0), null, { bias: 0.66, emissive: true, anchor: EA });
+    }
+  }
+  if (rackShutter > 0.002) {   // ROLLER SHUTTER: ribbed slats rolling down from the header, hazard-striped bottom bar
+    const O = RACK_OPEN, bot = O.yTop + (0 - O.yTop) * rackShutter;
+    const fwd = [0, 0, 1];
+    cabRect(F, 'z', O.z, O.x0, O.x1, O.yTop, bot, fwd, "#64748b", null, { bias: 2.2, anchor: [0, (O.yTop + bot) / 2, O.z] });
+    for (let y = bot - 0.7; y > O.yTop + 0.2; y -= 1.1)
+      cabRect(F, 'z', O.z + 0.02, O.x0, O.x1, y, y - 0.18, fwd, "#475569", null, { bias: 2.3, anchor: [0, y, O.z] });   // slat ribs
+    const hz = 0.55;
+    cabRect(F, 'z', O.z + 0.04, O.x0, O.x1, bot, bot - hz, fwd, "#1f2937", null, { bias: 2.4, anchor: [0, bot, O.z] });
+    for (let x = O.x0; x < O.x1 - 0.01; x += 1.2)
+      cabRect(F, 'z', O.z + 0.05, x, Math.min(O.x1, x + 0.6), bot - 0.08, bot - hz + 0.08, fwd, "#eab308", null, { bias: 2.5, anchor: [x + 0.3, bot, O.z] });   // hazard stripes
   }
   const ledOn = (stored) => stored ? "#22c55e" : ((Math.floor(c.time * 3) % 2) ? "#ef4444" : "#450a0a");
   cabBox(F, 1.6, 2.4, -16.0, -16.6, -41.2, -41.0, ledOn(!c.hasHelmet), { emissive: true, bias: 2 });
@@ -8438,6 +9679,16 @@ function buildCabinDynamic(c) {
 
 function renderCabin() {
   const c = cabin;
+  if (!c || !c.dance) return renderCabinView();
+  // dancing: render from the pulled-back camera, then put your real position back
+  const save = { x: c.x, z: c.z, eyeY: c.eyeY, yaw: playerFoot.yaw, pitch: playerFoot.pitch };
+  const cam = danceCamera(c);
+  c.x = cam.x; c.z = cam.z; c.eyeY = cam.eyeY; playerFoot.yaw = cam.yaw; playerFoot.pitch = cam.pitch;
+  try { renderCabinView(); }
+  finally { c.x = save.x; c.z = save.z; c.eyeY = save.eyeY; playerFoot.yaw = save.yaw; playerFoot.pitch = save.pitch; }
+}
+function renderCabinView() {
+  const c = cabin;
   // 1) the real planet outside, from where the cabin sits on the landing pad
   worldOnlyPass = true;
   try { renderSurfacePass(landedPlanet, { x: c.x, y: c.eyeY + CAB.worldLift, z: c.z, yaw: playerFoot.yaw, pitch: playerFoot.pitch }, null); }
@@ -8472,6 +9723,7 @@ function renderCabin() {
   const drawList = [];
   const inChamber = c.x > CAB_HW;
   for (const f of faces) {
+    if (f.rack && rackSpeakers) continue;                                  // rack swapped out for the party speakers
     const vx = c.x - f.c[0], vy = c.eyeY - f.c[1], vz = c.z - f.c[2];
     if (f.n && f.n[0] * vx + f.n[1] * vy + f.n[2] * vz <= 0) continue;
     const cam = f.pts.map(tx);
@@ -8501,6 +9753,10 @@ function renderCabin() {
       }
       if (f.screen !== undefined) { const fl = 0.8 + 0.2 * Math.sin(now * 3 + f.screen * 2); r *= fl; g *= fl; b *= fl; }
       if (f.strip !== undefined) { const lv = 0.08 + 0.92 * cabinLightLevel; r *= lv; g *= lv; b *= lv; }
+      if (f.strip !== undefined && cabinRgbMix > 0.01 && !evacOn) {
+        const hc = rgbHue(now * 0.22 - f.c[2] / 45 + f.strip * 0.08), m = cabinRgbMix;
+        r = r * (1 - m) + hc[0] * m; g = g * (1 - m) + hc[1] * m; b = b * (1 - m) + hc[2] * m;
+      }
       if (f.strip !== undefined && evacOn) {
         if (f.stripMid) { r = 40 + 215 * evacFlash; g = 10 + 20 * evacFlash; b = 10 + 20 * evacFlash; }   // centre row: red alarm strobe
         else { r = 14; g = 16; b = 20; }                                                                 // side rows: dead
@@ -8522,6 +9778,11 @@ function renderCabin() {
           const hp = Math.max(0, Math.min(1, (-f.c[1] - 3) / 12));        // 0 near the floor, 1 near the ceiling
           r += (57 + (255 - 57) * hp) * k * 0.6; g += (255 + (43 - 255) * hp) * k * 0.5; b += (20 + (214 - 20) * hp) * k * 0.6;
         }
+        if (cabinRgbMix > 0.01 && !evacOn) {
+          const hc = rgbHue(now * 0.22 - f.c[2] / 45), hp = Math.max(0, Math.min(1, (-f.c[1] - 2) / 14));
+          const k = cabinRgbMix * lit * (0.32 + 0.28 * hp) * (0.88 + 0.12 * Math.sin(now * 2.4 + f.c[2] / 9));   // brighter up near the strips, gentle breathing
+          r += hc[0] * k; g += hc[1] * k; b += hc[2] * k;
+        }
         const dc = Math.hypot(f.c[0] - (-9.6 + CAB_PO), f.c[1] + 10, f.c[2] + 22.7);
         const kc = Math.pow(Math.max(0, 1 - dc / 11), 2) * dark;
         g += 120 * kc; b += 40 * kc; r += 20 * kc;
@@ -8540,10 +9801,10 @@ function renderCabin() {
 
   // billboard props: rack gear + the fuzzy dice
   const sprites = [];
-  const addSprite = (x, y, z, draw) => {
+  const addSprite = (x, y, z, draw, bias = 0.5) => {
     const p = tx([x, y, z]);
     if (p[2] <= NEAR) return;
-    sprites.push({ depth: Math.hypot(c.x - x, c.eyeY - y, c.z - z) - 0.5, sx: V_WIDTH / 2 + p[0] / p[2] * fov, sy: V_HEIGHT / 2 + p[1] / p[2] * fov, s: fov / p[2], draw });
+    sprites.push({ depth: Math.hypot(c.x - x, c.eyeY - y, c.z - z) - bias, sx: V_WIDTH / 2 + p[0] / p[2] * fov, sy: V_HEIGHT / 2 + p[1] / p[2] * fov, s: fov / p[2], draw });
   };
   // rack opening (between the posts, under the header) as seen from the camera
   const opening = [[-8.7, -15.6, -41.2], [8.7, -15.6, -41.2], [8.7, 0, -41.2], [-8.7, 0, -41.2]].map(tx);
@@ -8563,15 +9824,23 @@ function renderCabin() {
     draw(x, y, s);
     ctx.restore();
   };
-  if (!c.hasHelmet) { addSprite(0, -7.3, -42.6, dimSprite(inRack(drawRackSuit))); addSprite(0, -13.2, -42.3, dimSprite(inRack(drawRackHelmet))); }
+  if (!c.hasHelmet && !rackSpeakers) { addSprite(0, -7.3, -42.6, dimSprite(inRack(drawRackSuit))); addSprite(0, -13.2, -42.3, dimSprite(inRack(drawRackHelmet))); }
   // laser stays on display aboard the derelict (left behind); the headlamp is always on show at home
-  if (c.wreck || !c.hasLaser || fieldWeapon === 'rifle') addSprite(-4.89, -7.9, -41.9, dimSprite(inRack(drawRackLaser)));
-  if (c.wreck || !c.hasLaser || fieldWeapon !== 'rifle') addSprite(-5.6, -12.4, -41.9, dimSprite(inRack(drawRackRifle)));
+  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon === 'rifle')) addSprite(-4.89, -7.9, -41.9, dimSprite(inRack(drawRackLaser)));
+  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon !== 'rifle')) addSprite(-5.6, -12.4, -41.9, dimSprite(inRack(drawRackRifle)));
   {   // which weapon is the crosshair nearer? (picks laser vs rifle at the weapons bay)
     const pl = tx([-4.89, -7.9, -41.9]), pr = tx([-5.6, -12.4, -41.9]);
     if (pl[2] > NEAR && pr[2] > NEAR) c.aimRifle = Math.hypot(pr[0] / pr[2], pr[1] / pr[2]) < Math.hypot(pl[0] / pl[2], pl[1] / pl[2]);
   }
-  if (!c.wreck || !c.hasLaser) addSprite(6.1, -12.1, -42.2, dimSprite(inRack(drawRackHeadlamp)));
+  {   // is the starboard airlock door in front of you (left/right only)? gates the AIRLOCK prompt
+    const dx = AL.cx0 - c.x, dz = AL.zc - c.z;
+    const hx = dx * cyw - dz * syw, hz = dx * syw + dz * cyw;
+    c.lookAirlock = hz > 0.5 && Math.abs(hx / hz) < 0.85;   // door centre within ~40 deg of straight ahead
+    const jx = JUKEBOX.x1 - c.x, jz = JUKEBOX.zc - c.z;
+    const jh = jx * cyw - jz * syw, jd = jx * syw + jz * cyw;
+    c.lookJuke = jd > 0.5 && Math.abs(jh / jd) < 0.9;
+  }
+  if (!rackSpeakers && (!c.wreck || !c.hasLaser)) addSprite(6.1, -12.1, -42.2, dimSprite(inRack(drawRackHeadlamp)));
   addSprite(0, -16.3, -41.1, drawRackSign);
   addSprite(-9.0 + CAB_PO, -14.9, -22.7, drawCrtLabel);
   TROPHY_SLOTS.forEach((sl, i) => { const t = TROPHIES[i]; if (t) addSprite(sl.x, sl.y, sl.z, dimSprite((x, y, s) => drawTrophy(t, trophiesEarned.has(t.id), x, y, s, c.time, i))); });
@@ -8579,7 +9848,25 @@ function renderCabin() {
   addSprite(LAVA.x, LAVA.tableTop - 0.5 - 3.0, LAVA.z, (x, y, s) => drawLavaLamp(x, y, s, c.time));
   addSprite(PDESK.x0 + 2.4, PDESK.top - 0.5 - 1.0, (PDESK.z0 + PDESK.z1) / 2, dimSprite((x, y, s) => drawInstantCamera(x, y, s, c.time)));
   addSprite((LPANEL.x0 + LPANEL.x1) / 2 - 0.4, LPANEL.yTop - 0.5, LPANEL.z - 0.3, drawLightPanelLabel);
+  {   // ON / OFF / RGB printed next to the lever, matching its three positions
+    const mid = (LPANEL.yTop + LPANEL.yBot) / 2, lx = (LPANEL.x0 + LPANEL.x1) / 2 + 1.0;
+    [['on', mid - 1.6], ['off', mid], ['rgb', mid + 1.6]].forEach(([m, ly]) =>
+      addSprite(lx, ly, LPANEL.z - 0.15, (x, y, s) => drawLightPosLabel(m, x, y, s), 2.6));
+  }
   addSprite(DICE_ANCHOR[0], DICE_ANCHOR[1], DICE_ANCHOR[2], drawCabinDice);
+  updateNeonSign(c.time);
+  if (cabinDisco > 0.4) {
+    const drop = (cabinDisco - 0.4) / 0.6, ease = drop * drop * (3 - 2 * drop);
+    const by = -17.9 + (DISCO.ballY + 17.9) * ease;
+    addSprite(DISCO.x, by, DISCO.z, (x, y, s) => drawDiscoBall(x, y, s, by, c.time));
+    if (ease > 0.6) for (const sp of discoSpecks(by)) addSprite(sp[0], sp[1], sp[2], (x, y, s) => {
+      const sz = Math.max(2, Math.round(Math.min(7, s * 0.6)));
+      ctx.globalAlpha = Math.min(1, (ease - 0.6) / 0.4) * sp[4];
+      ctx.fillStyle = sp[3]; ctx.fillRect(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz);
+      ctx.globalAlpha = 1;
+    });
+  }
+  if (c.dance) addSprite(c.dance.x, -5.75, c.dance.z, (x, y, s) => drawDancer(x, y, s, c));
   addSprite(0, -16.4, 29.6, drawCabinNameplate);
   // dust motes, steam puffs and sparks
   if (c.motes) for (const m of c.motes) addSprite(m.x, m.y, m.z, (x, y, s) => {
@@ -8601,12 +9888,30 @@ function renderCabin() {
     });
   }
   for (const sp2 of sprites) drawList.push({ sprite: sp2, depth: sp2.depth, layer: 2, grp: inChamber ? 0 : 1 });
+  for (const bm of laserBeams(c.time)) {
+    const mx = (bm.a[0] + bm.b[0]) / 2, my = (bm.a[1] + bm.b[1]) / 2, mz = (bm.a[2] + bm.b[2]) / 2;
+    drawList.push({ beam: bm, depth: Math.hypot(c.x - mx, c.eyeY - my, c.z - mz) - 2, layer: 2, grp: inChamber ? 0 : 1 });
+  }
 
   drawList.sort((a, b) => (a.grp - b.grp) || (a.layer - b.layer) || (b.depth - a.depth));
   ctx.save();
   ctx.lineJoin = "round";
   for (const d of drawList) {
     if (d.sprite) { d.sprite.draw(d.sprite.sx, d.sprite.sy, d.sprite.s); continue; }
+    if (d.beam) {   // party laser: clip to the near plane, then a glowing additive line with a hot spot where it lands
+      let A = tx(d.beam.a), B = tx(d.beam.b);
+      if (A[2] <= NEAR && B[2] <= NEAR) continue;
+      if (A[2] <= NEAR || B[2] <= NEAR) { const k = (NEAR - A[2]) / (B[2] - A[2]), P = [A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, NEAR]; if (A[2] <= NEAR) A = P; else B = P; }
+      const ax = V_WIDTH / 2 + A[0] / A[2] * fov, ay = V_HEIGHT / 2 + A[1] / A[2] * fov, bx = V_WIDTH / 2 + B[0] / B[2] * fov, by2 = V_HEIGHT / 2 + B[1] / B[2] * fov;
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+      ctx.globalAlpha = 0.28 * d.beam.alpha; ctx.strokeStyle = d.beam.col; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by2); ctx.stroke();
+      ctx.globalAlpha = 0.85 * d.beam.alpha; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by2); ctx.stroke();
+      if (B[2] > NEAR && d.beam.b[1] > -0.5) { const r = Math.max(1.5, Math.min(5, fov / B[2] * 0.35)); ctx.globalAlpha = d.beam.alpha; ctx.fillStyle = d.beam.col; ctx.beginPath(); ctx.arc(bx, by2, r, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      continue;
+    }
     if (d.texFace) { drawTexturedQuad(d.texFace, tx, NEAR, fov); continue; }
     ctx.fillStyle = d.col; ctx.strokeStyle = d.col; ctx.lineWidth = 1;
     ctx.beginPath();
@@ -8646,6 +9951,18 @@ function renderCabin() {
     ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
   }
 
+  if (c.dance) {
+    const d = c.dance, k = d.ending ? 1 - d.out : Math.min(1, d.t / 1.3);
+    if (k > 0.6) {
+      const beat = danceBeat(c), mv = danceMoveName(c);
+      ctx.save(); ctx.globalAlpha = (k - 0.6) / 0.4; ctx.textAlign = "center";
+      ctx.font = "bold 11px monospace"; ctx.fillStyle = "#0f172a"; ctx.fillText(mv, V_WIDTH / 2 + 1, V_HEIGHT - 25);
+      ctx.fillStyle = Jukebox.isMetal ? ((Math.floor(beat * 2) % 2) ? "#ff2bd6" : "#39ff14") : hueHex(beat * 0.125); ctx.fillText(mv, V_WIDTH / 2, V_HEIGHT - 26);
+      ctx.font = "bold 6px monospace"; ctx.fillStyle = "#e2e8f0"; ctx.fillText("MOVE OR TAP STOP TO QUIT DANCING", V_WIDTH / 2, V_HEIGHT - 14);
+      ctx.restore();
+    }
+    return;
+  }
   if (c.hasLaser) drawHandheldBlaster();
   else {
     ctx.fillStyle = "rgba(250, 204, 21, 0.85)";
@@ -9061,12 +10378,18 @@ function getCargoTotal() {
   return Object.values(ship.cargo).reduce((a, b) => a + b, 0);
 }
 
-function addPopup(txt, color = "#fff") {
+function addPopup(txt, color = "#fff", keep = false) {
   if (activePopup && activePopup.txt === txt && activePopup.life > 0.5) return;
   if (popupQueue.length > 0 && popupQueue[popupQueue.length - 1].txt === txt) return;
-  popupQueue.push({ txt, color, life: 1.8, maxLife: 1.8, y: V_HEIGHT / 2 - 25 });
+  // 'keep' = story text (captain's log etc): shown long enough to read, never rushed or dropped
+  const life = keep ? 3.6 : 1.8;
+  popupQueue.push({ txt, color, life, maxLife: life, y: V_HEIGHT / 2 - 25, keep });
   const MAX_QUEUE = 5;
-  if (popupQueue.length > MAX_QUEUE) popupQueue.splice(0, popupQueue.length - MAX_QUEUE);
+  while (popupQueue.length > MAX_QUEUE) {
+    const i = popupQueue.findIndex(p => !p.keep);
+    if (i < 0) break;
+    popupQueue.splice(i, 1);
+  }
 }
 
 // Live mining counter: bypasses the message queue entirely and updates in place every tick,
@@ -9105,6 +10428,7 @@ window.addEventListener("pointerdown", e => {
   if (document.getElementById('launch-screen')?.style.display !== 'none') return;
   try { ensureAudio(); } catch (err) {}
   if (isDocked || isControlsModalOpen || gameOver) return;
+  if (isMapOpen || (typeof isMenuOpen === 'function' && isMenuOpen())) return;   // star map / menus handle their own clicks
 
   if (e.pointerType === 'touch') window.showTouchControls = true;
 
@@ -9161,7 +10485,7 @@ window.addEventListener("pointerdown", e => {
   // 4. Desktop Mouse Controls: Pointer Lock, Fire & Missiles
   if (e.pointerType === 'mouse') {
     window.showTouchControls = false;
-    if (document.pointerLockElement !== canvas && !e.target.closest("button")) {
+    if (document.pointerLockElement !== canvas && e.target === canvas) {   // only grab the mouse when the game view itself is clicked
       canvas.requestPointerLock?.();
     } else if (document.pointerLockElement === canvas) {
       if (e.button === 0) {
@@ -9761,7 +11085,16 @@ function pollGamepadState() {
   }
 
   if (document.getElementById('launch-screen').style.display !== 'none') {
-    if (currentGpButtons.some(Boolean)) handleTitleInput();
+    // Edge-triggered so a held button doesn't step through the title on its own.
+    // Browsers won't allow fullscreen from a gamepad press, so a controller
+    // skips the fullscreen step and launches straight away.
+    const fresh = currentGpButtons.some((b, i) => b && !titlePrevGpButtons[i]);
+    for (let i = 0; i < 32; i++) titlePrevGpButtons[i] = currentGpButtons[i];
+    if (fresh && !titleLaunchTriggered) {
+      titleStep = 'START';
+      lastTitleInputTime = 0;
+      handleTitleInput();
+    }
     return;
   }
 
@@ -11372,6 +12705,7 @@ function update(dt) {
             miningLaserState.miningProgress -= 1.0;
             if (node.amount > 0) {
               node.amount--;
+              if (node.id) surfaceNodeDepletion.set(node.id, node.amount);
               if (getCargoTotal() < ship.maxCargo) {
                 ship.cargo[node.ore.name] = (ship.cargo[node.ore.name] || 0) + 1;
                 addMiningPopup(node.ore.name, node.ore.color);
@@ -11942,7 +13276,7 @@ function update(dt) {
   // Single-message queue progression (never stacks)
   if (!activePopup && popupQueue.length > 0) {
     activePopup = popupQueue.shift();
-    if (popupQueue.length >= 2) {
+    if (popupQueue.length >= 2 && !activePopup.keep) {
       // Backlog building up: cut this message's display time short so we catch up to real time
       const rushedLife = 0.6;
       activePopup.life = rushedLife;
@@ -11987,7 +13321,7 @@ function update(dt) {
       else if (gameMode === 'SURFACE') mood = 'surface';
       else if (warpState.active) mood = 'warp';
       Music.setMood(mood, { icy: gameMode === 'SURFACE' && landedPlanet && isCryoWorld(landedPlanet) });
-      if (ambientDuckGain) { const fight = mood === 'combat' || mood === 'boss'; ambientDuckGain.gain.setTargetAtTime(fight ? 0 : 1, actx.currentTime, fight ? 0.15 : 1.5); }
+      if (ambientDuckGain) { const fight = mood === 'combat' || mood === 'boss', juke = typeof Jukebox !== 'undefined' && Jukebox.playing >= 0; ambientDuckGain.gain.setTargetAtTime((fight || juke) ? 0 : 1, actx.currentTime, (fight || juke) ? 0.15 : 1.5); }
     }
     scheduleCombatBeats();
 
@@ -15224,14 +16558,17 @@ function getSectorData(sx, sz) {
 const mapCanvas = document.getElementById("starmap-canvas");
 const mctx = mapCanvas.getContext("2d");
 
+let mapScale = 1;   // backing-buffer pixels per UI pixel, so the map stays crisp when the UI is scaled up
 function resizeMapCanvas() {
-  mapCanvas.width = mapCanvas.clientWidth;
-  mapCanvas.height = mapCanvas.clientHeight;
+  mapScale = uiScale;
+  mapCanvas.width = Math.round(mapCanvas.clientWidth * mapScale);
+  mapCanvas.height = Math.round(mapCanvas.clientHeight * mapScale);
 }
 
 function renderMap() {
   if (!isMapOpen) return;
-  const w = mapCanvas.width, h = mapCanvas.height;
+  mctx.setTransform(mapScale, 0, 0, mapScale, 0, 0);
+  const w = mapCanvas.width / mapScale, h = mapCanvas.height / mapScale;
   mctx.fillStyle = "#030712";
   mctx.fillRect(0, 0, w, h);
 
@@ -15590,8 +16927,8 @@ mapCanvas.addEventListener("pointerdown", e => {
 
 mapCanvas.addEventListener("pointermove", e => {
   if (mapCam.isDragging) {
-    const dx = (e.clientX - mapCam.dragStartX) / mapCam.zoom;
-    const dy = (e.clientY - mapCam.dragStartY) / mapCam.zoom;
+    const dx = (e.clientX - mapCam.dragStartX) / uiScale / mapCam.zoom;
+    const dy = (e.clientY - mapCam.dragStartY) / uiScale / mapCam.zoom;
     mapCam.x = mapCam.camStartX + dx;
     mapCam.z = mapCam.camStartZ + dy;
     renderMap();
@@ -15600,13 +16937,13 @@ mapCanvas.addEventListener("pointermove", e => {
 
 function releaseMapDrag(e) {
   if (mapCam.isDragging) {
-    const moved = Math.hypot(e.clientX - mapCam.dragStartX, e.clientY - mapCam.dragStartY);
+    const moved = Math.hypot(e.clientX - mapCam.dragStartX, e.clientY - mapCam.dragStartY) / uiScale;
     mapCam.isDragging = false;
     if (moved < 6) {
       const rect = mapCanvas.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-      const midX = mapCanvas.width / 2, midY = mapCanvas.height / 2;
+      const clickX = (e.clientX - rect.left) / uiScale;
+      const clickY = (e.clientY - rect.top) / uiScale;
+      const midX = mapCanvas.width / mapScale / 2, midY = mapCanvas.height / mapScale / 2;
       selectedSector.sx = Math.round(mapCam.x - (clickX - midX) / mapCam.zoom);
       selectedSector.sz = Math.round(mapCam.z - (clickY - midY) / mapCam.zoom);
       playSfx('coin');
@@ -15844,6 +17181,7 @@ canvas.addEventListener("pointerdown", () => {
    ========================================================================== */
 function gameLoop(time) {
   if (document.getElementById('launch-screen')?.style.display !== 'none') {
+    try { pollGamepadState(); } catch (e) {}
     renderTitleScreen(time);
     applyArcadeBloom();
     requestAnimationFrame(gameLoop);
@@ -18009,7 +19347,9 @@ requestAnimationFrame(gameLoop);
     origLandOnPlanet.apply(this, arguments);
 
     // 2. Decide how many extra sentinels to add (e.g., 4 to 6 extra)
-    const extraCount = Math.max(0, 7 + Math.floor(Math.random() * 4) - surfaceSentinels.length);   // 7-10 total
+    const isHomeWorld = !!planet.isHomeWorld || planet.name === "Home World";
+    if (isHomeWorld && surfaceSentinels.length > 5) surfaceSentinels.length = 5;
+    const extraCount = Math.max(0, (isHomeWorld ? 5 : 7 + Math.floor(Math.random() * 4)) - surfaceSentinels.length);   // Home World: 5, elsewhere 7-10
     const isDarkMatter = planet.ore && planet.ore.name === "Dark Matter";
 
     let added = 0;
@@ -19278,7 +20618,7 @@ requestAnimationFrame(gameLoop);
   window.renderMap = function() {
     prevRenderMap.apply(this, arguments);
     if (typeof isMapOpen !== 'undefined' && !isMapOpen) return;
-    const w = mapCanvas.width, h = mapCanvas.height, midX = w / 2, midY = h / 2, zoom = mapCam.zoom;
+    const w = mapCanvas.width / mapScale, h = mapCanvas.height / mapScale, midX = w / 2, midY = h / 2, zoom = mapCam.zoom;
     const t = Date.now() / 1000;
     for (const k of beacons) {
       const [seed, id] = k.split(":");
@@ -20234,6 +21574,7 @@ requestAnimationFrame(gameLoop);
     const c = cabin;
     if (!c || !c.wreck) return prevGetCabinAction.apply(this, arguments);
     const nearRack = c.z < -32 && Math.abs(c.x) < 11;
+    if (nearRack && (rackSpeakers || rackShutter > 0.02)) return prevGetCabinAction.apply(this, arguments);   // stowed for the party
     const nearDoor = c.x > CAB_HW - 9 && c.z > AL.z0 - 1 && c.z < AL.z1 + 1;
     const nearSeat = c.z > 4 && Math.abs(c.x) < 8;
     if (nearRack) {
@@ -20641,14 +21982,15 @@ requestAnimationFrame(gameLoop);
     }
     if (Math.hypot(W.x - (LOGC.x0 + LOGC.x1) / 2, W.z - (LOGC.z0 - 4)) < 11) {
       return { label: "READ LOG", banner: ">> CAPTAIN'S LOG: TAP READ LOG <<", run: () => {
+        if ((activePopup && activePopup.keep) || popupQueue.some(p => p.keep)) return;   // log already playing
         try { playSfx('commChirp'); } catch (e) {}
-        addPopup(`CAPTAIN'S LOG, ${W.d.name}: DAY 211. PIRATES BROKE OUR BACK.`, "#7dd3fc");
-        addPopup("SECURITY GRID STUCK ON. BLAST DOOR WON'T STOP CYCLING.", "#7dd3fc");
-        addPopup("SOMETHING CAME ABOARD WITH THE SALVAGE. IT LIVES IN THE VENTS.", "#7dd3fc");
-        addPopup("DON'T GO NEAR THE OBSERVATION GLASS. IT WON'T HOLD.", "#fca5a5");
-        addPopup("REACTOR SCRAMMED. BRIDGE ON BATTERY. BLACK BOX CLAMPED TILL POWER'S BACK.", "#7dd3fc");
-        addPopup("ENGINEERING GRID IS FASTER THAN THE ONE FORWARD. TIME IT.", "#7dd3fc");
-        addPopup("WE PUT 41 IN CRYO. I ONLY COUNT 40 NOW.", "#fca5a5");
+        addPopup(`CAPTAIN'S LOG, ${W.d.name}: DAY 211. PIRATES BROKE OUR BACK.`, "#7dd3fc", true);
+        addPopup("SECURITY GRID STUCK ON. BLAST DOOR WON'T STOP CYCLING.", "#7dd3fc", true);
+        addPopup("SOMETHING CAME ABOARD WITH THE SALVAGE. IT LIVES IN THE VENTS.", "#7dd3fc", true);
+        addPopup("DON'T GO NEAR THE OBSERVATION GLASS. IT WON'T HOLD.", "#fca5a5", true);
+        addPopup("REACTOR SCRAMMED. BRIDGE ON BATTERY. BLACK BOX CLAMPED TILL POWER'S BACK.", "#7dd3fc", true);
+        addPopup("ENGINEERING GRID IS FASTER THAN THE ONE FORWARD. TIME IT.", "#7dd3fc", true);
+        addPopup("WE PUT 41 IN CRYO. I ONLY COUNT 40 NOW.", "#fca5a5", true);
       } };
     }
     return null;
@@ -20764,7 +22106,7 @@ requestAnimationFrame(gameLoop);
     pollGamepadState();
     W.t += dt;
     if (activePopup) { activePopup.life -= dt * 0.9; activePopup.y -= 8 * dt; if (activePopup.life <= 0) activePopup = null; }
-    if (!activePopup && popupQueue.length > 0) { activePopup = popupQueue.shift(); if (popupQueue.length >= 2) { activePopup.life = activePopup.maxLife = 0.6; } }
+    if (!activePopup && popupQueue.length > 0) { activePopup = popupQueue.shift(); if (popupQueue.length >= 2 && !activePopup.keep) { activePopup.life = activePopup.maxLife = 0.6; } }
     if (screenShake > 0) screenShake = Math.max(0, screenShake - dt);
     if (W.phase === 'dockFade') { if (W.t >= 1.0) enterInterior(); endInput(); return; }
     if (W.phase === 'autodock') {
