@@ -23059,7 +23059,8 @@ requestAnimationFrame(gameLoop);
         else A.t = rr(0.2, 0.6);             // queue: try again shortly
       }
       if (A.phase === 'charge' && A.t <= 0) { A.phase = 'burst'; A.t = 0; }
-      A.armed = A.phase === 'burst' && A.t <= 0;
+      A.cd = (A.cd || 0) - d;              // hard per-sentinel refire floor, whatever else touches reload
+      A.armed = A.phase === 'burst' && A.t <= 0 && A.cd <= 0;
       s.reload = A.armed ? 0 : 99;
     }
     const r = prevUpdate.apply(this, arguments);
@@ -23067,7 +23068,11 @@ requestAnimationFrame(gameLoop);
     try {
       for (const s of surfaceSentinels) {
         const A = st(s), k = kind(s);
-        if (A.armed && s.reload > 0.5) {                       // fired a shot
+        // armed sets reload to 0; the base AI only ever *raises* it when it fires. Getting hit
+        // (provokeSentinel) clamps it down to ~0.2, which the old "> 0.5" test missed, so a
+        // sentinel you were shooting never used up its burst and fired every frame.
+        if (A.armed && s.reload > 0) {                          // fired a shot
+          A.cd = Math.max(k.gap, 0.12);
           A.shots--;
           if (A.shots > 0) A.t = k.gap;
           else { A.phase = 'idle'; A.t = rr(k.cool[0], k.cool[1]) * (s.provoked > 0 ? 0.8 : 1); }
