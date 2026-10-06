@@ -5996,7 +5996,7 @@ function updateButtonLayout() {
     btn4.innerText = "WARP"; btn4.className = "cockpit-btn action";
   } else {
     btn1.innerText = "JETPACK"; btn1.className = "cockpit-btn thrust";
-    btn2.innerText = fieldWeapon === 'rifle' ? "PULSE RIFLE" : "MINING LASER"; btn2.className = "cockpit-btn fire";
+    btn2.innerText = fieldWeapon === 'rifle' ? "PULSE RIFLE" : (fieldWeapon === 'shotgun' ? "SHOTGUN" : "MINING LASER"); btn2.className = "cockpit-btn fire";
     btn3.innerText = "BOARD"; btn3.className = "cockpit-btn action";
     btn4.innerText = "JUMP"; btn4.className = "cockpit-btn";
   }
@@ -6085,6 +6085,83 @@ function burstRifleTick(dt) {
   return (2 * RIFLE.roundGap + RIFLE.burstGap) / 3 * RIFLE.mult;
 }
 // Getting shot (or hearing the rifle) makes a sentinel hunt you, and the one you hit fires back right away.
+// ---- NEON SUPER SHOTGUN: double-barrel, one huge blast then a Doom-speed break-open reload ----
+// 1.6s cycle (fire, break open, eject, load two, snap shut). Anything inside the pellet spray within 150m drops in one shot.
+const SSG = { cycle: 1.6, mult: 3.0, range: 150, full: 35, spray: 34, pack: 9, get cone() { return Math.atan(this.spray / (V_HEIGHT * 0.92)); } };   // spray = pellet pattern radius on screen; the kill cone matches it exactly
+const ssgState = { t: 9, fired: 0, flash: 0, kick: 0, cues: 0 };
+function ssgFalloff(d) { return d <= SSG.full ? 1 : Math.max(0.3, 1 - (d - SSG.full) / (SSG.range - SSG.full) * 0.7); }
+function ssgSound(kind) {
+  try {
+    ensureAudio(); if (!actx) return;
+    const ac = actx, t = ac.currentTime, out = sfxBus || audioOut();
+    const g0 = ac.createGain(); g0.gain.value = kind === 'blast' ? 2.4 : 1.2; g0.connect(out);
+    if (!ssgState.nb || ssgState.nbCtx !== ac) { const n = Math.floor(ac.sampleRate * 0.6), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; ssgState.nb = b; ssgState.nbCtx = ac; }
+    const noise = (st, dur, type, f, q, vol) => { const s2 = ac.createBufferSource(); s2.buffer = ssgState.nb; const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = ac.createGain(); g.gain.setValueAtTime(vol, t + st); g.gain.exponentialRampToValueAtTime(0.001, t + st + dur); s2.connect(fl); fl.connect(g); g.connect(g0); s2.start(t + st); s2.stop(t + st + dur + 0.02); };
+    const tone = (st, dur, type, f0, f1, vol) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t + st); o.frequency.exponentialRampToValueAtTime(f1, t + st + dur); g.gain.setValueAtTime(vol, t + st); g.gain.exponentialRampToValueAtTime(0.001, t + st + dur); o.connect(g); g.connect(g0); o.start(t + st); o.stop(t + st + dur + 0.02); };
+    if (kind === 'blast') {          // both barrels: huge low boom, roar, crack, rolling tail
+      tone(0, 0.32, 'sine', 95, 26, 0.75); tone(0, 0.2, 'triangle', 190, 45, 0.3); tone(0, 0.08, 'square', 70, 40, 0.1);
+      noise(0, 0.28, 'lowpass', 900, 0.8, 0.6); noise(0, 0.035, 'bandpass', 2600, 0.9, 0.18); noise(0.05, 0.55, 'lowpass', 320, 0.7, 0.22);
+      try { Music.duck(0.2, 0.2); } catch (e) {}
+    } else if (kind === 'open') {    // break-open clack
+      noise(0, 0.05, 'bandpass', 1500, 2.5, 0.22); tone(0, 0.06, 'square', 420, 260, 0.06);
+    } else if (kind === 'eject') {   // shells pop out + tinkle
+      noise(0, 0.03, 'bandpass', 3200, 3, 0.12); tone(0.05, 0.08, 'triangle', 2400, 2100, 0.04); tone(0.12, 0.08, 'triangle', 2650, 2300, 0.035);
+    } else if (kind === 'load') {    // shells slide in
+      noise(0, 0.07, 'bandpass', 900, 1.5, 0.14); tone(0, 0.05, 'triangle', 320, 240, 0.05);
+    } else if (kind === 'close') {   // heavy snap shut
+      noise(0, 0.06, 'bandpass', 1100, 1.8, 0.28); tone(0, 0.09, 'square', 180, 110, 0.09); tone(0.02, 0.12, 'sine', 90, 60, 0.15);
+    }
+  } catch (e) {}
+}
+// advanced every frame on the surface (the reload keeps going whether or not you hold the trigger)
+function stepShotgun(dt) {
+  ssgState.t += dt;
+  const t = ssgState.t, cue = (n, at, kind) => { if (ssgState.cues < n && t >= at) { ssgState.cues = n; ssgSound(kind); } };
+  if (ssgState.fired > 0 && t < SSG.cycle + 0.1) { cue(1, 0.32, 'open'); cue(2, 0.48, 'eject'); cue(3, 0.78, 'load'); cue(4, 1.02, 'load'); cue(5, 1.3, 'close'); }
+}
+// returns laser-equivalent damage for this frame: a big chunk when both barrels go, 0 while reloading
+function shotgunTick() {
+  if (ssgState.t < SSG.cycle) return 0;
+  ssgState.t = 0; ssgState.cues = 0; ssgState.fired++;
+  ssgState.flash = 1; ssgState.kick = 1;
+  ssgSound('blast'); rifleNoiseAlert();
+  vibrateGamepad(160, 0.9, 0.8); screenShake = Math.max(screenShake, 0.22);
+  return SSG.mult;
+}
+// buckshot pass: every sentinel inside the pellet spray (and inside 150m) is dropped by the blast
+function shotgunSpray(target) {
+  const fwd = [Math.sin(playerFoot.yaw) * Math.cos(playerFoot.pitch), Math.sin(playerFoot.pitch), Math.cos(playerFoot.yaw) * Math.cos(playerFoot.pitch)];
+  const hits = [];
+  for (const o of surfaceSentinels.slice()) {
+    if (o.hp <= 0) continue;
+    const vx = o.x - playerFoot.x, vy = o.y - playerFoot.y, vz = o.z - playerFoot.z, d = Math.hypot(vx, vy, vz);
+    if (d > SSG.range || d < 0.5) continue;
+    const ang = Math.acos(Math.max(-1, Math.min(1, (vx * fwd[0] + vy * fwd[1] + vz * fwd[2]) / d)));
+    if (o !== target && ang > SSG.cone) continue;
+    hits.push(o);
+  }
+  // bunched up: the buckshot tears through anything packed in close around a sentinel it hits
+  const direct = hits.length;   // only the sentinels the pellets hit spread it - no endless chain down a line
+  for (let k = 0; k < direct; k++) {
+    const a = hits[k];
+    for (const o of surfaceSentinels) {
+      if (hits.includes(o) || o.hp <= 0) continue;
+      if (Math.hypot(o.x - playerFoot.x, o.y - playerFoot.y, o.z - playerFoot.z) > SSG.range) continue;
+      if (Math.hypot(o.x - a.x, o.z - a.z) <= SSG.pack) hits.push(o);
+    }
+  }
+  for (const o of hits) { o.hp = 0; provokeSentinel(o, true); shotgunImpact(o.x, o.y, o.z); shotgunKill(o); }
+  if (hits.length > 1) addPopup(`MULTI-KILL x${hits.length}!`, "#39ff14");
+}
+function shotgunKill(sent) {
+  runStats.sentinelsKilled++; playSfx('explosion'); vibrateGamepad(280, 0.6, 0.7);
+  addPopup("SENTINEL INVADER DESTROYED! +$150", "#c084fc"); ship.credits += 150; runStats.creditsEarned += 150;
+  spawnSentinelGore(sent);
+  const i = surfaceSentinels.indexOf(sent); if (i !== -1) surfaceSentinels.splice(i, 1);
+}
+function shotgunImpact(x, y, z) {   // pellet spray: neon green + pink sparks
+  for (let p = 0; p < 16; p++) particles.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6, z: z + (Math.random() - 0.5) * 6, is3D: true, vx: (Math.random() - 0.5) * 60, vy: -8 - Math.random() * 30, vz: (Math.random() - 0.5) * 60, life: 0.28, maxLife: 0.28, color: ["#39ff14", "#ff2bd6", "#ffffff"][p % 3] });
+}
 const RIFLE_HEARING = Infinity;   // the pulse rifle is LOUD: every sentinel on the planet hears it
 function provokeSentinel(s, hit) {
   s.provoked = Math.max(s.provoked || 0, hit ? 12 : 14);   // long enough for distant ones to march in
@@ -7566,30 +7643,30 @@ function getCabinAction() {
   const nearDoor = c.x > CAB_HW - 9 && c.z > AL.z0 - 1 && c.z < AL.z1 + 1;
   const nearSeat = c.z > 4 && Math.abs(c.x) < 8;
   if (nearRack) {
-    const wLabel = w => w === 'rifle' ? 'PULSE RIFLE' : 'LASER';
-    const aimW = c.aimRifle ? 'rifle' : 'laser';
+    const wLabel = w => w === 'rifle' ? 'PULSE RIFLE' : (w === 'shotgun' ? 'SHOTGUN' : 'LASER');
+    const aimW = c.aimW || (c.aimRifle ? 'rifle' : 'laser');
     // at the weapons bay holding one gun and looking at the other: swap straight over (coming or going)
     if (c.hasLaser && c.hasHelmet && c.x < -1 && aimW !== fieldWeapon) {
-      return { label: `SWAP TO ${wLabel(aimW)}`, banner: `>> WEAPONS BAY: TAP SWAP TO ${aimW === 'rifle' ? 'PULSE RIFLE' : 'MINING LASER'} <<`, enabled: true, run: () => {
-        fieldWeapon = aimW; c.dir = 'out'; addPopup(aimW === 'rifle' ? "SWAPPED TO PULSE RIFLE - CAN'T MINE!" : "SWAPPED TO MINING LASER - CYCLE THE AIRLOCK", aimW === 'rifle' ? "#fb923c" : "#4ade80");
+      return { label: `SWAP TO ${wLabel(aimW)}`, banner: `>> WEAPONS BAY: TAP SWAP TO ${aimW === 'rifle' ? 'PULSE RIFLE' : (aimW === 'shotgun' ? 'SUPER SHOTGUN' : 'MINING LASER')} <<`, enabled: true, run: () => {
+        fieldWeapon = aimW; c.dir = 'out'; addPopup(aimW === 'rifle' ? "SWAPPED TO PULSE RIFLE - CAN'T MINE!" : (aimW === 'shotgun' ? "SWAPPED TO SUPER SHOTGUN - 100m RANGE, CAN'T MINE!" : "SWAPPED TO MINING LASER - CYCLE THE AIRLOCK"), aimW === 'rifle' ? "#fb923c" : (aimW === 'shotgun' ? "#39ff14" : "#4ade80"));
         playSfx('hullClang'); vibrateGamepad(110, 0.35, 0.3); HH.raise = 0;
       } };
     }
     if (c.dir === 'in' && (c.hasLaser || c.hasHelmet)) {
       const which = c.hasLaser ? wLabel(fieldWeapon) : 'HELMET';
       return { label: `RACK ${which}`, banner: `>> SUIT RACK: TAP RACK ${which} <<`, enabled: true, run: () => {
-        if (which !== 'HELMET') { c.hasLaser = false; addPopup(fieldWeapon === 'rifle' ? "PULSE RIFLE RACKED" : "MINING LASER RACKED", "#38bdf8"); }
+        if (which !== 'HELMET') { c.hasLaser = false; addPopup(fieldWeapon === 'rifle' ? "PULSE RIFLE RACKED" : (fieldWeapon === 'shotgun' ? "SUPER SHOTGUN RACKED" : "MINING LASER RACKED"), "#38bdf8"); }
         else { c.hasHelmet = false; addPopup("SUIT & HELMET RACKED - HEAD TO THE COCKPIT", "#38bdf8"); }
         playSfx('hullClang'); vibrateGamepad(90, 0.3, 0.2);
       } };
     }
     if (!c.hasHelmet || !c.hasLaser) {
       const which = !c.hasHelmet ? 'HELMET' : wLabel(aimW);
-      const bn = which === 'HELMET' ? `>> SUIT RACK: TAP GRAB HELMET <<` : `>> WEAPONS BAY: LOOK AT THE LASER OR RIFLE - TAP GRAB ${which} <<`;
+      const bn = which === 'HELMET' ? `>> SUIT RACK: TAP GRAB HELMET <<` : `>> WEAPONS BAY: LOOK AT THE LASER, RIFLE OR SHOTGUN - TAP GRAB ${which} <<`;
       return { label: `GRAB ${which}`, banner: bn, enabled: true, run: () => {
         c.dir = 'out';
         if (which === 'HELMET') { c.hasHelmet = true; addPopup("EVA SUIT & HELMET SEALED", "#4ade80"); playSfx('targetLock'); }
-        else { c.hasLaser = true; fieldWeapon = aimW; addPopup(aimW === 'rifle' ? "PULSE RIFLE ARMED - CAN'T MINE! CYCLE THE AIRLOCK" : "MINING LASER ARMED - CYCLE THE AIRLOCK", aimW === 'rifle' ? "#fb923c" : "#4ade80"); playSfx('upgrade'); }
+        else { c.hasLaser = true; fieldWeapon = aimW; ssgState.t = 9; addPopup(aimW === 'rifle' ? "PULSE RIFLE ARMED - CAN'T MINE! CYCLE THE AIRLOCK" : (aimW === 'shotgun' ? "SUPER SHOTGUN LOADED - 100m RANGE, CAN'T MINE! CYCLE THE AIRLOCK" : "MINING LASER ARMED - CYCLE THE AIRLOCK"), aimW === 'rifle' ? "#fb923c" : (aimW === 'shotgun' ? "#39ff14" : "#4ade80")); playSfx('upgrade'); }
         vibrateGamepad(110, 0.35, 0.3);
       } };
     }
@@ -9826,11 +9903,16 @@ function renderCabinView() {
   };
   if (!c.hasHelmet && !rackSpeakers) { addSprite(0, -7.3, -42.6, dimSprite(inRack(drawRackSuit))); addSprite(0, -13.2, -42.3, dimSprite(inRack(drawRackHelmet))); }
   // laser stays on display aboard the derelict (left behind); the headlamp is always on show at home
-  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon === 'rifle')) addSprite(-4.89, -7.9, -41.9, dimSprite(inRack(drawRackLaser)));
-  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon !== 'rifle')) addSprite(-5.6, -12.4, -41.9, dimSprite(inRack(drawRackRifle)));
+  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon === 'rifle')) addSprite(-4.89, -9.0, -41.9, dimSprite(inRack(drawRackLaser)));
+  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon !== 'rifle')) addSprite(-5.6, -13.3, -41.9, dimSprite(inRack(drawRackRifle)));
+  if (!rackSpeakers && !c.wreck && (!c.hasLaser || fieldWeapon !== 'shotgun')) addSprite(-5.4, -4.9, -41.9, dimSprite(inRack(drawRackShotgun)));
   {   // which weapon is the crosshair nearer? (picks laser vs rifle at the weapons bay)
-    const pl = tx([-4.89, -7.9, -41.9]), pr = tx([-5.6, -12.4, -41.9]);
+    const pl = tx([-4.89, -9.0, -41.9]), pr = tx([-5.6, -13.3, -41.9]);
     if (pl[2] > NEAR && pr[2] > NEAR) c.aimRifle = Math.hypot(pr[0] / pr[2], pr[1] / pr[2]) < Math.hypot(pl[0] / pl[2], pl[1] / pl[2]);
+    // which of the three is nearest the crosshair: laser, rifle or shotgun (shotgun's on the low clamps)
+    const ps = tx([-5.4, -4.9, -41.9]), sc = p => p[2] > NEAR ? Math.hypot(p[0] / p[2], p[1] / p[2]) : 99;
+    const opts = [['laser', sc(pl)], ['rifle', sc(pr)]]; if (!c.wreck) opts.push(['shotgun', sc(ps)]);
+    opts.sort((a, b) => a[1] - b[1]); c.aimW = opts[0][0];
   }
   {   // is the starboard airlock door in front of you (left/right only)? gates the AIRLOCK prompt
     const dx = AL.cx0 - c.x, dz = AL.zc - c.z;
@@ -9979,7 +10061,7 @@ function drawCabinPrompts(c, showGear) {
   if (showGear) {
     ctx.fillStyle = "rgba(2, 6, 23, 0.7)"; ctx.fillRect(gx - 58, 44, 116, 12);
     ctx.fillStyle = c.hasHelmet ? "#4ade80" : "#64748b"; ctx.fillText(`HELMET ${c.hasHelmet ? "■" : "□"}`, gx - 28, 53);
-    ctx.fillStyle = c.hasLaser ? "#4ade80" : "#64748b"; ctx.fillText(`${c.hasLaser && fieldWeapon === 'rifle' ? "PULSE" : "LASER"} ${c.hasLaser ? "■" : "□"}`, gx + 28, 53);
+    ctx.fillStyle = c.hasLaser ? "#4ade80" : "#64748b"; ctx.fillText(`${c.hasLaser && fieldWeapon === 'rifle' ? "PULSE" : (c.hasLaser && fieldWeapon === 'shotgun' ? "SHOTGUN" : "LASER")} ${c.hasLaser ? "■" : "□"}`, gx + 28, 53);
   }
   if (c.action) {
     const blink = Math.floor(Date.now() / 400) % 2 === 0;
@@ -10229,6 +10311,51 @@ function drawRackLaser(x, y, s, g) {
     R(cx - 0.42, (top + bot) / 2 - 0.22, 0.24, 0.44, "#facc15");                    // yellow latch
     R(cx - 0.36, (top + bot) / 2 - 0.08, 0.12, 0.16, "#22c55e");                    // locked
     g.strokeStyle = "#000"; g.lineWidth = lw; g.strokeRect(X(cx - 0.32), Y(top), 0.64 * u, (bot - top) * u);
+  }
+  g.restore();
+}
+function drawRackShotgun(x, y, s, g) {
+  // side-on neon super shotgun, same build as the laser + rifle: shaded panels, ink outline, locking clamps
+  g = g || ctx;
+  const u = 0.68 * s;
+  if (u < 0.4) return;
+  x -= 0.45 * u;
+  const X = v => x + v * u, Y = v => y + v * u;
+  const P = (pts, col) => { g.fillStyle = litCol(col); g.beginPath(); g.moveTo(X(pts[0][0]), Y(pts[0][1])); for (let i = 1; i < pts.length; i++) g.lineTo(X(pts[i][0]), Y(pts[i][1])); g.closePath(); g.fill(); };
+  const R = (x0, y0, w, h, col) => { g.fillStyle = litCol(col); g.fillRect(X(x0), Y(y0), w * u, h * u); };
+  g.save();
+  g.strokeStyle = "#000"; g.lineWidth = Math.max(0.5, u * 0.14); g.lineJoin = "round";
+  const out = (pts) => { g.beginPath(); g.moveTo(X(pts[0][0]), Y(pts[0][1])); for (let i = 1; i < pts.length; i++) g.lineTo(X(pts[i][0]), Y(pts[i][1])); g.closePath(); g.stroke(); };
+  const box = (x0, y0, w, h) => g.strokeRect(X(x0), Y(y0), w * u, h * u);
+  // stock: black with a pink butt pad and a green racing stripe
+  const stock = [[-4.0, -0.55], [-2.5, -0.45], [-2.5, 0.45], [-3.4, 1.05], [-4.0, 1.05]];
+  P(stock, "#101014"); P([[-4.0, -0.55], [-2.5, -0.45], [-2.5, -0.28], [-4.0, -0.36]], "#2c2c34");
+  R(-4.0, -0.55, 0.26, 1.6, "#ff2bd6"); R(-3.6, 0.05, 1.0, 0.14, "#39ff14"); out(stock);
+  // pistol grip + trigger guard
+  const grip = [[-2.15, 0.5], [-1.45, 0.5], [-1.75, 1.95], [-2.45, 1.85]]; P(grip, "#101014"); R(-2.05, 0.75, 0.14, 0.9, "#ff2bd6"); out(grip);
+  R(-1.45, 0.55, 0.62, 0.13, "#3a3a44"); R(-0.95, 0.55, 0.13, 0.55, "#3a3a44"); R(-1.3, 0.62, 0.1, 0.38, "#94a3b8");
+  // receiver: lit top, dark belly, green edge, two neon shells in the side saddle, pink hinge pin
+  R(-2.5, -0.7, 2.0, 1.25, "#1a1a20"); R(-2.5, -0.7, 2.0, 0.22, "#44444f"); R(-2.5, 0.36, 2.0, 0.19, "#060608"); R(-2.5, -0.47, 2.0, 0.07, "#39ff14");
+  for (const sy of [-0.3, 0.03]) { R(-2.25, sy, 0.95, 0.27, "#39ff14"); R(-2.25, sy, 0.95, 0.07, "#b9ffa8"); R(-2.25, sy, 0.24, 0.27, "#ff2bd6"); }
+  R(-0.78, 0.2, 0.22, 0.22, "#ff2bd6"); box(-2.5, -0.7, 2.0, 1.25);
+  // vent rib along the top with green sight beads
+  R(-0.5, -0.8, 3.75, 0.2, "#0b0b0e"); for (let i = 0; i < 6; i++) R(-0.25 + i * 0.6, -0.76, 0.22, 0.1, "#39ff14");
+  // twin barrels: shaded tubes with a glowing seam between them
+  R(-0.5, -0.6, 3.8, 0.54, "#1d1d24"); R(-0.5, -0.6, 3.8, 0.13, "#4f4f5c");
+  R(-0.5, -0.03, 3.8, 0.54, "#16161c"); R(-0.5, -0.03, 3.8, 0.1, "#3b3b46"); R(-0.5, 0.4, 3.8, 0.11, "#060608");
+  R(-0.5, -0.08, 3.8, 0.07, "#39ff14"); box(-0.5, -0.6, 3.8, 1.11);
+  // pink fore-end with grip grooves
+  R(0.15, 0.42, 1.9, 0.48, "#ff2bd6"); R(0.15, 0.42, 1.9, 0.1, "#ff9cf0"); R(0.15, 0.78, 1.9, 0.12, "#a3168f");
+  for (let i = 0; i < 5; i++) R(0.4 + i * 0.32, 0.55, 0.1, 0.24, "#a3168f");
+  box(0.15, 0.42, 1.9, 0.48);
+  // neon green muzzle collar + dark bores
+  R(3.3, -0.68, 0.3, 1.24, "#39ff14"); R(3.3, -0.68, 0.3, 0.2, "#b9ffa8"); R(3.6, -0.45, 0.1, 0.24, "#000"); R(3.6, 0.08, 0.1, 0.24, "#000"); box(3.3, -0.68, 0.3, 1.24);
+  // locking clamps over the stock and the barrels, same as the other guns
+  for (const [cx, top, bot] of [[-3.15, -1.0, 1.35], [2.65, -1.15, 0.85]]) {
+    R(cx - 0.3, top, 0.6, bot - top, "#6b7280"); R(cx - 0.3, top, 0.6, 0.26, "#9ca3af"); R(cx - 0.3, bot - 0.26, 0.6, 0.26, "#4b5563");
+    R(cx - 0.18, top - 0.4, 0.36, 0.42, "#374151");
+    R(cx - 0.4, (top + bot) / 2 - 0.2, 0.22, 0.4, "#facc15"); R(cx - 0.34, (top + bot) / 2 - 0.07, 0.11, 0.14, "#22c55e");
+    box(cx - 0.3, top, 0.6, bot - top);
   }
   g.restore();
 }
@@ -12635,13 +12762,13 @@ function update(dt) {
       const proj = projectSurface(sent.x, sent.y, sent.z);
       if (proj && proj.depth > 0) {
         const cDist = Math.hypot(proj.x - V_WIDTH / 2, proj.y - V_HEIGHT / 2);
-        if (cDist < Math.max(fieldWeapon === 'rifle' ? 38 : 28, 18 * proj.scale) && proj.dist < closestDist) {
+        if (cDist < Math.max(fieldWeapon !== 'laser' ? 38 : 28, 18 * proj.scale) && proj.dist < closestDist) {
           closestDist = proj.dist;
           targetedObject = { sentinel: sent, proj };
         }
       }
     }
-    if (!targetedObject && fieldWeapon !== 'rifle') {   // the pulse rifle only locks onto enemies
+    if (!targetedObject && fieldWeapon === 'laser') {   // the pulse rifle and shotgun only lock onto enemies
       for (let node of surfaceNodes) {
         if (node.amount <= 0) continue;
         const proj = projectSurface(node.x, node.y, node.z);
@@ -12669,17 +12796,19 @@ function update(dt) {
     }
 
     // Mining Laser System
+    if (fieldWeapon === 'shotgun') stepShotgun(dt);
     if (wantsFire) {
       miningLaserState.active = true;
-      const rifleOn = fieldWeapon === 'rifle';
-      const wdt = rifleOn ? burstRifleTick(dt) : dt;
+      const rifleOn = fieldWeapon === 'rifle', sgOn = fieldWeapon === 'shotgun', gunOn = rifleOn || sgOn;
+      const wdt = rifleOn ? burstRifleTick(dt) : (sgOn ? shotgunTick() : dt);
       miningLaserState.humSoundTimer -= dt;
-      if (!rifleOn && miningLaserState.humSoundTimer <= 0) {
+      if (!gunOn && miningLaserState.humSoundTimer <= 0) {
         playSfx('miningHum');
         miningLaserState.humSoundTimer = 0.08;
       }
       vibrateGamepad(70, 0.12, 0.22);
 
+      if (sgOn && wdt > 0) shotgunSpray(targetedObject && targetedObject.sentinel);
       const fwdX = Math.sin(playerFoot.yaw) * Math.cos(playerFoot.pitch);
       const fwdY = Math.sin(playerFoot.pitch);
       const fwdZ = Math.cos(playerFoot.yaw) * Math.cos(playerFoot.pitch);
@@ -12696,10 +12825,10 @@ function update(dt) {
           miningLaserState.hit2DX = targetedObject.proj.x;
           miningLaserState.hit2DY = targetedObject.proj.y;
 
-          if (rifleOn) {
-            if (wdt > 0) rifleImpact(node.x, node.y - 4, node.z, ["#fb923c", "#fde68a", node.ore.lightColor]);
+          if (gunOn) {
+            if (wdt > 0) { if (sgOn) shotgunImpact(node.x, node.y - 4, node.z); else rifleImpact(node.x, node.y - 4, node.z, ["#fb923c", "#fde68a", node.ore.lightColor]); }
             rifleState.warnT -= dt;
-            if (rifleState.warnT <= 0) { addPopup("PULSE RIFLE CAN'T MINE - GRAB THE LASER FROM THE RACK", "#fb923c"); rifleState.warnT = 2.4; }
+            if (rifleState.warnT <= 0) { addPopup(`${sgOn ? "SHOTGUN" : "PULSE RIFLE"} CAN'T MINE - GRAB THE LASER FROM THE RACK`, "#fb923c"); rifleState.warnT = 2.4; }
           } else miningLaserState.miningProgress += dt * ship.miningRate;
           while (miningLaserState.miningProgress >= 1.0) {
             miningLaserState.miningProgress -= 1.0;
@@ -12732,7 +12861,7 @@ function update(dt) {
             }
           }
 
-          for (let p = 0; p < (rifleOn ? 0 : 2); p++) {
+          for (let p = 0; p < (gunOn ? 0 : 2); p++) {
             particles.push({
               x: node.x + (Math.random() - 0.5) * 3,
               y: node.y - 4 + (Math.random() - 0.5) * 3,
@@ -12762,7 +12891,7 @@ function update(dt) {
         const sent = targetedObject.sentinel;
         const sentDist = targetedObject.proj ? targetedObject.proj.dist : Math.hypot(playerFoot.x - sent.x, playerFoot.y - sent.y, playerFoot.z - sent.z);
 
-        if (sentDist <= (rifleOn ? RIFLE.range : 200)) {
+        if (sentDist <= (sgOn ? SSG.range : (rifleOn ? RIFLE.range : 200))) {
           miningLaserState.beamColor = "#f43f5e";
           miningLaserState.targetX = sent.x;
           miningLaserState.targetY = sent.y;
@@ -12770,10 +12899,10 @@ function update(dt) {
           miningLaserState.hit2DX = targetedObject.proj.x;
           miningLaserState.hit2DY = targetedObject.proj.y;
 
-          sent.hp -= ship.laserDamage * wdt * 2.2;
-          if (wdt > 0) provokeSentinel(sent, true);
+          if (!sgOn) sent.hp -= ship.laserDamage * wdt * 2.2;   // the shotgun's kills are handled by shotgunSpray above
+          if (wdt > 0 && !sgOn) provokeSentinel(sent, true);
           if (rifleOn && wdt > 0) rifleImpact(sent.x, sent.y, sent.z, ["#fb923c", "#ffffff", "#c084fc"]);
-          if (sent.hp <= 0) {
+          if (sent.hp <= 0 && !sgOn) {
             runStats.sentinelsKilled++;
             playSfx('explosion');
             vibrateGamepad(280, 0.6, 0.7);
@@ -12804,7 +12933,7 @@ function update(dt) {
 
           rangeWarningTimer -= dt;
           if (rangeWarningTimer <= 0) {
-            addPopup(`ENEMY OUT OF RANGE (${Math.round(sentDist)}m / MAX ${rifleOn ? RIFLE.range : 200}m)`, "#f87171");
+            addPopup(`ENEMY OUT OF RANGE (${Math.round(sentDist)}m / MAX ${sgOn ? SSG.range : (rifleOn ? RIFLE.range : 200)}m)`, "#f87171");
             rangeWarningTimer = 1.6;
           }
         }
@@ -12832,7 +12961,7 @@ function update(dt) {
           }
 
           m.hp -= (ship.miningRate || 3.5) * 6 * wdt;
-          if (rifleOn && wdt > 0) rifleImpact(m.x, m.y - 40, m.z, ["#fb923c", "#ffffff", "#c084fc"]);
+          if (gunOn && wdt > 0) { if (sgOn) shotgunImpact(m.x, m.y - 40, m.z); else rifleImpact(m.x, m.y - 40, m.z, ["#fb923c", "#ffffff", "#c084fc"]); }
           if (m.hp <= 0) {
             m.hp = 0;
             if (typeof playSfx === 'function') playSfx('explosion');
@@ -12874,8 +13003,8 @@ function update(dt) {
         miningLaserState.hit2DX = beamProj ? beamProj.x : V_WIDTH / 2;
         miningLaserState.hit2DY = beamProj ? beamProj.y : V_HEIGHT / 2;
 
-        if (rifleOn ? wdt > 0 : Math.random() < 0.6) {
-          if (rifleOn) rifleImpact(hx, hy, hz, ["#fde68a", "#a8a29e", "#fb923c"]);
+        if (gunOn ? wdt > 0 : Math.random() < 0.6) {
+          if (sgOn) shotgunImpact(hx, hy, hz); else if (rifleOn) rifleImpact(hx, hy, hz, ["#fde68a", "#a8a29e", "#fb923c"]);
           particles.push({
             x: hx, y: hy, z: hz, is3D: true,
             vx: (Math.random() - 0.5) * 12, vy: -4 - Math.random() * 10, vz: (Math.random() - 0.5) * 12,
@@ -14105,7 +14234,7 @@ function drawPixelSentinel(proj, sent) {
   const w = cols * px, h = rows * px;
   const ox = cx - Math.floor(w / 2);
   const oy = cy - Math.floor(h / 2);
-  const bob = isBerz ? 0 : Math.round(Math.sin(Date.now() * 0.006 + (sent.x || 0)) * 2 * px);
+  const bob = isBerz ? 0 : Math.round(Math.sin(Date.now() * 0.0028 + (sent.bobPh ?? (sent.bobPh = Math.random() * 6.283))) * 2 * px);
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -14189,6 +14318,100 @@ function drawHandheldBlaster() {
   try { drawHandheldRig(); } catch (e) { window.__laserTip.ok = false; }
 }
 
+// first-person super shotgun: chunky black twin barrels, neon green trim, pink fore-end; breech + shells show when broken open
+function drawShotgunFP(band, L, now, open) {
+  const t = ssgState.t, fired = ssgState.fired > 0;
+  // receiver: shaded like the laser (dark left flank, lit right bevel), green edges, pink spine, side-saddle shells, pink hinge pin
+  band(-4, L * 0.38, -0.5, 0.5, "#16161b");
+  band(-4, L * 0.38, -0.5, -0.4, "#08080a"); band(-4, L * 0.38, 0.4, 0.5, "#3f3f4a");
+  band(-4, L * 0.38, -0.4, -0.34, "#39ff14"); band(-4, L * 0.38, 0.34, 0.4, "#39ff14");
+  band(-4, L * 0.38, -0.06, 0.06, "#ff2bd6"); band(-4, L * 0.38, -0.02, 0.0, "#ff9cf0");
+  for (const [x0, f0, f1] of [[0.1, -0.31, -0.14], [0.21, -0.31, -0.14], [0.1, 0.14, 0.31], [0.21, 0.14, 0.31]]) {
+    band(L * x0, L * (x0 + 0.09), f0, f1, "#39ff14"); band(L * x0, L * (x0 + 0.09), f0, f0 + 0.04, "#b9ffa8"); band(L * x0, L * (x0 + 0.025), f0, f1, "#ff2bd6");
+  }
+  band(L * 0.355, L * 0.375, -0.5, 0.5, "#ff2bd6");
+  // break action: barrels fold down at the hinge (foreshorten + tip aside), breech face swings up towards you
+  const h = L * 0.38, fa = -0.3 * open;
+  // breech plate size (shared with the face drawn below); barrels collapse so only the muzzle tip peeks over it
+  const wH = 72 - 52 * (h / L), W2 = 0.5 * wH * 1.06 * (1 + 0.32 * open), dPlate = Math.max(wH * 0.17 * 1.9 * open, W2 * 0.8 * open);
+  const fs = 1 - open * (1 - (dPlate + 4) / (L - h));
+  ctx.save(); ctx.translate(h, 0); ctx.rotate(fa); ctx.scale(fs, 1 + 0.32 * open); ctx.translate(-h, 0);   // barrels fatten as they tip towards you so they match the breech face
+  // twin barrels: each a shaded tube - dark edge, body, soft highlight, hard glint
+  band(L * 0.38, L, -0.5, -0.03, "#1b1b22", 1.06); band(L * 0.38, L, 0.03, 0.5, "#1d1d25", 1.06);
+  band(L * 0.38, L, -0.5, -0.41, "#08080a", 1.06); band(L * 0.38, L, 0.43, 0.5, "#5c5c6b", 1.06);
+  band(L * 0.38, L, -0.32, -0.18, "#34343f", 1.06); band(L * 0.38, L, 0.17, 0.32, "#40404c", 1.06);
+  band(L * 0.38, L, -0.27, -0.24, "#6b6b7a", 1.06); band(L * 0.38, L, 0.22, 0.25, "#7a7a8a", 1.06);
+  // vent rib down the middle: black rail, neon seam, green sight beads
+  band(L * 0.38, L, -0.07, 0.07, "#0b0b0e", 1.06); band(L * 0.38, L, -0.02, 0.02, "#39ff14", 1.06);
+  for (let i = 0; i < 6; i++) { const x0 = L * (0.43 + i * 0.09); band(x0, x0 + 1.6, -0.06, 0.06, "#b9ffa8", 1.06); }
+  // barrel bands
+  for (const x0 of [0.7, 0.86]) { band(L * x0, L * x0 + 1.6, -0.5, 0.5, "#2c2c35", 1.06); band(L * x0, L * x0 + 0.6, -0.5, 0.5, "#4f4f5c", 1.06); }
+  // pink fore-end under the barrels, with grip grooves and a lit edge
+  for (const sd of [-1, 1]) {
+    const a = sd < 0 ? [-0.58, -0.47] : [0.47, 0.58];
+    band(L * 0.46, L * 0.64, a[0], a[1], "#ff2bd6", 1.06);
+    band(L * 0.46, L * 0.64, sd < 0 ? a[0] : a[1] - 0.03, sd < 0 ? a[0] + 0.03 : a[1], sd < 0 ? "#a3168f" : "#ff9cf0", 1.06);
+    for (let i = 0; i < 4; i++) { const x0 = L * (0.48 + i * 0.04); band(x0, x0 + 1.1, a[0], a[1], "#a3168f", 1.06); }
+  }
+  // neon green muzzle collar with a lit lip, deep black bores
+  band(L * 0.94, L, -0.52, -0.02, "#39ff14", 1.06); band(L * 0.94, L, 0.02, 0.52, "#39ff14", 1.06);
+  band(L * 0.94, L, -0.52, -0.46, "#15803d", 1.06); band(L * 0.94, L, 0.44, 0.52, "#b9ffa8", 1.06);
+  band(L * 0.94, L * 0.95, -0.52, 0.52, "#b9ffa8", 1.06);
+  band(L - 1.6, L + 0.6, -0.36, -0.12, "#14141a", 1.06); band(L - 1.6, L + 0.6, 0.12, 0.36, "#14141a", 1.06);
+  band(L - 0.9, L + 0.6, -0.31, -0.17, "#000000", 1.06); band(L - 0.9, L + 0.6, 0.17, 0.31, "#000000", 1.06);
+  ctx.restore();
+  // breech face tipped up at the hinge: two chambers, spent shells until they spit out, fresh ones as they're loaded
+  if (open > 0.15) {
+    const w = 72 - 52 * (h / L), r = w * 0.17, d = r * 1.9 * open;
+    ctx.save(); ctx.translate(h, 0); ctx.rotate(fa);
+    // breech face: shaded plate, lit top lip, green side trim, dark centre rib, extractor between the chambers
+    const d2 = dPlate;
+    { const d = d2;
+    ctx.fillStyle = "#24242c"; ctx.fillRect(0, -W2, d, W2 * 2);
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(0, -W2, d * 0.14, W2 * 2);
+    ctx.fillStyle = "#5c5c6b"; ctx.fillRect(d * 0.86, -W2, d * 0.14, W2 * 2);
+    ctx.fillStyle = "#39ff14"; ctx.fillRect(0, -W2, d, W2 * 0.1); ctx.fillRect(0, W2 * 0.9, d, W2 * 0.1);
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(0, -W2 * 0.08, d, W2 * 0.16);
+    ctx.fillStyle = "#39ff14"; ctx.fillRect(0, -W2 * 0.025, d, W2 * 0.05);
+    ctx.fillStyle = "#94a3b8"; ctx.fillRect(d * 0.1, -W2 * 0.14, d * 0.2, W2 * 0.28);
+    const spent = fired && t < 0.48, s1 = !fired || t >= 0.78, s2 = !fired || t >= 1.02;
+    for (const [side, has] of [[-1, spent || s1], [1, spent || s2]]) {
+      const cy = side * W2 * 0.5, cx = d * 0.52, R0 = W2 * 0.36;
+      const el = (k, col, dx = 0, dy = 0) => { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(cx + dx * open, cy + dy, Math.max(0.5, Math.min(R0 * 0.8 * open, d * 0.42) * k), R0 * k, 0, 0, Math.PI * 2); ctx.fill(); };
+      el(1.0, "#000000"); el(0.94, "#6b6b7a"); el(0.94, "#9ca3af", R0 * 0.08); el(0.84, "#2a2a33");     // chamber mouth: steel ring, lit on its top edge
+      el(0.74, "#000000");                                                                               // dark bore
+      if (has) {
+        el(0.7, spent ? "#5b1460" : "#ff2bd6"); el(0.7, spent ? "#7a2a80" : "#ff9cf0", R0 * 0.09);     // shell rim with a lit lip
+        el(0.56, spent ? "#4a1150" : "#c0179f"); el(0.56, spent ? "#3a0c40" : "#a3168f", -R0 * 0.05);   // recessed base
+        el(0.26, spent ? "#14532d" : "#39ff14"); if (!spent) el(0.1, "#ffffff", R0 * 0.08, -R0 * 0.08);  // primer + glint
+      }
+    }
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.strokeRect(0, -W2, d, W2 * 2);
+    // only the neon muzzle tip shows above the breech: green collar, lit lip, two dark bores
+    if (open > 0.6) {
+      const tw = W2 * 0.94, x0 = d, th2 = 4 * open;
+      ctx.fillStyle = "#39ff14"; ctx.fillRect(x0, -tw, th2, tw * 2);
+      ctx.fillStyle = "#b9ffa8"; ctx.fillRect(x0 + th2 * 0.6, -tw, th2 * 0.4, tw * 2);
+      ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x0, -W2 * 0.06, th2, W2 * 0.12);
+      ctx.fillStyle = "#000"; ctx.fillRect(x0 + th2 * 0.15, -tw * 0.78, th2 * 0.5, tw * 0.6); ctx.fillRect(x0 + th2 * 0.15, tw * 0.18, th2 * 0.5, tw * 0.6);
+      ctx.strokeRect(x0, -tw, th2, tw * 2);
+    }
+    }
+    ctx.restore();
+  }
+  // both-barrel muzzle flash: neon green / pink / white
+  if (ssgState.flash > 0.05) {
+    const f = ssgState.flash, r = (26 + Math.random() * 10) * (0.45 + 0.55 * f), mx = L + 1;
+    ctx.save(); ctx.beginPath(); ctx.rect(mx - 0.5, -300, 500, 600); ctx.clip();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = `rgba(57, 255, 20, ${0.35 * f})`; ctx.beginPath(); ctx.ellipse(mx + r * 0.8, 0, r * 1.3, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255, 43, 214, ${0.8 * f})`;
+    for (let k = 0; k < 9; k++) { const a = (k / 8 - 0.5) * 2.4 + (Math.random() - 0.5) * 0.25, rr = r * (k === 4 ? 2.2 : (k % 2 ? 0.7 : 1.3)); ctx.beginPath(); ctx.moveTo(mx, -3); ctx.lineTo(mx + Math.cos(a) * rr, Math.sin(a) * rr); ctx.lineTo(mx, 3); ctx.fill(); }
+    ctx.fillStyle = `rgba(255, 255, 255, ${f})`; ctx.beginPath(); ctx.ellipse(mx + r * 0.35, 0, r * 0.6, r * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawRifleFP(band, L, now) {
   const S = 0.82;   // slimmer than the laser
   // receiver: deck, left flank, right bevel, orange racing stripes
@@ -14247,6 +14470,14 @@ function drawHandheldRig() {
   const active = !!miningLaserState.active;
   const weap = (cabin && cabin.wreck) ? 'laser' : fieldWeapon;
   rifleState.flash = Math.max(0, rifleState.flash - dt * 9); rifleState.kick = Math.max(0, rifleState.kick - dt * 10);
+  ssgState.flash = Math.max(0, ssgState.flash - dt * 7); ssgState.kick = Math.max(0, ssgState.kick - dt * 5);
+  // super shotgun reload pose: tips down to break open (0.25-0.45s), held open while loading, snaps shut at 1.25-1.4s
+  let ssgOpen = 0;
+  if (weap === 'shotgun' && ssgState.fired > 0) {
+    const t = ssgState.t, sm = k => k * k * (3 - 2 * k);
+    ssgOpen = t < 0.25 ? 0 : t < 0.45 ? sm((t - 0.25) / 0.2) : t < 1.25 ? 1 : t < 1.4 ? 1 - sm((t - 1.25) / 0.15) : 0;
+  }
+  if (!HH.shells) HH.shells = [];
 
   // --- motion: walk bob, turn lag, breathing ---
   let spd = 0, yawRate = 0, pitchRate = 0;
@@ -14278,20 +14509,39 @@ function drawHandheldRig() {
   HH.raise = Math.min(1, HH.raise + dt * 2.4);
   const rz = 1 - Math.pow(1 - HH.raise, 3);
   const lasing = active && weap === 'laser';
-  const kick = weap === 'rifle' ? rifleState.kick * 6 : (lasing ? 2.2 + Math.sin(now * 0.07) * 1.1 : 0);
+  const kick = weap === 'rifle' ? rifleState.kick * 6 : (weap === 'shotgun' ? ssgState.kick * 14 : (lasing ? 2.2 + Math.sin(now * 0.07) * 1.1 : 0));
   const shX = lasing ? (Math.random() - 0.5) * 1.2 : rifleState.kick * (Math.random() - 0.5) * 2, shY = lasing ? (Math.random() - 0.5) * 1.2 : 0;
   const ox = bobX + breathX + HH.swayX + HH.lower * 12 + shX + kick * 0.6;
-  const oy = bobY + breathY + HH.swayY + HH.lower * 46 + (1 - rz) * 95 + shY + kick;
+  const oy = bobY + breathY + HH.swayY + HH.lower * 46 + (1 - rz) * 95 + shY + kick + ssgOpen * 6;   // shotgun dips a little while it's broken open
 
   // --- frame: rear anchor (off bottom-right) to emitter (pointing at the crosshair) ---
   const Ax = W * 0.5 + ox, Ay = H * 1.1 + oy, Tx0 = W * 0.5 + ox, Ty0 = H * 0.75 + oy;
-  const th = Math.atan2(Ty0 - Ay, Tx0 - Ax) + HH.lower * 0.32 + (1 - rz) * 0.5, L = Math.hypot(Tx0 - Ax, Ty0 - Ay);
+  const th = Math.atan2(Ty0 - Ay, Tx0 - Ax) + HH.lower * 0.32 + (1 - rz) * 0.5 + ssgOpen * 0.06, L = Math.hypot(Tx0 - Ax, Ty0 - Ay);   // barrels swing aside, breech faces you
   const cs = Math.cos(th), sn = Math.sin(th);
   const toS = (lx, ly) => [Ax + lx * cs - ly * sn, Ay + lx * sn + ly * cs];
   const wd = x => 72 - 52 * (x / L);
   const tip = toS(L + 1, 0);
   window.__laserTip.x = tip[0]; window.__laserTip.y = tip[1]; window.__laserTip.ok = true;
 
+  // spent shells flip out of the breech on the eject cue and tumble off screen
+  if (weap === 'shotgun') {
+    if (ssgState.cues >= 2 && HH.lastSsgCue < 2 && ssgState.fired > 0) {
+      const b = toS(L * 0.4, 0);
+      for (const side of [-1, 1]) HH.shells.push({ x: b[0] + side * 10, y: b[1], vx: 30 + side * 45 + Math.random() * 20, vy: -190 - Math.random() * 50, r: Math.random() * 6, vr: 10 + Math.random() * 8, life: 0 });
+    }
+    HH.lastSsgCue = ssgState.cues;
+    // buckshot: each blast throws a spread of pellet streaks into a ragged pattern round the crosshair
+    if (HH.lastSsgFired !== undefined && ssgState.fired > HH.lastSsgFired) {
+      if (!HH.pellets) HH.pellets = [];
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * SSG.spray;
+        HH.pellets.push({ x0: tip[0], y0: tip[1], x1: W / 2 + Math.cos(a) * rr, y1: H / 2 + Math.sin(a) * rr, t: -Math.random() * 0.03, col: ["#39ff14", "#ff2bd6", "#ffffff"][i % 3] });
+      }
+    }
+    HH.lastSsgFired = ssgState.fired;
+  }
+  for (const q of HH.shells) { q.life += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 420 * dt; q.r += q.vr * dt; }
+  HH.shells = HH.shells.filter(q => q.life < 1.2 && q.y < H + 20);
   const heatCol = hhHeatCol(HH.heat);
   const beamCol = miningLaserState.beamColor || "#38bdf8";
 
@@ -14331,7 +14581,9 @@ function drawHandheldRig() {
   ctx.save();
   // supporting arm first: the glove sits UNDER the barrel, so the gun covers it bar the fingertips
   const lgx = L * 0.6;
-  const g2 = toS(lgx - 4, -0.3 * wd(lgx));
+  let gl = [lgx - 4, -0.3 * wd(lgx)];
+  if (weap === 'shotgun' && ssgOpen > 0) { const h = L * 0.38, fa = -0.3 * ssgOpen, ux = (gl[0] - h) * (1 - 0.3 * ssgOpen), uy = gl[1]; gl = [h + ux * Math.cos(fa) - uy * Math.sin(fa), ux * Math.sin(fa) + uy * Math.cos(fa)]; }
+  const g2 = toS(gl[0], gl[1]);
   sleeve(g2, [W * 0.3 + ox * 0.5, H + 90], 10, 24, "#e2e8f0", "#94a3b8");
 
   ctx.translate(Ax, Ay); ctx.rotate(th);
@@ -14345,6 +14597,7 @@ function drawHandheldRig() {
   
 
   if (weap === 'rifle') drawRifleFP(band, L, now);
+  else if (weap === 'shotgun') drawShotgunFP(band, L, now, ssgOpen);
   else {
   // rear housing, sitting upright: wide top deck, thin left flank, bright right bevel
   band(-4, L * 0.42, -0.4, 0.44, "#475569");
@@ -14378,6 +14631,39 @@ function drawHandheldRig() {
   }
   ctx.restore();
 
+  // ejected shotgun shells (screen space): neon green body, pink cap, spinning
+  for (const q of HH.shells) {
+    ctx.save(); ctx.translate(Math.round(q.x), Math.round(q.y)); ctx.rotate(q.r);
+    const k = 1 + q.life * 0.6; ctx.scale(k, k);   // they fly back past you, so they grow a touch
+    ctx.fillStyle = "#0f172a"; ctx.fillRect(-9, -5, 19, 10);
+    ctx.fillStyle = "#39ff14"; ctx.fillRect(-7, -3, 11, 6); ctx.fillStyle = "#ff2bd6"; ctx.fillRect(4, -3, 4, 6);
+    ctx.restore();
+  }
+  // buckshot pellets (screen space): fast streaks out of the muzzle, then a little spark + dust where each lands
+  if (HH.pellets && HH.pellets.length) {
+    for (const q of HH.pellets) q.t += dt;
+    HH.pellets = HH.pellets.filter(q => q.t < 0.32);
+    ctx.save();
+    for (const q of HH.pellets) {
+      if (q.t < 0) continue;
+      const fly = 0.09, k = Math.min(1, q.t / fly), k0 = Math.max(0, k - 0.35);
+      if (k < 1) {
+        const ax = q.x0 + (q.x1 - q.x0) * k0, ay = q.y0 + (q.y1 - q.y0) * k0, bx = q.x0 + (q.x1 - q.x0) * k, by = q.y0 + (q.y1 - q.y0) * k;
+        ctx.strokeStyle = q.col; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      } else {
+        const f = (q.t - fly) / (0.32 - fly), px = Math.round(q.x1), py = Math.round(q.y1);
+        ctx.globalAlpha = 0.6 * (1 - f); ctx.fillStyle = "#e2e8f0";
+        const d = 1 + Math.round(f * 4); ctx.fillRect(px - d, py - d - Math.round(f * 4), d * 2, d * 2);
+        if (f < 0.55) {
+          const g = 1 - f / 0.55, o = 2 + Math.round(f * 10);
+          ctx.globalAlpha = g; ctx.fillStyle = q.col; ctx.fillRect(px - 2, py - 2, 4, 4); ctx.fillStyle = "#ffffff"; ctx.fillRect(px - 1, py - 1, 2, 2);
+          ctx.fillStyle = q.col; ctx.fillRect(px - o - 1, py, 2, 1); ctx.fillRect(px + o, py - 1, 2, 1); ctx.fillRect(px, py - o - 1, 1, 2); ctx.fillRect(px - 1, py + o - 1, 1, 2);
+        }
+      }
+    }
+    ctx.restore();
+  }
   // rifle smoke wisps (screen space): soft grey puffs that swell and fade as they rise
   for (const q of HH.smoke) {
     const k = q.life / q.max, a = 0.32 * (1 - k) * Math.min(1, q.life * 6);
@@ -15737,7 +16023,7 @@ function render() {
     if (HS) { try { window.__homeSky.finish(clampedHorizonY); } catch (e) { console.warn('homeSky', e); } }
     if (worldOnlyPass) { ctx.restore(); return; }
 
-    if (miningLaserState.active && fieldWeapon !== 'rifle') {
+    if (miningLaserState.active && fieldWeapon === 'laser') {
       drawMiningLaserBeam(
         Math.round(window.__laserTip.ok ? window.__laserTip.x : V_WIDTH * 0.74), Math.round(window.__laserTip.ok ? window.__laserTip.y : V_HEIGHT - 20),
         Math.round(miningLaserState.hit2DX), Math.round(miningLaserState.hit2DY),
@@ -23610,12 +23896,13 @@ requestAnimationFrame(gameLoop);
         o.connect(g); g.connect(out); o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.1); }
     } catch (e) {}
   }
-  let lastRifleRound = 0;
+  let lastRifleRound = 0, lastSsgShot = 0;
   function stepLife(dt) {
     if (!landedPlanet) return;
     chirpT = Math.max(0, chirpT - dt);
-    const loud = typeof rifleState !== 'undefined' && rifleState.round !== lastRifleRound;   // the pulse rifle spooks everything
+    const loud = (typeof rifleState !== 'undefined' && rifleState.round !== lastRifleRound) || (typeof ssgState !== 'undefined' && ssgState.fired !== lastSsgShot);   // guns spook everything
     if (typeof rifleState !== 'undefined') lastRifleRound = rifleState.round;
+    if (typeof ssgState !== 'undefined') lastSsgShot = ssgState.fired;
     const r = Math.random;
     let startled = false;
     for (const c of critters) {
@@ -24521,7 +24808,7 @@ requestAnimationFrame(gameLoop);
       if (false && A && (A.phase === 'charge' || (A.phase === 'burst' && A.shots > 0))) {   // wind-up glow disabled by request
         const k = kind(sent), p = A.phase === 'charge' ? 1 - Math.max(0, A.t) / k.charge : 1;
         const cx = Math.round(proj.x), isB = !!sent.isBerzerk;
-        const bob = isB ? 0 : Math.round(Math.sin(Date.now() * 0.006 + (sent.x || 0)) * 2 * Math.max(1, Math.round(2.3 * proj.scale)));
+        const bob = isB ? 0 : Math.round(Math.sin(Date.now() * 0.0028 + (sent.bobPh ?? (sent.bobPh = Math.random() * 6.283))) * 2 * Math.max(1, Math.round(2.3 * proj.scale)));
         const cy = Math.round(proj.y) + bob - (isB ? Math.round(3 * proj.scale) : 0);
         const col = isB ? '244,63,94' : (sent.isFrost ? '103,232,249' : '239,68,68');
         const R = Math.max(4, 7 * proj.scale) * (0.6 + p * 0.8);
@@ -24732,7 +25019,7 @@ requestAnimationFrame(gameLoop);
     // trigger held: build up from focused squint to full Doom rampage face
     const firing = gameMode === 'SURFACE' && !cabin && miningLaserState && miningLaserState.active;
     F.fire = firing ? (F.fire || 0) + dt : 0;
-    F.rifle = typeof fieldWeapon !== 'undefined' && fieldWeapon === 'rifle';
+    F.rifle = typeof fieldWeapon !== 'undefined' && fieldWeapon !== 'laser';
     F.beam = (miningLaserState && miningLaserState.beamColor) || '#38bdf8';
     F.pain = Math.max(0, F.pain - dt); F.ouch = Math.max(0, F.ouch - dt); F.grin = Math.max(0, F.grin - dt);
     F.shieldHit = Math.max(0, F.shieldHit - dt * 3);
