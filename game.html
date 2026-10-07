@@ -172,6 +172,7 @@
     <div>CARGO: <span id="stat-cargo" style="color:#facc15">0/20</span></div>
     <div id="loop-row" style="display:none;">LOOP: <span id="stat-loop" style="color:#f472b6">1</span></div>
     <div>CONTROLLER: <span id="stat-gamepad" style="color:#94a3b8">OFFLINE</span></div>
+    <div id="fps-row" style="display:none;">FPS: <span id="stat-fps" style="color:#4ade80">--</span></div>
     <div style="display:flex; gap:3px; margin-top:2px;">
       <button id="fs-btn" class="hud-btn">⛶ FULL</button>
       <button id="clean-menu-btn" class="hud-btn">☰ MENU</button>
@@ -270,6 +271,10 @@
     <button id="sm-bgm-btn" class="single-menu-btn">
       <span>🎵 BGM MUSIC</span>
       <span id="sm-bgm-status" style="font-size:8px; font-weight:900; color:#4ade80;">[ON]</span>
+    </button>
+    <button id="sm-fps-btn" class="single-menu-btn">
+      <span>📊 FPS COUNTER</span>
+      <span id="sm-fps-status" style="font-size:8px; font-weight:900; color:#ef4444;">[OFF]</span>
     </button>
     <button id="sm-resume-btn" class="single-menu-btn single-menu-resume">
       ✕ RESUME
@@ -393,13 +398,17 @@ try {
   const savedRes = localStorage.getItem("void_pilot_res_mode");
   if (savedRes === "HD" || savedRes === "RETRO") renderResMode = savedRes;
 } catch(e) {}
-let RENDER_SCALE = renderResMode === "HD" ? (1080 / V_HEIGHT) : 1;
+// HD targets a 1080-tall buffer, but never more pixels than the screen physically has
+// (a 720p phone gets a 720-tall buffer: same sharpness, about half the drawing work).
+function hdScale() { const devH = Math.round((window.innerHeight || 1080) * (window.devicePixelRatio || 1)); return Math.max(1, Math.min(1080, devH)) / V_HEIGHT; }
+let RENDER_SCALE = renderResMode === "HD" ? hdScale() : 1;
 
 const joy = { active: false, pointerId: null, baseX: 60, baseY: V_HEIGHT - 55, dx: 0, dy: 0, radius: 28 };
 
 function resize() {
   const aspect = window.innerWidth / window.innerHeight;
   V_WIDTH = Math.floor(V_HEIGHT * Math.max(1.33, aspect));
+  if (renderResMode === "HD") RENDER_SCALE = hdScale();
   canvas.width = Math.round(V_WIDTH * RENDER_SCALE);
   canvas.height = Math.round(V_HEIGHT * RENDER_SCALE);
   ctx.imageSmoothingEnabled = false;
@@ -422,7 +431,7 @@ resize();
 
 function setRenderResMode(mode) {
   renderResMode = mode;
-  RENDER_SCALE = mode === "HD" ? (1080 / V_HEIGHT) : 1;
+  RENDER_SCALE = mode === "HD" ? hdScale() : 1;
   try { localStorage.setItem("void_pilot_res_mode", mode); } catch(e) {}
   resize();
   updateResUIState();
@@ -1447,6 +1456,15 @@ function startAmbientMusic() {
 const SFX_GAP = { enemyLaser: 0.15, bountyLaser: 0.18, explosion: 0.08, shield: 0.12, hullClang: 0.08, missileHit: 0.06 };
 const sfxLastT = {};
 let sfxPopBuf = null;
+// decaying noise bursts for sound effects, generated once and reused (making them per hit stalled phones mid-fight)
+const SFX_NOISE = {};
+function sfxNoise(key, size, decay) {
+  const k = key + size;
+  if (SFX_NOISE[k] && SFX_NOISE[k].ctx === actx) return SFX_NOISE[k].buf;
+  const buf = actx.createBuffer(1, size, actx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (size * decay));
+  SFX_NOISE[k] = { ctx: actx, buf }; return buf;
+}
 function playSfx(type) {
   ensureAudio();
   if (!actx) return;
@@ -1492,9 +1510,7 @@ function playSfx(type) {
     } else if (type === 'shield') {
       const dur = 0.22;
       const nSize = Math.floor(actx.sampleRate * dur);
-      const nBuf = actx.createBuffer(1, nSize, actx.sampleRate);
-      const nData = nBuf.getChannelData(0);
-      for (let i = 0; i < nSize; i++) nData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nSize * 0.3));
+      const nBuf = sfxNoise('shield', nSize, 0.3);
       const nSrc = actx.createBufferSource();
       nSrc.buffer = nBuf;
 
@@ -1598,9 +1614,7 @@ function playSfx(type) {
       clunk.stop(t + 0.24);
 
       const hSize = Math.floor(actx.sampleRate * 0.35);
-      const hBuf = actx.createBuffer(1, hSize, actx.sampleRate);
-      const hData = hBuf.getChannelData(0);
-      for (let i = 0; i < hSize; i++) hData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (hSize * 0.45));
+      const hBuf = sfxNoise('hull', hSize, 0.45);
       const hSrc = actx.createBufferSource();
       hSrc.buffer = hBuf;
       const hFilt = actx.createBiquadFilter();
@@ -1687,9 +1701,7 @@ function playSfx(type) {
     } else if (type === 'explosion') {
       const dur = 0.55;
       const bufSize = Math.floor(actx.sampleRate * dur);
-      const buf = actx.createBuffer(1, bufSize, actx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.28));
+      const buf = sfxNoise('boom', bufSize, 0.28);
 
       const noise = actx.createBufferSource();
       noise.buffer = buf;
@@ -1729,9 +1741,7 @@ function playSfx(type) {
       osc.stop(t + 0.10);
 
       const bufSize = Math.floor(actx.sampleRate * 0.32);
-      const buf = actx.createBuffer(1, bufSize, actx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.65));
+      const buf = sfxNoise('n65', bufSize, 0.65);
       const noise = actx.createBufferSource();
       noise.buffer = buf;
       const bp = actx.createBiquadFilter();
@@ -7197,6 +7207,11 @@ function splatVisor(count, type) {
     }
     visorDrips.push(d);
   }
+  // never more than 3 of each kind on the visor at once (oldest wipes away first) - keeps phones smooth in a firefight
+  for (const kind of ["acid", "blood"]) {
+    let n = 0; for (const v of visorDrips) if (v.type === kind) n++;
+    for (let i = 0; i < visorDrips.length && n > 3; i++) if (visorDrips[i].type === kind) { visorDrips.splice(i, 1); i--; n--; }
+  }
 }
 
 function updateVisorDrips(dt) {
@@ -7380,30 +7395,30 @@ function spawnSentinelGore(sent) {
   const meat = ["#7f1d1d", "#991b1b", "#b91c1c", "#f87171", "#fca5a5", "#e7e5e4"]; // dark meat, pink tissue, bone
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   // spray of droplets
-  for (let i = 0; i < Math.round(32 * big); i++) {
+  for (let i = 0; i < Math.round(16 * big); i++) {
     const roll = Math.random();
     const col = berz ? (roll < 0.6 ? pick(blood) : (roll < 0.88 ? pick(ichor) : pick(flesh)))
                      : (roll < 0.85 ? pick(blood) : (roll < 0.93 ? pick(ichor) : pick(flesh)));
     particles.push({
       x: sent.x, y: sent.y, z: sent.z, is3D: true, grav: 70,
       vx: (Math.random() - 0.5) * 80 * big, vy: -20 - Math.random() * 45 * big, vz: (Math.random() - 0.5) * 80 * big,
-      life: 5 + Math.random() * 3, maxLife: 8, color: col, sz: 1.5 + Math.random() * 2
+      life: 3.5 + Math.random() * 2, maxLife: 5.5, color: col, sz: 1.8 + Math.random() * 2.2
     });
   }
   // gibs: chunks of meat, tissue and bone flung out and bouncing to rest
-  for (let i = 0; i < Math.round(8 * big); i++) {
-    const chunk = i < (berz ? 4 : 2);
+  for (let i = 0; i < Math.round(5 * big); i++) {
+    const chunk = i < (berz ? 3 : 2);
     particles.push({
       x: sent.x, y: sent.y, z: sent.z, is3D: true, grav: 60, gib: true,
       vx: (Math.random() - 0.5) * (chunk ? 45 : 70) * big, vy: -15 - Math.random() * 40 * big, vz: (Math.random() - 0.5) * (chunk ? 45 : 70) * big,
-      life: 7 + Math.random() * 3, maxLife: 10,
+      life: 4.5 + Math.random() * 2, maxLife: 6.5,
       color: berz ? (Math.random() < 0.55 ? pick(meat) : (Math.random() < 0.6 ? pick(ichor) : pick(flesh)))
                   : (Math.random() < (frost ? 0.7 : 0.92) ? pick(meat) : pick(flesh)),
       sz: chunk ? 5 + Math.random() * 3 : 3 + Math.random() * 2.5
     });
   }
   // burst flash of acid mist
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 10; i++) {
     particles.push({
       x: sent.x, y: sent.y, z: sent.z, is3D: true,
       vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40, vz: (Math.random() - 0.5) * 40,
@@ -7412,7 +7427,7 @@ function spawnSentinelGore(sent) {
   }
   if (berz) {
     // dark matter implodes: a void-black cloud collapsing inward, then crackling energy arcs
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 14; i++) {
       const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 12;
       particles.push({
         x: sent.x + Math.cos(a) * r, y: sent.y + (Math.random() - 0.5) * 16, z: sent.z + Math.sin(a) * r, is3D: true,
@@ -7420,7 +7435,7 @@ function spawnSentinelGore(sent) {
         life: 0.55, maxLife: 0.55, color: Math.random() < 0.7 ? "#0f0a1f" : "#4c1d95", sz: 6
       });
     }
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 8; i++) {
       particles.push({
         x: sent.x, y: sent.y, z: sent.z, is3D: true,
         vx: (Math.random() - 0.5) * 140, vy: (Math.random() - 0.5) * 140, vz: (Math.random() - 0.5) * 140,
@@ -7431,8 +7446,11 @@ function spawnSentinelGore(sent) {
     flashEffect = Math.max(flashEffect, 0.25);
     vibrateGamepad(400, 0.8, 0.8);
   }
+  // cap the gore lying around: past 110 pieces, the oldest ones on the ground go first
+  let gn = 0; for (const q of particles) if (q.grav) gn++;
+  for (let i = 0; i < particles.length && gn > 110; i++) if (particles[i].grav && particles[i].landed) { particles.splice(i, 1); i--; gn--; }
   const dist = Math.hypot(playerFoot.x - sent.x, playerFoot.z - sent.z);
-  if (dist < 100) splatVisor(Math.round(6 * (1 - dist / 100)) + 3, "blood");
+  if (dist < 100) splatVisor(Math.min(3, Math.round(2 * (1 - dist / 100)) + 1), "blood");
   playGoreSplat();
   screenShake = Math.max(screenShake, 0.3);
 }
@@ -9848,6 +9866,37 @@ function buildCabinDynamic(c) {
     cabRect(F, 'x', -CAB_HW + 0.05, 6.4, 9.6, -14.2, -10.8, [1, 0, 0], "#0b0b0d", null, { layer: 1 });
     cabRect(F, 'x', CAB_HW - 0.05, 7.6, 10.4, -12.2, -8.8, [-1, 0, 0], "#0b0b0d", null, { layer: 1 });
     cabRect(F, 'y', -17.96, -1.2, 2.2, -25.6, -22.4, [0, 1, 0], "#0b0b0d", null, { layer: 1 });
+    // ---- more battle damage where you can actually see it (the trophy wall hides the port scorches) ----
+    const flick = 0.5 + 0.5 * Math.sin(c.time * 9) * Math.sin(c.time * 23 + 1);
+    const W = CAB_HW - 0.04, wn = [-1, 0, 0], AW = [W, -11, -8], AB = [W, -12.4, 0.4], AF = [-2.5, 0, -13.5];
+    let A = AW; const L = (b, o) => Object.assign({ layer: 1, bias: b, anchor: A }, o || {});   // shared anchor per group, so the bias alone stacks the layers
+    // starboard wall, between the airlock and the seat: a blast that punched through the plating
+    cabRect(F, 'x', W, -13.5, -2.5, -15.2, -6.8, wn, "#1c1917", null, L(0.1));            // soot bloom
+    cabRect(F, 'x', W - 0.01, -12.2, -4.0, -14.2, -7.8, wn, "#0f0e0d", null, L(0.2));
+    cabRect(F, 'x', W - 0.02, -10.6, -5.6, -13.2, -8.8, wn, "#0b0b0d", null, L(0.3));    // charred core
+    cabRect(F, 'x', W - 0.03, -9.2, -6.8, -12.0, -9.9, wn, "#020203", null, L(0.4));     // the hole itself
+    for (const [z0, z1, y0, y1] of [[-9.4, -6.6, -12.2, -11.9], [-9.4, -6.6, -10.0, -9.7], [-9.4, -9.1, -12.2, -9.7], [-6.9, -6.6, -12.2, -9.7]])   // red-hot torn edge
+      cabRect(F, 'x', W - 0.04, z0, z1, y0, y1, wn, flick > 0.35 ? "#f97316" : "#9a3412", null, L(0.5, { emissive: true }));
+    for (const [z, len, col] of [[-8.6, 2.6, "#dc2626"], [-7.9, 3.4, "#facc15"], [-7.3, 1.9, "#38bdf8"]])   // ripped cables dangling out
+      cabRect(F, 'x', W - 0.05, z, z + 0.22, -10.0, -10.0 + len, wn, col, null, L(0.6));
+    cabRect(F, 'x', W - 0.05, -7.95, -7.6, -10.0 + 3.4, -10.0 + 3.7, wn, flick > 0.6 ? "#fef9c3" : "#a16207", null, L(0.65, { emissive: true }));   // sparking frayed end
+    // a burst of bullet holes across the panel nearer the seat
+    A = AB;
+    for (const [z, y] of [[-1.6, -12.4], [-0.6, -11.5], [0.5, -12.9], [1.3, -11.2], [2.4, -12.1], [-0.1, -13.6]]) {
+      cabRect(F, 'x', W, z - 0.42, z + 0.42, y - 0.42, y + 0.42, wn, "#27272a", null, L(0.15));
+      cabRect(F, 'x', W - 0.01, z - 0.24, z + 0.24, y - 0.24, y + 0.24, wn, "#020203", null, L(0.25));
+    }
+    // floor: a scorched, cracked deck plate in the walkway
+    A = AF;
+    const fn = [0, -1, 0], Y = -0.04;
+    cabRect(F, 'y', Y, -6.5, 0.5, -17.5, -9.5, fn, "#1c1917", null, L(0.1));
+    cabRect(F, 'y', Y - 0.005, -5.2, -0.8, -16.2, -10.8, fn, "#0b0b0d", null, L(0.2));
+    for (const [x0, x1, z0, z1] of [[-3.1, -2.85, -16.8, -10.6], [-5.6, -2.9, -13.6, -13.35], [-2.9, 0.1, -12.1, -11.85], [-1.4, -1.15, -12.0, -9.4], [-4.4, -4.15, -13.5, -11.2]])   // cracks
+      cabRect(F, 'y', Y - 0.01, x0, x1, z0, z1, fn, "#020203", null, L(0.3));
+    for (const [x, z, ph] of [[-3.5, -14.2, 0], [-2.2, -12.6, 2], [-4.0, -11.6, 4], [-1.8, -15.1, 1]]) {   // smouldering embers
+      const g = 0.5 + 0.5 * Math.sin(c.time * 3 + ph);
+      cabRect(F, 'y', Y - 0.015, x - 0.18, x + 0.18, z - 0.18, z + 0.18, fn, g > 0.5 ? "#f97316" : "#7c2d12", null, L(0.4, { emissive: true }));
+    }
   }
 
   // airlock status lamps: cabin side over the door frame + inside the chamber
@@ -13250,7 +13299,7 @@ function update(dt) {
       if (b.isEnemy && Math.hypot(playerFoot.x - b.x, playerFoot.z - b.z) < 4 && Math.abs(playerFoot.y - b.y) < 12) {
         window.lastSurfaceHitWasBerzerk = !!b.isBerzerk;
         window.lastSurfaceHitWasFrost = !!b.isFrost;
-        if (!b.isBerzerk && !b.isFrost) splatVisor(3 + Math.floor(Math.random() * 2), "acid");
+        if (!b.isBerzerk && !b.isFrost) splatVisor(1 + Math.floor(Math.random() * 2), "acid");
         if (b.isFrost) playerFoot.chillTimer = 3.0; // frost bolts chill: slows movement for a few seconds
         damagePlayer(b.damage);
         laserBolts.splice(i, 1);
@@ -13576,10 +13625,14 @@ function update(dt) {
     }
     prevWarpActive = !!warpState.active;
 
-    const hasPirates = activePirates.some(p => p.alert);
-    const hasBoss = bossState.active;
-    const hasSentinels = gameMode === 'SURFACE' && surfaceSentinels.some(s => s.alert);
+    // pirates and the boss only count while you're actually out in space: they stay "alert" up there
+    // after you land, which used to keep the battle music running on the surface and in the cabin
+    const inSpace = gameMode === 'SPACE' && !isDocked;
+    const hasPirates = inSpace && activePirates.some(p => p.alert);
+    const hasBoss = inSpace && bossState.active;
+    const hasSentinels = gameMode === 'SURFACE' && !(typeof cabin !== 'undefined' && cabin) && surfaceSentinels.some(s => s.alert);
     inCombat = (hasPirates || hasBoss || hasSentinels) && !gameOver;
+    if (((typeof cabin !== 'undefined' && cabin) || (typeof landingSeq !== 'undefined' && landingSeq)) && typeof threatBanner !== 'undefined' && threatBanner) threatBanner.style.display = 'none';   // no stale space combat alert inside the ship
 
     const targetCombatGain = inCombat && musicEnabled ? 0.45 : 0.0;
     const rampRate = inCombat ? 2.5 : 0.6;
@@ -13592,7 +13645,7 @@ function update(dt) {
     if (combatMasterGain) combatMasterGain.gain.setTargetAtTime(combatFadeGain, actx.currentTime, 0.05);
     {
       let mood = 'space';
-      if (bossState.active && !gameOver) mood = 'boss';
+      if (hasBoss && !gameOver) mood = 'boss';
       else if (inCombat) mood = 'combat';
       else if (isDocked || (typeof cabin !== 'undefined' && cabin) || (typeof dockSeq !== 'undefined' && dockSeq)) mood = 'cabin';
       else if (gameMode === 'SURFACE') mood = 'surface';
@@ -14377,10 +14430,10 @@ function addRifleHole(sent) {
   }
 }
 // Draws a pixel sprite with its wounds into HOLE_CV (top-left 0,0) and returns [w, h]; the caller blits it.
-function renderHoledSprite(spr, cols, px, bodyCol, dotCol, holes) {
-  const rows = spr.length, W = Math.ceil(cols * px), H = Math.ceil(rows * px), g = HOLE_G, now = performance.now();
-  if (HOLE_CV.width < W || HOLE_CV.height < H) { HOLE_CV.width = Math.max(HOLE_CV.width, W); HOLE_CV.height = Math.max(HOLE_CV.height, H); }
-  g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, HOLE_CV.width, HOLE_CV.height);
+function renderHoledSprite(spr, cols, px, bodyCol, dotCol, holes, tcv) {
+  const cvx = tcv || HOLE_CV, rows = spr.length, W = Math.ceil(cols * px), H = Math.ceil(rows * px), g = tcv ? tcv.getContext('2d') : HOLE_G, now = performance.now();
+  if (cvx.width < W || cvx.height < H) { cvx.width = Math.max(cvx.width, W); cvx.height = Math.max(cvx.height, H); }
+  g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, cvx.width, cvx.height);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const ch = spr[r][c]; if (ch === ' ') continue;
     g.fillStyle = ch === '#' ? bodyCol : dotCol; g.fillRect(c * px, r * px, px, px);
@@ -14415,6 +14468,15 @@ function renderHoledSprite(spr, cols, px, bodyCol, dotCol, holes) {
   for (const o of holes) { g.beginPath(); g.arc(o.u * px, o.v * px, Math.max(0.8, o.r * px * Math.min(1, 0.5 + (now - o.t) / 1000 * 8)), 0, Math.PI * 2); g.fill(); }
   g.globalCompositeOperation = 'source-over';
   return [W, H];
+}
+// Each wounded enemy keeps its own little canvas, repainted only when it changes or ~7x a second for the
+// drips. Re-drawing one shared scratch canvas per enemy per frame forces a GPU sync on phones (big FPS hit).
+function holedSpriteCached(o, spr, cols, px, bodyCol, dotCol) {
+  const c = o.__hc || (o.__hc = { cv: document.createElement('canvas'), key: '', t: 0, wh: [0, 0] });
+  let rs = 0; for (const h of o.holes) rs += h.r;
+  const key = px + '|' + bodyCol + '|' + spr[spr.length - 1] + '|' + o.holes.length + '|' + rs.toFixed(2), now = performance.now();
+  if (key !== c.key || now - c.t > 140) { c.wh = renderHoledSprite(spr, cols, px, bodyCol, dotCol, o.holes, c.cv); c.key = key; c.t = now; }
+  return c;
 }
 // Void Slave eye: the visor bar glows solid purple, with void-fire licking up off the head.
 // ox/oy = sprite top-left, px = cell size, t = ms clock. Used in the field and in the death cutscene.
@@ -14480,8 +14542,8 @@ function drawPixelSentinel(proj, sent) {
 
   const bodyCol = isBerz ? (sent.alert ? "#f43f5e" : "#facc15") : (sent.isFrost ? (sent.alert ? "#67e8f9" : "#e0f2fe") : (sent.alert ? "#ef4444" : "#c084fc"));
   if (sent.holes && sent.holes.length) {
-    renderHoledSprite(sprite, cols, px, bodyCol, "#ffffff", sent.holes);
-    ctx.drawImage(HOLE_CV, 0, 0, w, h, ox, oy + bob, w, h);
+    const hc = holedSpriteCached(sent, sprite, cols, px, bodyCol, "#ffffff");
+    ctx.drawImage(hc.cv, 0, 0, w, h, ox, oy + bob, w, h);
   } else for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const char = sprite[row][col];
@@ -15410,7 +15472,7 @@ function render() {
         const r = Math.max(1.8, p.radius * proj.scale);
         const isHome = !!p.isHomeWorld || p.name === "Home World";
 
-        if (isHome) {
+        if (isHome && window.__homeGlobe) { window.__homeGlobe(px, py, r, p); } else if (isHome) {
           // --- EARTH-LIKE SPACE RENDERING ---
           // Atmospheric Blue Glow
           const atmoAlpha = Math.min(0.45, Math.max(0.12, 1 - proj.dist / 1400));
@@ -16882,46 +16944,8 @@ function drawWingCommanderCockpit() {
 
   ctx.save();
 
-  // Top Overhead Arch
-  ctx.fillStyle = "#1e293b";
-  ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(V_WIDTH, 0); ctx.lineTo(V_WIDTH - 24, 14);
-  ctx.lineTo(V_WIDTH * 0.68, 14); ctx.lineTo(V_WIDTH * 0.65, 19);
-  ctx.lineTo(V_WIDTH * 0.35, 19); ctx.lineTo(V_WIDTH * 0.32, 14); ctx.lineTo(24, 14);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#475569"; ctx.lineWidth = 1; ctx.stroke();
-
-  ctx.fillStyle = "#0f172a"; ctx.fillRect(V_WIDTH * 0.36, 3, V_WIDTH * 0.28, 12);
-  ctx.strokeStyle = "#334155"; ctx.strokeRect(V_WIDTH * 0.36, 3, V_WIDTH * 0.28, 12);
-  ctx.fillStyle = "#38bdf8"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
-  ctx.fillText("TERRAN CONFED // CHIMERA IC", V_WIDTH / 2, 12);
-
-  // Left & Right Armor Pillars
-  ctx.fillStyle = "#1e293b"; ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(pillarW + 18, 0); ctx.lineTo(pillarW + 2, 80);
-  ctx.lineTo(pillarW + 8, dashTopY + 12); ctx.lineTo(0, dashTopY + 12);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#475569"; ctx.beginPath();
-  ctx.moveTo(pillarW + 18, 0); ctx.lineTo(pillarW + 2, 80); ctx.lineTo(pillarW + 8, dashTopY + 12); ctx.stroke();
-
-  ctx.fillStyle = "#1e293b"; ctx.beginPath();
-  ctx.moveTo(V_WIDTH, 0); ctx.lineTo(V_WIDTH - (pillarW + 18), 0); ctx.lineTo(V_WIDTH - (pillarW + 2), 80);
-  ctx.lineTo(V_WIDTH - (pillarW + 8), dashTopY + 12); ctx.lineTo(V_WIDTH, dashTopY + 12);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#475569"; ctx.lineWidth = 1; ctx.beginPath();
-  ctx.moveTo(V_WIDTH - (pillarW + 18), 0); ctx.lineTo(V_WIDTH - (pillarW + 2), 80); ctx.lineTo(V_WIDTH - (pillarW + 8), dashTopY + 12); ctx.stroke();
-
-  // Dashboard Bulkhead
-  ctx.fillStyle = "#111827";
-  ctx.beginPath();
-  ctx.moveTo(0, dashTopY + 10); ctx.lineTo(pillarW + 8, dashTopY + 10); ctx.lineTo(pillarW + 22, dashTopY);
-  ctx.lineTo(V_WIDTH - (pillarW + 22), dashTopY); ctx.lineTo(V_WIDTH - (pillarW + 8), dashTopY + 10);
-  ctx.lineTo(V_WIDTH, dashTopY + 10); ctx.lineTo(V_WIDTH, V_HEIGHT); ctx.lineTo(0, V_HEIGHT);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#475569"; ctx.lineWidth = 1.5; ctx.beginPath();
-  ctx.moveTo(0, dashTopY + 10); ctx.lineTo(pillarW + 8, dashTopY + 10); ctx.lineTo(pillarW + 22, dashTopY);
-  ctx.lineTo(V_WIDTH - (pillarW + 22), dashTopY); ctx.lineTo(V_WIDTH - (pillarW + 8), dashTopY + 10);
-  ctx.lineTo(V_WIDTH, dashTopY + 10); ctx.stroke();
+  drawCockpit3D(dashTopY, pillarW);   // 3D canopy frame + dash hood
+  if (window.cockpitDashTransform) cockpitDashTransform();   // screens, console, gauges and dice ride the same head sway
 
   // Left VDU
   const vduW = Math.max(88, Math.floor(V_WIDTH * 0.23)), vduH = 54;
@@ -16936,6 +16960,8 @@ function drawWingCommanderCockpit() {
   const centerConsoleW = Math.min(180, rightVduX - (leftVduX + vduW) - 8);
   const centerConsoleX = Math.round(V_WIDTH / 2 - centerConsoleW / 2);
   drawCenterAvionicsConsole(centerConsoleX, dashTopY + 4, centerConsoleW, dashH - 6);
+  // SHIELD + HULL in the gap left of the centre console, FUEL in the gap to its right
+  if (window.drawDashGauges) drawDashGauges(leftVduX + vduW, centerConsoleX, centerConsoleX + centerConsoleW, rightVduX, dashTopY, dashH);
 
   // Fluoro Pink & Fluoro Green Cockpit Fuzzy Dice
   const anchorX = Math.round(V_WIDTH * 0.35), anchorY = 16, stringLen = 42;
@@ -25823,7 +25849,7 @@ requestAnimationFrame(gameLoop);
     try { spawnSentinelGore({ x: e.x, y: e.y + Math.sin(B.t * 2.6 + e.ph) * 0.6, z: e.z, isBerzerk: e.boss, isFrost: false }); } catch (er) {}
     const fresh = particles.splice(n0);
     for (const p of fresh) { if (p.grav) { p.shape = makeGoreShape(p); p.drip = Math.random() < 0.45; p.vy *= 0.5; } B.gore.push(p); }   // low ceiling: flatter arcs so most of it paints the walls
-    if (B.gore.length > 300) { let n = B.gore.length - 300; for (let i = 0; i < B.gore.length && n > 0; i++) if (B.gore[i].landed) { B.gore.splice(i, 1); i--; n--; } }
+    if (B.gore.length > 160) { let n = B.gore.length - 160; for (let i = 0; i < B.gore.length && n > 0; i++) if (B.gore[i].landed) { B.gore.splice(i, 1); i--; n--; } }
   }
   function stepGore(dt) {
     for (let i = B.gore.length - 1; i >= 0; i--) {
@@ -26351,7 +26377,7 @@ requestAnimationFrame(gameLoop);
     const hit = e.hitT > 0;
     const col = hit ? "#ffffff" : (boss ? (e.alert ? "#f43f5e" : "#facc15") : (e.alert ? "#ef4444" : "#c084fc"));
     if (e.warp > 0) ctx.globalAlpha *= Math.max(0.2, 1 - e.warp / 0.6);
-    if (e.holes && e.holes.length) { renderHoledSprite(spr, cols, px, col, "#ffffff", e.holes); ctx.drawImage(HOLE_CV, 0, 0, w, h, ox, oy, w, h); }
+    if (e.holes && e.holes.length) { const hc = holedSpriteCached(e, spr, cols, px, col, "#ffffff"); ctx.drawImage(hc.cv, 0, 0, w, h, ox, oy, w, h); }
     else for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const ch = spr[r][c];
       if (ch === '#') { ctx.fillStyle = col; ctx.fillRect(ox + c * px, oy + r * px, px, px); }
@@ -28078,6 +28104,355 @@ requestAnimationFrame(gameLoop);
     try { step(dt); } catch (e) { console.warn('plasmaSky step', e); }
     return r;
   };
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   HOME WORLD FROM SPACE: a 3D globe drawn like the game's comic splats.
+   Flat colours, thick ink outlines, a darker rim, glossy white highlight.
+   Continents, ice caps and puffy clouds are blob shapes sitting on a real
+   sphere: they spin round, slide over the edge and get the sun's flat cartoon
+   shadow, with little city lights on the night side. All vector shapes, so
+   it's cheap to draw every frame, even on phones.
+   ========================================================================== */
+(function() {
+  let seed = 4242; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const fromLL = (lat, lon) => [Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)];
+  function tangent(c) { const up = Math.abs(c[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0]; const t1 = norm(cross(up, c)); return [t1, cross(c, t1)]; }
+  // a blob outline on the sphere around centre c, angular radius R
+  function blob(c, R, n, wob) {
+    const [t1, t2] = tangent(c), pts = [], ph = rnd() * 6.28, ph2 = rnd() * 6.28;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2, rr = R * (1 + wob * (0.55 * Math.sin(a * 2 + ph) + 0.35 * Math.sin(a * 3 + ph2) + 0.25 * (rnd() - 0.5)));
+      const s = Math.sin(rr), co = Math.cos(rr);
+      pts.push(norm([c[0] * co + (t1[0] * Math.cos(a) + t2[0] * Math.sin(a)) * s, c[1] * co + (t1[1] * Math.cos(a) + t2[1] * Math.sin(a)) * s, c[2] * co + (t1[2] * Math.cos(a) + t2[2] * Math.sin(a)) * s]));
+    }
+    return pts;
+  }
+  // ---------- the world ----------
+  const LAND = [], CLOUDS = [], CITIES = [];
+  const conts = [[0.35, 0.2, 0.55], [-0.25, 1.9, 0.5], [0.55, 3.4, 0.42], [-0.5, 4.6, 0.38], [0.1, 5.5, 0.3], [0.65, -0.9, 0.26]];
+  for (const [lat, lon, R] of conts) {
+    const c = fromLL(lat, lon);
+    const L = { pts: blob(c, R, 22, 0.32), col: '#22c55e', ink: '#14532d', hi: '#4ade80', inner: [] };
+    if (rnd() < 0.7) L.inner.push({ pts: blob(norm([c[0] + (rnd() - 0.5) * 0.2, c[1] - 0.05, c[2] + (rnd() - 0.5) * 0.2]), R * 0.42, 14, 0.3), col: '#d6b26b', ink: '#a16207' });   // desert
+    L.inner.push({ pts: blob(norm([c[0] + (rnd() - 0.5) * 0.25, c[1] + 0.08, c[2] + (rnd() - 0.5) * 0.25]), R * 0.3, 12, 0.35), col: '#15803d', ink: '#14532d' });   // forest
+    if (rnd() < 0.6) L.inner.push({ pts: blob(norm([c[0] + (rnd() - 0.5) * 0.2, c[1] + 0.12, c[2]]), R * 0.16, 9, 0.3), col: '#a8a29e', ink: '#57534e', cap: '#f8fafc' });   // mountains w/ snow
+    LAND.push(L);
+    for (let k = 0; k < 4 + Math.floor(rnd() * 4); k++) CITIES.push(norm([c[0] + (rnd() - 0.5) * R * 1.2, c[1] + (rnd() - 0.5) * R * 1.0, c[2] + (rnd() - 0.5) * R * 1.2]));
+  }
+  for (let k = 0; k < 7; k++) { const c = fromLL((rnd() - 0.5) * 1.6, rnd() * 6.28); LAND.push({ pts: blob(c, 0.06 + rnd() * 0.07, 10, 0.35), col: '#22c55e', ink: '#14532d', hi: '#4ade80', inner: [] }); }   // islands
+  const CAPS = [{ pts: blob([0, 1, 0], 0.42, 22, 0.18), col: '#f8fafc', ink: '#7dd3fc' }, { pts: blob([0, -1, 0], 0.36, 22, 0.2), col: '#f8fafc', ink: '#7dd3fc' }];
+  for (let k = 0; k < 11; k++) {
+    const c = fromLL((rnd() - 0.5) * 2.0, rnd() * 6.28), [t1, t2] = tangent(c), puffs = [], n = 3 + Math.floor(rnd() * 3);
+    for (let j = 0; j < n; j++) { const o = (j - (n - 1) / 2) * 0.085, dy = (rnd() - 0.4) * 0.05; puffs.push({ v: norm([c[0] + t1[0] * o + t2[0] * dy, c[1] + t1[1] * o + t2[1] * dy, c[2] + t1[2] * o + t2[2] * dy]), r: 0.05 + rnd() * 0.04 }); }
+    CLOUDS.push(puffs);
+  }
+
+  // ---------- drawing ----------
+  function drawGlobe(px, py, r, p) {
+    if (r < 2.5) { ctx.fillStyle = '#0284c7'; ctx.beginPath(); ctx.arc(px, py, Math.max(1, r), 0, Math.PI * 2); ctx.fill(); return; }
+    const R3 = [ship.rx, ship.ry, ship.rz], U3 = [ship.ux, ship.uy, ship.uz], F3 = [ship.fx, ship.fy, ship.fz];
+    let lx = -p.x, ly = -p.y, lz = -p.z; const ll = Math.hypot(lx, ly, lz) || 1; lx /= ll; ly /= ll; lz /= ll;
+    const L = [lx * R3[0] + ly * R3[1] + lz * R3[2], lx * U3[0] + ly * U3[1] + lz * U3[2], lx * F3[0] + ly * F3[1] + lz * F3[2]];   // sun, camera space
+    const t = performance.now() / 1000, spin = t * 0.035, cspin = t * 0.05;
+    // world (planet-local, spinning) -> camera space
+    const cam = (v, sp) => {
+      const c = Math.cos(sp), s = Math.sin(sp), x = v[0] * c + v[2] * s, z = -v[0] * s + v[2] * c, y = v[1];
+      return [x * R3[0] + y * R3[1] + z * R3[2], x * U3[0] + y * U3[1] + z * U3[2], x * F3[0] + y * F3[1] + z * F3[2]];
+    };
+    const scr = (c) => { let x = c[0], y = c[1]; if (c[2] > 0) { const l = Math.hypot(x, y) || 1; x /= l; y /= l; } return [px + x * r, py - y * r]; };   // behind: pinned to the limb
+    const ink = Math.max(1.2, Math.min(3.2, r * 0.045));
+    const blobPath = (pts, sp) => {
+      const cs = pts.map(v => cam(v, sp)); if (cs.every(c => c[2] > 0.05)) return false;
+      const ss = cs.map(scr); ctx.beginPath();
+      const m0 = [(ss[0][0] + ss[ss.length - 1][0]) / 2, (ss[0][1] + ss[ss.length - 1][1]) / 2]; ctx.moveTo(m0[0], m0[1]);
+      for (let i = 0; i < ss.length; i++) { const a = ss[i], b = ss[(i + 1) % ss.length]; ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); }
+      ctx.closePath(); return true;
+    };
+    ctx.save();
+    // soft atmosphere glow behind, brightest toward the sun
+    const sl = Math.hypot(L[0], L[1]) || 1, off = Math.min(1, Math.hypot(L[0], L[1])) * 0.22, faceSun = Math.max(0.18, (1 - L[2]) / 2);
+    const gx = px + L[0] / sl * r * off, gy = py - L[1] / sl * r * off;
+    const halo = ctx.createRadialGradient(gx, gy, r * 0.9, gx, gy, r * 1.25);
+    halo.addColorStop(0, `rgba(125,211,252,${(0.6 * faceSun).toFixed(3)})`); halo.addColorStop(0.4, `rgba(56,189,248,${(0.25 * faceSun).toFixed(3)})`); halo.addColorStop(1, 'rgba(56,189,248,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(px, py, r * 1.27, 0, Math.PI * 2); ctx.fill();
+    // ocean: flat blue with a darker rim, like the splats
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fillStyle = '#0ea5e9'; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = '#0369a1'; ctx.lineWidth = r * 0.22; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineJoin = 'round';
+    // land, caps, clouds
+    const drawShape = (sh, sp) => {
+      if (!blobPath(sh.pts, sp)) return;
+      ctx.fillStyle = sh.col; ctx.fill(); ctx.strokeStyle = sh.ink; ctx.lineWidth = ink; ctx.stroke();
+    };
+    for (const C of CAPS) drawShape(C, spin);
+    for (const Ld of LAND) {
+      if (!blobPath(Ld.pts, spin)) continue;
+      ctx.fillStyle = Ld.col; ctx.fill();
+      for (const In of Ld.inner) { if (blobPath(In.pts, spin)) { ctx.fillStyle = In.col; ctx.fill(); if (In.cap) { ctx.save(); ctx.clip(); const c = scr(cam(In.pts[Math.floor(In.pts.length / 4)], spin)); ctx.fillStyle = In.cap; ctx.beginPath(); ctx.arc(c[0], c[1], r * 0.05, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } } }
+      blobPath(Ld.pts, spin); ctx.strokeStyle = Ld.ink; ctx.lineWidth = ink; ctx.stroke();
+    }
+    // puffy cartoon clouds: ink outlines first, then the white puffs on top so they merge
+    const cl = [];
+    for (const puffs of CLOUDS) for (const q of puffs) { const c = cam(q.v, cspin); if (c[2] > -0.08) continue; const s = scr(c), k = Math.sqrt(-c[2]); cl.push([s[0], s[1], q.r * r * (0.55 + 0.45 * k)]); }
+    ctx.fillStyle = '#475569'; for (const c of cl) { ctx.beginPath(); ctx.arc(c[0], c[1], c[2] + ink * 0.9, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#ffffff'; for (const c of cl) { ctx.beginPath(); ctx.arc(c[0], c[1], c[2], 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#e2e8f0'; for (const c of cl) { ctx.beginPath(); ctx.arc(c[0] + c[2] * 0.15, c[1] + c[2] * 0.35, c[2] * 0.6, 0, Math.PI * 2); ctx.fill(); }
+    // flat cartoon night shadow: everything past the terminator
+    if (L[2] < 0.985) {
+      const [a1, a2] = tangent([L[0], L[1], L[2]]), N = 64, arc = [];
+      let start = -1;
+      const P = i => { const th = i / N * Math.PI * 2; return [a1[0] * Math.cos(th) + a2[0] * Math.sin(th), a1[1] * Math.cos(th) + a2[1] * Math.sin(th), a1[2] * Math.cos(th) + a2[2] * Math.sin(th)]; };
+      for (let i = 0; i < N; i++) if (P(i)[2] >= 0 && P((i + 1) % N)[2] < 0) { start = i + 1; break; }
+      ctx.beginPath();
+      if (L[2] > -0.985 && start >= 0) {
+        for (let k = 0; k < N; k++) { const q = P((start + k) % N); if (q[2] >= 0) break; arc.push([px + q[0] * r, py - q[1] * r]); }
+        const e0 = arc[0], e1 = arc[arc.length - 1];
+        const a0 = Math.atan2(e1[1] - py, e1[0] - px), b0 = Math.atan2(e0[1] - py, e0[0] - px);
+        ctx.moveTo(e0[0], e0[1]); for (const q of arc) ctx.lineTo(q[0], q[1]);
+        // close along the limb through the dark side
+        const sunA = Math.atan2(-L[1], L[0]);
+        let d = b0 - a0; while (d < 0) d += Math.PI * 2;
+        const mid = a0 + d / 2, ccw = Math.cos(mid - sunA) > 0;
+        ctx.arc(px, py, r * 1.02, a0, b0, ccw);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(8,15,40,0.8)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(2,6,23,0.55)'; ctx.lineWidth = ink * 0.8; ctx.beginPath(); ctx.moveTo(e0[0], e0[1]); for (const q of arc) ctx.lineTo(q[0], q[1]); ctx.stroke();
+      } else if (L[2] >= 0.985) { ctx.arc(px, py, r * 1.02, 0, Math.PI * 2); ctx.fillStyle = 'rgba(8,15,40,0.8)'; ctx.fill(); }
+      // city lights twinkle on the night side
+      for (const v of CITIES) {
+        const c = cam(v, spin); if (c[2] > -0.1) continue;
+        if (c[0] * L[0] + c[1] * L[1] + c[2] * L[2] > -0.05) continue;
+        const s = scr(c), rr = Math.max(0.8, r * 0.018) * (0.8 + 0.3 * Math.sin(t * 4 + v[0] * 40));
+        ctx.fillStyle = '#78350f'; ctx.beginPath(); ctx.arc(s[0], s[1], rr + 0.8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fde047'; ctx.beginPath(); ctx.arc(s[0], s[1], rr, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+    // glossy comic highlight where the sun hits, and the thick ink outline
+    let hx = L[0], hy = L[1], hz = L[2] - 1; const hl = Math.hypot(hx, hy, hz) || 1; hx /= hl; hy /= hl; hz /= hl;
+    if (hz < -0.15) {
+      const sx = px + hx * r * 0.85, sy = py - hy * r * 0.85, ang = Math.atan2(-hy, hx);
+      ctx.globalAlpha = 0.85; ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(sx, sy, r * 0.13, r * 0.065, ang + Math.PI / 2 + 0.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + Math.cos(ang + 2.2) * r * 0.16, sy + Math.sin(ang + 2.2) * r * 0.16, r * 0.028, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = '#061226'; ctx.lineWidth = ink * 1.3; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  window.__homeGlobe = drawGlobe;
+  // the landing / take-off cutscenes draw the planet themselves: use the globe there too for the Home World
+  const prevLP = window.drawLandingPlanet;
+  if (typeof prevLP === 'function') window.drawLandingPlanet = function(px, py, r, pal) {
+    try {
+      const seq = (typeof landingSeq !== 'undefined' && landingSeq) || (typeof takeoffSeq !== 'undefined' && takeoffSeq);
+      const pl = seq && seq.planet;
+      if (pl && (pl.isHomeWorld || pl.name === 'Home World')) return drawGlobe(px, py, r, pl);
+    } catch (e) {}
+    return prevLP.apply(this, arguments);
+  };
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   FPS COUNTER: toggled from the cockpit menu, shown in the HUD stats box.
+   Green 50+, yellow 30-49, red under 30. Remembered between sessions.
+   ========================================================================== */
+(function() {
+  let on = false; try { on = localStorage.getItem('vp3d_show_fps') === '1'; } catch (e) {}
+  const row = document.getElementById('fps-row'), val = document.getElementById('stat-fps'), st = document.getElementById('sm-fps-status');
+  function sync() {
+    if (row) row.style.display = on ? '' : 'none';
+    if (st) { st.innerText = on ? '[ON]' : '[OFF]'; st.style.color = on ? '#4ade80' : '#ef4444'; }
+  }
+  const btn = document.getElementById('sm-fps-btn');
+  if (btn) btn.addEventListener('click', () => { on = !on; try { localStorage.setItem('vp3d_show_fps', on ? '1' : '0'); } catch (e) {} sync(); try { playSfx('coin'); } catch (e) {} });
+  let frames = 0, t0 = performance.now(), worst = 0, last = t0;
+  function tick(now) {
+    frames++; worst = Math.max(worst, now - last); last = now;
+    if (now - t0 >= 500) {
+      const fps = Math.round(frames * 1000 / (now - t0));
+      if (on && val) { val.innerText = fps + (worst > 50 ? ` (low ${Math.round(1000 / worst)})` : ''); val.style.color = fps >= 50 ? '#4ade80' : fps >= 30 ? '#facc15' : '#ef4444'; }
+      frames = 0; t0 = now; worst = 0;
+    }
+    requestAnimationFrame(tick);
+  }
+  sync(); requestAnimationFrame(tick);
+})();
+</script>
+<script>
+/* ==========================================================================
+   3D COCKPIT FRAME + PILLAR GAUGES. The canopy struts, overhead arch and dash hood are real 3D
+   beams seen from the pilot's eye: they catch the system sun as you turn, and your head
+   sways against them when you yaw, pitch, roll and punch the throttle. */
+(function() {
+  const head = { x: 0, y: 0, z: 0, roll: 0, vx: 0, vy: 0, vz: 0, vr: 0 }, prev = { f: null, u: null, spd: 0, t: 0 };
+  const INK = '#020617';
+  function shade(base, k) { const n = parseInt(base.slice(1), 16); const r = Math.min(255, ((n >> 16) & 255) * k) | 0, g = Math.min(255, ((n >> 8) & 255) * k) | 0, b = Math.min(255, (n & 255) * k) | 0; return `rgb(${r},${g},${b})`; }
+  function stepHead() {
+    const now = performance.now() / 1000, dt = Math.min(0.05, Math.max(0.001, now - (prev.t || now - 0.016))); prev.t = now;
+    let tx = 0, ty = 0, tz = 0, tr = 0;
+    if (prev.f) {
+      const df = [ship.fx - prev.f[0], ship.fy - prev.f[1], ship.fz - prev.f[2]], du = [ship.ux - prev.u[0], ship.uy - prev.u[1], ship.uz - prev.u[2]];
+      const yawRate = (df[0] * ship.rx + df[1] * ship.ry + df[2] * ship.rz) / dt, pitchRate = (df[0] * ship.ux + df[1] * ship.uy + df[2] * ship.uz) / dt;
+      const rollRate = (du[0] * ship.rx + du[1] * ship.ry + du[2] * ship.rz) / dt, acc = ((ship.speed || 0) - prev.spd) / dt;
+      tx = Math.max(-0.07, Math.min(0.07, -yawRate * 0.05)); ty = Math.max(-0.05, Math.min(0.05, -pitchRate * 0.04));
+      tz = Math.max(-0.05, Math.min(0.05, -acc * 0.0006)); tr = Math.max(-0.05, Math.min(0.05, rollRate * 0.03));
+    }
+    prev.f = [ship.fx, ship.fy, ship.fz]; prev.u = [ship.ux, ship.uy, ship.uz]; prev.spd = ship.speed || 0;
+    const o = window.__cpHead;   // preview override
+    if (o) { head.x = o.x || 0; head.y = o.y || 0; head.z = o.z || 0; head.roll = o.roll || 0; return; }
+    const k = 1 - Math.exp(-dt * 7);                       // soft spring: the head lags, then settles
+    head.x += (tx - head.x) * k; head.y += (ty - head.y) * k; head.z += (tz - head.z) * k; head.roll += (tr - head.roll) * k;
+  }
+  // apply the head sway to flat things mounted on the dash (VDUs, console, gauges, dice): same shift,
+  // lean and push as the 3D frame at the dash's depth, so the screens move with the cockpit
+  window.cockpitDashTransform = function() {
+    const W = V_WIDTH, H = V_HEIGHT, fov = H * 0.95, zd = 1.05, cx = W / 2, cy = H / 2;
+    const k = zd / Math.max(0.5, zd - head.z);
+    ctx.translate(cx, cy); if (head.roll) ctx.rotate(head.roll); ctx.scale(k, k); ctx.translate(-cx, -cy);
+    ctx.translate(-head.x / zd * fov, head.y / zd * fov);
+  };
+  window.drawCockpit3D = function(dashTopY, pillarW) {
+    stepHead();
+    const W = V_WIDTH, H = V_HEIGHT, fov = H * 0.95, cx = W / 2, cy = H / 2;
+    // the sun in cockpit space, for the lighting
+    let lx = -ship.x, ly = -ship.y, lz = -ship.z; const ll = Math.hypot(lx, ly, lz) || 1; lx /= ll; ly /= ll; lz /= ll;
+    const L = [lx * ship.rx + ly * ship.ry + lz * ship.rz, lx * ship.ux + ly * ship.uy + lz * ship.uz, lx * ship.fx + ly * ship.fy + lz * ship.fz];
+    const P = (x, y, z) => { const X = x - head.x, Y = y - head.y, Z = Math.max(0.2, z - head.z); return [cx + X / Z * fov, cy - Y / Z * fov]; };
+    const lit = (n) => 0.78 + 0.55 * Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
+    const poly = (pts, fill, n, base, stroke) => {
+      const s = pts.map(p => P(p[0], p[1], p[2]));
+      ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]); for (let i = 1; i < s.length; i++) ctx.lineTo(s[i][0], s[i][1]); ctx.closePath();
+      ctx.fillStyle = n ? shade(base || fill, lit(n)) : fill; ctx.fill();
+      if (stroke !== false) { ctx.strokeStyle = stroke || INK; ctx.lineWidth = 1; ctx.stroke(); }
+    };
+    const bolt = (x, y, z, col) => { const p = P(x, y, z), s = Math.max(0.8, 0.018 / Math.max(0.3, z - head.z) * fov); ctx.fillStyle = INK; ctx.fillRect(Math.round(p[0] - s), Math.round(p[1] - s), Math.ceil(s * 2), Math.ceil(s * 2)); ctx.fillStyle = col || '#64748b'; ctx.fillRect(Math.round(p[0] - s * 0.6), Math.round(p[1] - s * 0.6), Math.max(1, Math.ceil(s * 1.1)), Math.max(1, Math.ceil(s * 1.1))); };
+    ctx.save();
+    if (head.roll) { ctx.translate(cx, cy); ctx.rotate(head.roll); ctx.translate(-cx, -cy); }
+    const BASE = '#1e293b', DARK = '#111827', EDGE = '#475569';
+    const zF = 1.3, zB = 0.98;                  // front and back face depth of the frame beams
+    // ---------- side pillars (left & right): front face, inner face with depth, bolts, hazard foot ----------
+    for (const s of [-1, 1]) {
+      const bx = s * 1.0, tx = s * 0.86, by = -0.38, ty = 0.6;
+      poly([[bx, by, zF], [tx, ty, zF], [s * 2.6, ty + 0.2, zF], [s * 2.6, by - 0.3, zF]], BASE, [0, 0, -1]);            // front face
+      poly([[bx, by, zF], [tx, ty, zF], [tx, ty, zB], [bx, by, zB]], DARK, [-s, 0.05, 0], DARK);                           // inner face (depth)
+      // panel seam + vents on the inner face, so the depth reads
+      for (let k = 1; k < 4; k++) { const f = k / 4, q0 = P(bx + (tx - bx) * f, by + (ty - by) * f, zF), q1 = P(bx + (tx - bx) * f, by + (ty - by) * f, zB); ctx.strokeStyle = '#0b1220'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(q0[0], q0[1]); ctx.lineTo(q1[0], q1[1]); ctx.stroke(); }
+      for (let k = 0; k < 3; k++) { const f = 0.55 + k * 0.08, zz = (zF + zB) / 2; poly([[bx + (tx - bx) * f, by + (ty - by) * f, zz + 0.1], [bx + (tx - bx) * (f + 0.04), by + (ty - by) * (f + 0.04), zz + 0.1], [bx + (tx - bx) * (f + 0.04), by + (ty - by) * (f + 0.04), zz - 0.1], [bx + (tx - bx) * f, by + (ty - by) * f, zz - 0.1]], '#070b14', null, null, false); }
+      // inner edge highlight that catches the sun
+      const sunEdge = Math.max(0, -s * L[0]) * 0.8 + 0.2;
+      const a = P(bx, by, zF), b = P(tx, ty, zF); ctx.strokeStyle = `rgba(148,163,184,${(0.35 + 0.5 * sunEdge).toFixed(2)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      for (let k = 0; k < 5; k++) { const f = 0.12 + k * 0.19; bolt(bx + (tx - bx) * f + s * 0.07, by + (ty - by) * f, zF - 0.001); }
+      // corner gusset where the pillar meets the arch: a sloped plate between the two faces
+      poly([[tx, ty, zF], [tx - s * 0.32, ty, zF], [tx - s * 0.32, ty, zB + 0.12], [tx, ty - 0.2, zB + 0.06]], '#162033', [-s * 0.5, -0.7, -0.2], '#162033');
+    }
+    // ---------- overhead arch: front face with a centre plate, and its underside (depth) ----------
+    const archY = 0.6, dip = 0.55;
+    const lower = [[-2.6, archY + 0.2], [-0.86, archY], [-0.62, archY], [-0.52, dip], [0.52, dip], [0.62, archY], [0.86, archY], [2.6, archY + 0.2]];
+    poly([...lower.map(p => [p[0], p[1], zF]), [2.6, 2.5, zF], [-2.6, 2.5, zF]], BASE, [0, 0, -1]);
+    for (let i = 1; i < lower.length - 2; i++) {   // underside faces, seen from below: depth
+      const a = lower[i], b = lower[i + 1];
+      poly([[a[0], a[1], zF], [b[0], b[1], zF], [b[0], b[1], zB], [a[0], a[1], zB]], DARK, [0, -1, 0], '#0b1220');
+    }
+    // overhead strip lights on the underside
+    for (let k = -3; k <= 3; k++) { if (Math.abs(k) < 1) continue; const p = P(k * 0.2, dip - 0.001, (zF + zB) / 2); ctx.fillStyle = Math.floor(performance.now() / 600 + k) % 5 === 0 ? '#38bdf8' : '#0e7490'; ctx.fillRect(Math.round(p[0] - 2), Math.round(p[1]), 4, 1); }
+    for (const s of [-1, 1]) for (let k = 0; k < 3; k++) bolt(s * (1.2 + k * 0.35), archY + 0.1, zF - 0.001);
+    // name plate
+    const pa = P(-0.43, dip + 0.13, zF - 0.002), pb = P(0.43, dip + 0.02, zF - 0.002);
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(pa[0], pa[1], pb[0] - pa[0], pb[1] - pa[1]); ctx.strokeStyle = '#334155'; ctx.lineWidth = 1; ctx.strokeRect(pa[0], pa[1], pb[0] - pa[0], pb[1] - pa[1]);
+    ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillText('TERRAN CONFED // CHIMERA IC', (pa[0] + pb[0]) / 2, pb[1] - 2.5);
+    // canopy glass: two faint diagonal reflection streaks, and sun glare when the star is ahead
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const gs = (x0, w, a) => { const q = [P(x0, 0.55, zF + 0.4), P(x0 + w, 0.55, zF + 0.4), P(x0 + w - 0.5, -0.3, zF + 0.4), P(x0 - 0.5, -0.3, zF + 0.4)]; ctx.fillStyle = `rgba(186,230,253,${a})`; ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); for (const v of q) ctx.lineTo(v[0], v[1]); ctx.closePath(); ctx.fill(); };
+    gs(0.35, 0.09, 0.035); gs(0.52, 0.03, 0.05);
+    if (L[2] > 0.6) { const sp = P(L[0] / L[2] * 1.3, L[1] / L[2] * 1.3, 1.3), g = ctx.createRadialGradient(sp[0], sp[1], 0, sp[0], sp[1], 90); g.addColorStop(0, `rgba(253,224,171,${(0.25 * (L[2] - 0.6) / 0.4).toFixed(3)})`); g.addColorStop(1, 'rgba(253,224,171,0)'); ctx.fillStyle = g; ctx.fillRect(sp[0] - 90, sp[1] - 90, 180, 180); }
+    ctx.restore();
+    // ---------- dash hood: lip (front face), sloped top with depth, then the bulkhead below ----------
+    const lipY = -0.32, sideY = -0.4, topZ = 0.98, topY = -0.28;
+    const lip = [[-2.6, sideY - 0.04], [-1.0, sideY], [-0.8, lipY], [0.8, lipY], [1.0, sideY], [2.6, sideY - 0.04]];
+    // solid hull under the lip, down past the bottom of the screen: no gaps to space whatever way the head moves
+    { const s0 = lip.map(p => P(p[0], p[1], zF)); ctx.fillStyle = '#111827'; ctx.beginPath(); ctx.moveTo(-40, s0[0][1]); for (const q of s0) ctx.lineTo(q[0], q[1]); ctx.lineTo(W + 40, s0[s0.length - 1][1]); ctx.lineTo(W + 40, H + 40); ctx.lineTo(-40, H + 40); ctx.closePath(); ctx.fill(); }
+    // sloped top (between lip and the screens): lit from above
+    poly([...lip.map(p => [p[0], p[1], zF]), ...lip.slice().reverse().map(p => [p[0] * 0.92, p[1] + (topY - lipY), topZ])], '#273449', [0, 0.8, -0.6], '#273449');
+    // a stripe of sunlight across the hood when the sun is up and ahead
+    const sunAmt = Math.max(0, L[1] * 0.6 + L[2] * 0.5);
+    if (sunAmt > 0.05) {
+      const off = Math.max(-0.6, Math.min(0.6, -L[0] * 0.8));
+      poly([[off - 0.35, lipY + 0.005, zF - 0.01], [off + 0.05, lipY + 0.005, zF - 0.01], [off * 0.9 + 0.12, topY + 0.004, topZ + 0.02], [off * 0.9 - 0.28, topY + 0.004, topZ + 0.02]], `rgba(253,230,138,${(0.12 + 0.2 * sunAmt).toFixed(3)})`, null, null, false);
+    }
+    // lip edge: ink + a lit bevel
+    { const s = lip.map(p => P(p[0], p[1], zF)); ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]); for (const q of s) ctx.lineTo(q[0], q[1]); ctx.stroke();
+      ctx.strokeStyle = EDGE; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1] - 1); for (const q of s) ctx.lineTo(q[0], q[1] - 1); ctx.stroke(); }
+    // little status lamps along the hood
+    for (let k = -2; k <= 2; k++) { const p = P(k * 0.16, lipY + 0.012, zF - 0.02), on = Math.floor(performance.now() / 400 + k * 1.7) % 3 !== 0; ctx.fillStyle = INK; ctx.fillRect(Math.round(p[0] - 2), Math.round(p[1] - 2), 4, 3); ctx.fillStyle = on ? (k === 0 ? '#4ade80' : '#f59e0b') : '#3f3f46'; ctx.fillRect(Math.round(p[0] - 1), Math.round(p[1] - 1), 2, 1); }
+    window.__cockpitDrawnAt = performance.now();
+    // bulkhead below the hood (the VDUs sit on this)
+    const hb = P(0, topY, topZ)[1];
+    ctx.fillStyle = '#111827'; ctx.fillRect(-10, Math.max(dashTopY + 8, hb), W + 20, H);
+    ctx.restore();
+    // the console bulkhead never moves with your head: it always seals the bottom of the canopy,
+    // so a sway can't open a slot of space between the hood and the screens
+    ctx.save(); cockpitDashTransform();
+    ctx.fillStyle = '#111827'; ctx.fillRect(-60, dashTopY + 6, W + 120, H);
+    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-60, dashTopY + 6); ctx.lineTo(W + 60, dashTopY + 6); ctx.stroke();
+    ctx.restore();
+  };
+})();
+
+
+// ---------- SHIELD / HULL / FUEL: slotted bar gauges set into the dashboard gaps beside the centre console ----------
+window.drawDashGauges = function(l0, l1, r0, r1, dashTopY, dashH) {
+  const t = performance.now(), INK = '#020617';
+  const B = {
+    S: { v: ship.maxShield ? ship.shield / ship.maxShield : 0, col: '#38bdf8', dim: '#0c3a55', lab: 'SHD' },
+    H: { v: ship.maxHull ? ship.hull / ship.maxHull : 0, col: '#22c55e', dim: '#123d22', lab: 'HUL' },
+    F: { v: (ship.maxFuel || 100) ? ship.fuel / (ship.maxFuel || 100) : 0, col: '#f97316', dim: '#5c2410', lab: 'FUL' }
+  };
+  const top = dashTopY + 12, bot = V_HEIGHT - 5;
+  function panel(x0, x1, keys) {
+    const w = x1 - x0 - 6; if (w < 10) return false;
+    const n = keys.length, gap = 3, bw = Math.min(14, Math.floor((w - gap * (n - 1)) / n)), tw = bw * n + gap * (n - 1), px = Math.round(x0 + 3 + (w - tw) / 2);
+    // recessed housing
+    ctx.fillStyle = INK; ctx.fillRect(px - 3, top - 3, tw + 6, bot - top + 6);
+    ctx.fillStyle = '#0b1220'; ctx.fillRect(px - 2, top - 2, tw + 4, bot - top + 4);
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 1; ctx.strokeRect(px - 2.5, top - 2.5, tw + 5, bot - top + 5);
+    const labH = 8, segTop = top + 1, segBot = bot - labH, segs = 8, sh = (segBot - segTop) / segs;
+    keys.forEach((k, i) => {
+      const g = B[k], v = Math.max(0, Math.min(1, g.v)), on = Math.ceil(v * segs - 0.001), low = v < 0.25, flash = low && Math.floor(t / 250) % 2 === 0;
+      const bx = px + i * (bw + gap);
+      for (let j = 0; j < segs; j++) {
+        const y = Math.round(segBot - (j + 1) * sh + 1), hh = Math.max(1, Math.round(sh) - 1), lit = j < on;
+        ctx.fillStyle = lit ? (low ? (flash ? '#fecaca' : '#ef4444') : g.col) : g.dim; ctx.fillRect(bx, y, bw, hh);
+        if (lit && j === on - 1) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(bx + 1, y, Math.max(1, bw - 2), 1); }   // glint on the top lit segment
+      }
+      ctx.textAlign = 'center'; ctx.font = 'bold 6px monospace';
+      ctx.fillStyle = low ? (flash ? '#fecaca' : '#ef4444') : '#94a3b8';
+      ctx.fillText(low ? Math.round(v * 100) + '%' : (bw >= 13 ? g.lab : k), bx + bw / 2, bot - 1);
+    });
+    return true;
+  }
+  const okL = panel(l0, l1, ['S', 'H']), okR = panel(r0, r1, ['F']);
+  window.__dashGaugesOk = okL && okR;   // narrow (4:3) screens have no room: the HUD status box stays up instead
+};
+
+// the cockpit carries SHIELD / HULL / FUEL on its dash, so the DOM status box hides while you're in it
+(function() {
+  const box = document.getElementById('shield-bar') && document.getElementById('shield-bar').closest('.hud-box');
+  if (!box) return;
+  let hidden = false;
+  (function tick() {
+    const inCockpit = performance.now() - (window.__cockpitDrawnAt || 0) < 250 && window.__dashGaugesOk;
+    if (inCockpit !== hidden) { hidden = inCockpit; box.style.visibility = hidden ? 'hidden' : ''; }
+    requestAnimationFrame(tick);
+  })();
 })();
 
 </script>
