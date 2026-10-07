@@ -2373,7 +2373,7 @@ const RESOURCE_TYPES = [
   { name: "Iron", color: "#94a3b8", darkColor: "#475569", lightColor: "#e2e8f0", val: 20 },
   { name: "Titanium", color: "#38bdf8", darkColor: "#0284c7", lightColor: "#bae6fd", val: 45 },
   { name: "Plasma Crystal", color: "#c084fc", darkColor: "#7e22ce", lightColor: "#f3e8ff", val: 90 },
-  { name: "Dark Matter", color: "#f43f5e", darkColor: "#9f1239", lightColor: "#fecdd3", val: 210 },
+  { name: "Void Crystal", color: "#f43f5e", darkColor: "#9f1239", lightColor: "#fecdd3", val: 210 },
   { name: "Cryo Crystal", color: "#67e8f9", darkColor: "#155e75", lightColor: "#ecfeff", val: 130 }
 ];
 // Cryo Crystal is assigned separately (not via the normal random pick) so adding it
@@ -2383,6 +2383,22 @@ const CRYO_ORE = RESOURCE_TYPES[4];
 function isCryoPlanet(sx, sy, sz, i) {
   return (hash3D(sx * 31 + 7, sy + 11, sz * 17 + i * 5 + 3, galaxySeed) % 100) < 18;
 }
+// Void Crystal worlds only exist out in the empty void sectors (no star system, nothing on the map).
+// A star system's planet that would have rolled Void Crystal gets a regular ore instead - decided by a
+// hash, so the star map's preview and the real sector always agree.
+const VOID_ORE = RESOURCE_TYPES[3];
+function systemOre(rand, sx, sy, sz, i) {
+  let k = Math.floor(rand() * BASE_ORE_COUNT);
+  if (k === 3) k = hash3D(sx * 5 + i * 7 + 1, sy + 3, sz * 11 + 1, galaxySeed) % 3;
+  return RESOURCE_TYPES[k];
+}
+function voidWorldFor(sx, sy, sz) {     // the hidden planet drifting in an empty sector (own RNG: nothing else in the sector moves)
+  if (!sx && !sy && !sz) return null;
+  const r = createRNG(hash3D(sx + 101, sy + 202, sz + 303, galaxySeed + 4242));
+  if (r() > 0.6) return null;
+  return { num: 10 + Math.floor(r() * 89), fx: r(), fy: r(), fz: r(), radius: 30 + Math.floor(r() * 16), maxOre: 30 + Math.floor(r() * 40) };
+}
+function isVoidWorld(planet) { return !!(planet && planet.ore && planet.ore.name === "Void Crystal"); }
 function isCryoWorld(planet) {
   return !!(planet && planet.ore && planet.ore.name === "Cryo Crystal");
 }
@@ -2453,7 +2469,7 @@ function generateSector(sx, sy, sz) {
     activeStations.push({
       id: "0_0_0_starter_station", x: 120, y: 15, z: 690, radius: 26,
       name: "Outpost Alpha", rotation: 0,
-      rates: { "Iron": 1.25, "Titanium": 1.25, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": 1.0 }
+      rates: { "Iron": 1.25, "Titanium": 1.25, "Plasma Crystal": 1.0, "Void Crystal": 1.0, "Cryo Crystal": 1.0 }
     });
     return;
   }
@@ -2470,7 +2486,7 @@ function generateSector(sx, sy, sz) {
     for (let i = 0; i < numPlanets; i++) {
       const pid = `${sx}_${sy}_${sz}_p${i}`;
       if (destroyedPlanets.has(pid)) continue;
-      let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
+      let ore = systemOre(rand, sx, sy, sz, i);
       if (isCryoPlanet(sx, sy, sz, i)) ore = CRYO_ORE;
       const maxOre = 20 + Math.floor(rand() * 40);
       const currOre = planetDepletionCache.has(pid) ? planetDepletionCache.get(pid) : maxOre;
@@ -2489,7 +2505,7 @@ function generateSector(sx, sy, sz) {
         y: sy * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
         z: sz * SECTOR_SIZE + 300 + rand() * (SECTOR_SIZE - 600),
         radius: 26, name: `Starbase ${baseName}`, rotation: rand() * Math.PI,
-        rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Dark Matter": 1.0 + rand() * 0.8, "Cryo Crystal": 1.0 + rand() * 0.6 }
+        rates: { "Iron": 0.8 + rand() * 0.4, "Titanium": 0.8 + rand() * 0.5, "Plasma Crystal": 0.9 + rand() * 0.6, "Void Crystal": 1.0 + rand() * 0.8, "Cryo Crystal": 1.0 + rand() * 0.6 }
       });
     }
 
@@ -2516,6 +2532,19 @@ function generateSector(sx, sy, sz) {
         y: sy * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
         z: sz * SECTOR_SIZE + 400 + rand() * (SECTOR_SIZE - 800),
         radius: 20, salvaged: false, name: `Derelict ${baseName}-Echo`
+      });
+    }
+  }
+
+  // a lone, uncharted Void world adrift in empty space (never shown on the star map)
+  if (!hasSystem) {
+    const vw = voidWorldFor(sx, sy, sz);
+    const pid = `${sx}_${sy}_${sz}_void`;
+    if (vw && !destroyedPlanets.has(pid)) {
+      const currOre = planetDepletionCache.has(pid) ? planetDepletionCache.get(pid) : vw.maxOre;
+      activePlanets.push({
+        id: pid, x: sx * SECTOR_SIZE + 250 + vw.fx * (SECTOR_SIZE - 500), y: sy * SECTOR_SIZE + 250 + vw.fy * (SECTOR_SIZE - 500), z: sz * SECTOR_SIZE + 250 + vw.fz * (SECTOR_SIZE - 500),
+        radius: vw.radius, name: `Void-${vw.num}`, ore: VOID_ORE, totalOre: currOre, hasRings: false, isVoidWorld: true
       });
     }
   }
@@ -5837,8 +5866,8 @@ function landOnPlanet(planet) {
     x: outpostX, y: 0, z: outpostZ, radius: 18,
     name: `${planet.name} Surface Outpost`,
     rates: isHome
-      ? { "Iron": 1.3, "Titanium": 1.3, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": 1.0 }
-      : { [planet.ore.name]: 1.2, "Iron": 1.0, "Titanium": 1.0, "Plasma Crystal": 1.0, "Dark Matter": 1.0, "Cryo Crystal": isCryoWorld(planet) ? 1.2 : 1.0 }
+      ? { "Iron": 1.3, "Titanium": 1.3, "Plasma Crystal": 1.0, "Void Crystal": 1.0, "Cryo Crystal": 1.0 }
+      : { [planet.ore.name]: 1.2, "Iron": 1.0, "Titanium": 1.0, "Plasma Crystal": 1.0, "Void Crystal": 1.0, "Cryo Crystal": isCryoWorld(planet) ? 1.2 : 1.0 }
   };
 
   const targetNodeCount = 26;
@@ -5880,7 +5909,7 @@ function landOnPlanet(planet) {
 
   for (const n of surfaceNodes) if (surfaceNodeDepletion.has(n.id)) n.amount = surfaceNodeDepletion.get(n.id);   // veins you've mined stay mined
 
-  const isDarkMatter = planet.ore && planet.ore.name === "Dark Matter";
+  const isDarkMatter = planet.ore && planet.ore.name === "Void Crystal";
   const sentinelCount = isDarkMatter ? (4 + Math.floor(pRand() * 2)) : (3 + Math.floor(pRand() * 2));
   attempts = 0;
   while (surfaceSentinels.length < sentinelCount && attempts < 400) {
@@ -6154,7 +6183,7 @@ function shotgunSpray(target) {
 }
 function shotgunKill(sent) {
   runStats.sentinelsKilled++; playSfx('explosion'); vibrateGamepad(280, 0.6, 0.7);
-  addPopup("SENTINEL INVADER DESTROYED! +$150", "#c084fc"); ship.credits += 150; runStats.creditsEarned += 150;
+  addPopup(sent.isBerzerk ? "VOID SLAVE DESTROYED! +$150" : "SENTINEL INVADER DESTROYED! +$150", sent.isBerzerk ? "#f43f5e" : "#c084fc"); ship.credits += 150; runStats.creditsEarned += 150;
   spawnSentinelGore(sent);
   const i = surfaceSentinels.indexOf(sent); if (i !== -1) surfaceSentinels.splice(i, 1);
 }
@@ -8099,7 +8128,7 @@ const PHOTOS = [
   { id: 'iron',     cap: 'IRON WORLD',  hint: 'Land on an Iron world' },
   { id: 'titanium', cap: 'TITANIUM',    hint: 'Land on a Titanium world' },
   { id: 'plasma',   cap: 'PLASMA',      hint: 'Land on a Plasma Crystal world' },
-  { id: 'dark',     cap: 'DARK MATTER', hint: 'Land on a Dark Matter world' },
+  { id: 'dark',     cap: 'THE VOID',    hint: 'Find and land on a hidden Void world' },
   { id: 'cryo',     cap: 'CRYO WORLD',  hint: 'Land on a Cryo world' },
   { id: 'monolith', cap: 'MONOLITH!',   hint: 'Destroy a Monolith' },
   { id: 'derelict', cap: 'DERELICT',    hint: 'Board a derelict dreadnought' }
@@ -8120,7 +8149,7 @@ function planetPhotoId(pl) {
   if (!pl) return null;
   if (pl.isHomeWorld || pl.name === "Home World") return 'home';
   const ore = pl.ore && pl.ore.name;
-  return { "Iron": 'iron', "Titanium": 'titanium', "Plasma Crystal": 'plasma', "Dark Matter": 'dark', "Cryo Crystal": 'cryo' }[ore] || null;
+  return { "Iron": 'iron', "Titanium": 'titanium', "Plasma Crystal": 'plasma', "Void Crystal": 'dark', "Cryo Crystal": 'cryo' }[ore] || null;
 }
 function checkPhotos() {
   if (!ship || gameOver) return;
@@ -12868,7 +12897,7 @@ function update(dt) {
       threatBanner.style.background = "rgba(153, 27, 27, 0.92)";
       threatBanner.style.borderColor = "#f87171";
       threatBanner.style.color = "#fecaca";
-      threatBanner.innerText = "⚠️ COMBAT ALERT: DEFENSE SENTINELS ENGAGING ⚠️";
+      threatBanner.innerText = isVoidWorld(landedPlanet) ? "⚠️ VOID SLAVES HUNTING YOU ⚠️" : "⚠️ COMBAT ALERT: DEFENSE SENTINELS ENGAGING ⚠️";
     } else {
       threatBanner.style.display = "none";
     }
@@ -13020,12 +13049,12 @@ function update(dt) {
 
           if (!sgOn) sent.hp -= ship.laserDamage * wdt * 2.2;   // the shotgun's kills are handled by shotgunSpray above
           if (wdt > 0 && !sgOn) provokeSentinel(sent, true);
-          if (rifleOn && wdt > 0) rifleImpact(sent.x, sent.y, sent.z, ["#fb923c", "#ffffff", "#c084fc"]);
+          if (rifleOn && wdt > 0) { rifleImpact(sent.x, sent.y, sent.z, ["#fb923c", "#ffffff", "#c084fc"]); addRifleHole(sent); }
           if (sent.hp <= 0 && !sgOn) {
             runStats.sentinelsKilled++;
             playSfx('explosion');
             vibrateGamepad(280, 0.6, 0.7);
-            addPopup("SENTINEL INVADER DESTROYED! +$150", "#c084fc");
+            addPopup(sent.isBerzerk ? "VOID SLAVE DESTROYED! +$150" : "SENTINEL INVADER DESTROYED! +$150", sent.isBerzerk ? "#f43f5e" : "#c084fc");
             ship.credits += 150;
             runStats.creditsEarned += 150;
             if (true) {
@@ -13076,7 +13105,7 @@ function update(dt) {
               s.monolithAlert = true;
             }
             if (typeof playSfx === 'function') playSfx('commChirp');
-            if (typeof addPopup === 'function') addPopup("⚠️ THE MONOLITH AWAKENS THE SENTINELS! ⚠️", "#f43f5e");
+            if (typeof addPopup === 'function') addPopup(isVoidWorld(landedPlanet) ? "⚠️ THE MONOLITH CALLS THE VOID SLAVES! ⚠️" : "⚠️ THE MONOLITH AWAKENS THE SENTINELS! ⚠️", "#f43f5e");
           }
 
           m.hp -= (ship.miningRate || 3.5) * 6 * wdt;
@@ -13092,8 +13121,8 @@ function update(dt) {
             if (typeof runStats !== 'undefined') runStats.creditsEarned += 2500;
 
             if (typeof getCargoTotal === 'function' && getCargoTotal() < ship.maxCargo) {
-              ship.cargo["Dark Matter"] = (ship.cargo["Dark Matter"] || 0) + 3;
-              if (typeof addPopup === 'function') addPopup("MONOLITH SHATTERED! +$2,500 & 3x DARK MATTER", "#c084fc");
+              ship.cargo["Void Crystal"] = (ship.cargo["Void Crystal"] || 0) + 3;
+              if (typeof addPopup === 'function') addPopup("MONOLITH SHATTERED! +$2,500 & 3x VOID CRYSTAL", "#c084fc");
             } else {
               if (typeof addPopup === 'function') addPopup("MONOLITH SHATTERED! +$2,500 (CARGO FULL!)", "#c084fc");
             }
@@ -14326,6 +14355,100 @@ function drawPixelCrystal(proj, node) {
   }
 }
 
+// ---- PULSE RIFLE WOUNDS: every round punches a see-through bloody hole in the sprite ----
+const HOLE_CV = document.createElement('canvas'), HOLE_G = HOLE_CV.getContext('2d');
+function addRifleHole(sent) {
+  const holes = sent.holes || (sent.holes = []);
+  const spr = sent.isBerzerk ? BERZERK_SPRITES[0] : SENTINEL_SPRITES[0], rows = spr.length, cap = sent.isBerzerk ? 6 : 4;
+  for (let tries = 0; tries < 20; tries++) {
+    const cu = Math.floor(4 + (Math.random() - 0.5) * 5.6), cv = Math.floor(rows * 0.52 + (Math.random() - 0.5) * rows * 0.72);
+    const row = spr[cv], ch = row && row[cu];
+    if (ch !== '#' || (sent.isBerzerk && cv < 3)) continue;
+    const u = cu + 0.5 + (Math.random() - 0.5) * 0.3, v = cv + 0.5 + (Math.random() - 0.5) * 0.3;   // centred on a body cell so it reads as a clean punch-through
+    const near = holes.find(o => Math.hypot(o.u - u, o.v - v) < 1.8);
+    if (near) { if (tries > 12) { near.r = Math.min(0.85, near.r + 0.08); near.t = Math.min(near.t, performance.now() - 300); return; } continue; }   // round goes through an old wound: it tears wider
+    if (holes.length >= cap) { const o = holes[Math.floor(Math.random() * holes.length)]; o.r = Math.min(0.85, o.r + 0.08); return; }
+    const lobes = [], spikes = [], dots = [], nl = 4 + Math.floor(Math.random() * 3), ns = 4 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < nl; k++) { const a = (k / nl) * Math.PI * 2 + Math.random() * 0.6; lobes.push({ ox: Math.cos(a) * 0.35, oy: Math.sin(a) * 0.3, rr: 0.32 + Math.random() * 0.18 }); }
+    for (let k = 0; k < ns; k++) spikes.push({ a: (k / ns) * Math.PI * 2 + Math.random() * 0.5, len: 0.95 + Math.random() * 0.55, w: 0.12 + Math.random() * 0.08 });
+    for (let k = 0; k < 3; k++) { const a = Math.random() * Math.PI * 2, dd = 1.1 + Math.random() * 0.6; dots.push({ ox: Math.cos(a) * dd, oy: Math.sin(a) * dd, rr: 0.07 + Math.random() * 0.08 }); }
+    holes.push({ u, v, r: 0.3 + Math.random() * 0.08, t: performance.now(), seed: Math.random() * 1000, lobes, spikes, dots,
+      drip: { ox: (Math.random() - 0.5) * 0.4, max: 0.9 + Math.random() * 1.4, w: 0.13 + Math.random() * 0.06 } }); return;
+  }
+}
+// Draws a pixel sprite with its wounds into HOLE_CV (top-left 0,0) and returns [w, h]; the caller blits it.
+function renderHoledSprite(spr, cols, px, bodyCol, dotCol, holes) {
+  const rows = spr.length, W = Math.ceil(cols * px), H = Math.ceil(rows * px), g = HOLE_G, now = performance.now();
+  if (HOLE_CV.width < W || HOLE_CV.height < H) { HOLE_CV.width = Math.max(HOLE_CV.width, W); HOLE_CV.height = Math.max(HOLE_CV.height, H); }
+  g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, HOLE_CV.width, HOLE_CV.height);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const ch = spr[r][c]; if (ch === ' ') continue;
+    g.fillStyle = ch === '#' ? bodyCol : dotCol; g.fillRect(c * px, r * px, px, px);
+  }
+  g.globalCompositeOperation = 'source-atop';           // blood only lands on the body
+  for (const o of holes) {
+    if (!o.lobes) continue;
+    const cx = o.u * px, cy = o.v * px, R = o.r * px, age = (now - o.t) / 1000, sc = Math.min(1, 0.4 + age * 9) * px;   // quick splat-in pop, like the visor
+    const dr = o.drip, dlen = Math.min(dr.max, 0.15 + age * 0.9) * px, bx = cx + dr.ox * px, bot = cy + 0.25 * px + dlen;
+    const blob = (pad) => {
+      g.beginPath();
+      g.ellipse(cx, cy, (0.55 + pad) * sc, (0.5 + pad) * sc, 0, 0, Math.PI * 2);
+      for (const l of o.lobes) { g.moveTo(cx + l.ox * sc + (l.rr + pad) * sc, cy + l.oy * sc); g.arc(cx + l.ox * sc, cy + l.oy * sc, (l.rr + pad) * sc, 0, Math.PI * 2); }
+      g.rect(bx - (dr.w + pad) * px, cy, (dr.w + pad) * 2 * px, bot - cy);                       // the run
+      g.moveTo(bx + (dr.w * 1.6 + pad) * px, bot); g.arc(bx, bot, (dr.w * 1.6 + pad) * px, 0, Math.PI * 2);   // bead at the end of it
+    };
+    g.fillStyle = '#7f1d1d';                                                                    // spikes + flung spatter, dark
+    for (const sp of o.spikes) {
+      const ex = cx + Math.cos(sp.a) * sp.len * sc, ey = cy + Math.sin(sp.a) * sp.len * sc, qx = -Math.sin(sp.a) * sp.w * sc, qy = Math.cos(sp.a) * sp.w * sc;
+      g.beginPath(); g.moveTo(cx + qx, cy + qy); g.lineTo(ex, ey); g.lineTo(cx - qx, cy - qy); g.closePath(); g.fill();
+    }
+    for (const d of o.dots) { g.beginPath(); g.arc(cx + d.ox * sc, cy + d.oy * sc, Math.max(0.6, d.rr * px), 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#7f1d1d'; blob(0.1); g.fill();                                               // dark rim
+    g.fillStyle = '#dc2626'; blob(0); g.fill();                                                 // bright blood
+    g.fillStyle = '#ef4444'; g.beginPath(); g.ellipse(cx - 0.1 * sc, cy - 0.12 * sc, 0.32 * sc, 0.26 * sc, 0, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 0.75; g.fillStyle = '#ffffff';                                              // glossy highlights
+    g.beginPath(); g.ellipse(cx - 0.3 * sc, cy - 0.32 * sc, 0.14 * sc, 0.08 * sc, -0.6, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 0.5; g.fillRect(bx - dr.w * 0.5 * px, bot - dr.w * 1.1 * px, Math.max(0.8, dr.w * 0.6 * px), Math.max(0.8, dr.w * 0.6 * px));
+    g.globalAlpha = 1;
+  }
+  g.globalCompositeOperation = 'destination-out';       // and the hole itself, punched clean through the middle of the splat
+  for (const o of holes) { g.beginPath(); g.arc(o.u * px, o.v * px, Math.max(0.8, o.r * px * Math.min(1, 0.5 + (now - o.t) / 1000 * 8)), 0, Math.PI * 2); g.fill(); }
+  g.globalCompositeOperation = 'source-over';
+  return [W, H];
+}
+// Void Slave eye: the visor bar glows solid purple, with void-fire licking up off the head.
+// ox/oy = sprite top-left, px = cell size, t = ms clock. Used in the field and in the death cutscene.
+function drawVoidEye(ox, oy, px, t) {
+  const HEAD = ["  ####  ", " #....# ", "  ####  "];
+  const flick = 0.75 + 0.25 * Math.sin(t * 0.017) * Math.sin(t * 0.041 + 1.3);
+  ctx.save();
+  // soft glow behind the eye
+  const ex = ox + 4 * px, ey = oy + 1.5 * px, R = px * 4.2;
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, R);
+  g.addColorStop(0, `rgba(216,180,254,${(0.45 * flick).toFixed(3)})`); g.addColorStop(0.45, `rgba(147,51,234,${(0.28 * flick).toFixed(3)})`); g.addColorStop(1, 'rgba(126,34,206,0)');
+  ctx.fillStyle = g; ctx.fillRect(ex - R, ey - R, R * 2, R * 2);
+  ctx.globalCompositeOperation = 'source-over';
+  // the eye: a solid glowing purple bar where the old one was (the head keeps the body colour)
+  for (let c = 0; c < 8; c++) {
+    if (HEAD[1][c] !== '.') continue;
+    ctx.fillStyle = flick > 0.9 ? "#c084fc" : "#a855f7";
+    ctx.fillRect(Math.round(ox + c * px), Math.round(oy + px), Math.ceil(px), Math.ceil(px));
+  }
+  // void-fire burning straight off the top of the bar, licking up over the brow (painted, not added, so it stays purple over a red head)
+  const fp = Math.max(1, px * 0.5), baseY = oy + px;           // top edge of the bar
+  for (let c = 2; c < 6; c += 0.5) {
+    const phase = c * 2.3;
+    const h = 1.4 + 1.6 * (0.5 + 0.5 * Math.sin(t * 0.011 + phase)) + 0.8 * Math.sin(t * 0.029 + phase * 1.7);
+    const n = Math.max(1, Math.round(h * (c > 2.4 && c < 5.1 ? 2.2 : 1.4)));
+    for (let k = 0; k < n; k++) {
+      const a = (1 - k / n) * flick, sway = Math.sin(t * 0.018 + k * 0.9 + phase) * fp * 0.7 * (k / n);
+      ctx.fillStyle = k < n * 0.3 ? `rgba(240,171,252,${(a * 0.9).toFixed(3)})` : (k < n * 0.7 ? `rgba(192,132,252,${(a * 0.75).toFixed(3)})` : `rgba(126,34,206,${(a * 0.6).toFixed(3)})`);
+      ctx.fillRect(Math.round(ox + c * px + sway), Math.round(baseY - (k + 1) * fp), Math.ceil(fp), Math.ceil(fp));
+    }
+  }
+  ctx.restore();
+}
 function drawPixelSentinel(proj, sent) {
   const cx = Math.round(proj.x), cy = Math.round(proj.y);
   const isBerz = !!sent.isBerzerk;
@@ -14355,11 +14478,15 @@ function drawPixelSentinel(proj, sent) {
   const oy = cy - Math.floor(h / 2);
   const bob = isBerz ? 0 : Math.round(Math.sin(Date.now() * 0.0028 + (sent.bobPh ?? (sent.bobPh = Math.random() * 6.283))) * 2 * px);
 
-  for (let row = 0; row < rows; row++) {
+  const bodyCol = isBerz ? (sent.alert ? "#f43f5e" : "#facc15") : (sent.isFrost ? (sent.alert ? "#67e8f9" : "#e0f2fe") : (sent.alert ? "#ef4444" : "#c084fc"));
+  if (sent.holes && sent.holes.length) {
+    renderHoledSprite(sprite, cols, px, bodyCol, "#ffffff", sent.holes);
+    ctx.drawImage(HOLE_CV, 0, 0, w, h, ox, oy + bob, w, h);
+  } else for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const char = sprite[row][col];
       if (char === '#') {
-        ctx.fillStyle = isBerz ? (sent.alert ? "#f43f5e" : "#facc15") : (sent.isFrost ? (sent.alert ? "#67e8f9" : "#e0f2fe") : (sent.alert ? "#ef4444" : "#c084fc"));
+        ctx.fillStyle = bodyCol;
         ctx.fillRect(ox + col * px, oy + row * px + bob, px, px);
       } else if (char === '.') {
         ctx.fillStyle = "#ffffff";
@@ -14367,6 +14494,7 @@ function drawPixelSentinel(proj, sent) {
       }
     }
   }
+  if (isBerz) drawVoidEye(ox, oy + bob, px, Date.now() + (sent.bobPh || (sent.bobPh = Math.random() * 6.283)) * 1000);
 
   if (sent.hp < sent.maxHp) {
     const barW = Math.max(18, w);
@@ -14378,7 +14506,7 @@ function drawPixelSentinel(proj, sent) {
 
   if (targetedObject && targetedObject.sentinel === sent) {
     const inRange = proj.dist <= 200;
-    const nameTag = isBerz ? "BERZERK BOT" : "SENTINEL";
+    const nameTag = isBerz ? "VOID SLAVE" : "SENTINEL";
     ctx.fillStyle = inRange ? "#4ade80" : "#f87171";
     ctx.font = "8px monospace";
     ctx.textAlign = "center";
@@ -15834,7 +15962,9 @@ function render() {
     // Home World: live sky (day/night + weather). The world is drawn over a cleared
     // canvas, darkened for the time of day, then the sky is slid in behind it.
     let HS = null;
-    if (isHome && window.__homeSky) { try { HS = window.__homeSky.begin(); } catch (e) { HS = null; } }
+    // live skies: Home World, and the violet Plasma Crystal worlds
+    const HSM = isHome ? window.__homeSky : (window.__plasmaSky && window.__plasmaSky.applies(landedPlanet) ? window.__plasmaSky : null);
+    if (HSM) { try { HS = HSM.begin(); } catch (e) { HS = null; } }
 
     // Blue Sky Gradient on Home World
     const skyGrad = ctx.createLinearGradient(0, clampedHorizonY - skySpan, 0, clampedHorizonY);
@@ -15911,7 +16041,7 @@ function render() {
     // Grass & Soil Ground Gradient
     const groundTop = Math.max(0, clampedHorizonY);
     const groundGrad = ctx.createLinearGradient(0, clampedHorizonY, 0, clampedHorizonY + skySpan);
-    if (HS) {
+    if (HS && isHome) {
       groundGrad.addColorStop(0, HS.ground[0]);
       groundGrad.addColorStop(0.35, "#14532d");
       groundGrad.addColorStop(1, "#052e16");
@@ -16145,7 +16275,7 @@ function render() {
       }
     }
 
-    if (HS) { try { window.__homeSky.finish(clampedHorizonY); } catch (e) { console.warn('homeSky', e); } }
+    if (HS) { try { HSM.finish(clampedHorizonY); } catch (e) { console.warn('live sky', e); } }
     if (worldOnlyPass) { ctx.restore(); return; }
 
     if (miningLaserState.active && fieldWeapon === 'laser') {
@@ -16929,8 +17059,9 @@ function getSectorData(sx, sz) {
   for (let i = 0; i < numPlanets; i++) {
     const pid = `${sx}_0_${sz}_p${i}`;
     if (destroyedPlanets && destroyedPlanets.has(pid)) continue;
-    let ore = RESOURCE_TYPES[Math.floor(rand() * BASE_ORE_COUNT)];
+    let ore = systemOre(rand, sx, 0, sz, i);
     if (isCryoPlanet(sx, 0, sz, i)) ore = CRYO_ORE;
+    rand(); rand(); rand(); rand(); rand();   // same rolls generateSector makes (ore amount, x, y, z, radius) so the next planet's ore matches
     planets.push({ name: `${baseName}-${i + 1}`, ore, rings: rand() > 0.65 });
   }
 
@@ -17836,7 +17967,7 @@ requestAnimationFrame(gameLoop);
     if (isSurfaceCutscenePlaying || isBerzerkCutscenePlaying || isFrostCutscenePlaying) return;
     if (title === "SUIT COMPROMISED") {
       // Don't play if it's a Red Planet / Dark Matter (those ones don't have standard sentinels)
-      const isRedPlanet = landedPlanet && landedPlanet.ore && (landedPlanet.ore.name === "Dark Matter" || landedPlanet.ore.color === "#f43f5e");
+      const isRedPlanet = landedPlanet && landedPlanet.ore && (landedPlanet.ore.name === "Void Crystal" || landedPlanet.ore.color === "#f43f5e");
       const wasBerzerk = window.lastSurfaceHitWasBerzerk !== undefined ? !!window.lastSurfaceHitWasBerzerk : isRedPlanet;
 
       const wasFrost = !!window.lastSurfaceHitWasFrost && !wasBerzerk;
@@ -17932,8 +18063,8 @@ requestAnimationFrame(gameLoop);
   function dismissBerzerkCutscene() {
     isBerzerkCutscenePlaying = false;
     origTriggerGameOver("SUIT COMPROMISED", BZ_STYLE === 'voidborn'
-      ? "Stripped to the bone by a Dark Matter berzerker - and claimed as its new host."
-      : "Torn apart and consumed by an unstable Dark Matter berzerker.");
+      ? "Stripped to the bone by a Void Slave - your husk now walks the Void as its newest slave."
+      : "Torn apart and dragged into the Void by a Void Slave.");
   }
 
   function triggerFrostDeathCutscene() {
@@ -18562,10 +18693,10 @@ requestAnimationFrame(gameLoop);
       const alpha = (bzState.timer - 3.6) / 0.6;
       ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
       const cx = Math.round(V_WIDTH / 2), cy = 55;
-      ctx.fillStyle = "#000000"; ctx.font = "bold 20px monospace"; ctx.textAlign = "center"; ctx.fillText("DARK MATTER FATALITY", cx + 2, cy + 2);
-      ctx.fillStyle = "#ef4444"; ctx.fillText("DARK MATTER FATALITY", cx - 1, cy - 1); ctx.fillText("DARK MATTER FATALITY", cx + 1, cy - 1);
-      ctx.fillStyle = "#c084fc"; ctx.fillText("DARK MATTER FATALITY", cx, cy);
-      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("CONSUMED BY AN UNSTABLE BERZERK UNIT", cx, cy + 16);
+      ctx.fillStyle = "#000000"; ctx.font = "bold 20px monospace"; ctx.textAlign = "center"; ctx.fillText("VOID FATALITY", cx + 2, cy + 2);
+      ctx.fillStyle = "#ef4444"; ctx.fillText("VOID FATALITY", cx - 1, cy - 1); ctx.fillText("VOID FATALITY", cx + 1, cy - 1);
+      ctx.fillStyle = "#c084fc"; ctx.fillText("VOID FATALITY", cx, cy);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("CONSUMED BY A VOID SLAVE", cx, cy + 16);
       ctx.restore();
     }
     if (bzState.ready && Math.floor(t / 400) % 2 === 0) {
@@ -19323,10 +19454,10 @@ requestAnimationFrame(gameLoop);
         ctx.save(); ctx.globalAlpha = a;
         const cx = Math.round(V_WIDTH / 2), cy = 70;
         ctx.font = "bold 26px monospace"; ctx.textAlign = "center";
-        ctx.fillStyle = "#000000"; ctx.fillText("VOID-BORN", cx + 2, cy + 2);
-        ctx.fillStyle = "#ef4444"; ctx.fillText("VOID-BORN", cx - 1, cy - 1); ctx.fillText("VOID-BORN", cx + 1, cy - 1);
-        ctx.fillStyle = "#c084fc"; ctx.fillText("VOID-BORN", cx, cy);
-        ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("THE DARK MATTER CLAIMS ANOTHER HOST", cx, cy + 18);
+        ctx.fillStyle = "#000000"; ctx.fillText("ENSLAVED", cx + 2, cy + 2);
+        ctx.fillStyle = "#ef4444"; ctx.fillText("ENSLAVED", cx - 1, cy - 1); ctx.fillText("ENSLAVED", cx + 1, cy - 1);
+        ctx.fillStyle = "#c084fc"; ctx.fillText("ENSLAVED", cx, cy);
+        ctx.fillStyle = "#ffffff"; ctx.font = "bold 9px monospace"; ctx.fillText("THE VOID CLAIMS ANOTHER SLAVE", cx, cy + 18);
         ctx.restore();
       }
       if (bzState.ready && Math.floor(t / 400) % 2 === 0) {
@@ -19464,6 +19595,7 @@ requestAnimationFrame(gameLoop);
         }
       }
     }
+    drawVoidEye(ox + shake, oy, px, t);
     ctx.restore();
   }
 
@@ -19761,7 +19893,7 @@ requestAnimationFrame(gameLoop);
     const isHomeWorld = !!planet.isHomeWorld || planet.name === "Home World";
     if (isHomeWorld && surfaceSentinels.length > 5) surfaceSentinels.length = 5;
     const extraCount = Math.max(0, (isHomeWorld ? 5 : 7 + Math.floor(Math.random() * 4)) - surfaceSentinels.length);   // Home World: 5, elsewhere 7-10
-    const isDarkMatter = planet.ore && planet.ore.name === "Dark Matter";
+    const isDarkMatter = planet.ore && planet.ore.name === "Void Crystal";
 
     let added = 0;
     let attempts = 0;
@@ -19907,7 +20039,7 @@ requestAnimationFrame(gameLoop);
       if (extraAlertTriggered) {
         const banner = document.getElementById("threat-banner");
         if (banner && banner.style.display === "none") { 
-          banner.style.display = "block"; banner.style.background = "rgba(153, 27, 27, 0.92)"; banner.innerText = "⚠️ COMBAT ALERT: DEFENSE SENTINELS ENGAGING ⚠️"; 
+          banner.style.display = "block"; banner.style.background = "rgba(153, 27, 27, 0.92)"; banner.innerText = isVoidWorld(landedPlanet) ? "⚠️ VOID SLAVES HUNTING YOU ⚠️" : "⚠️ COMBAT ALERT: DEFENSE SENTINELS ENGAGING ⚠️"; 
         }
       }
     }
@@ -23981,7 +24113,7 @@ requestAnimationFrame(gameLoop);
     if (!pl || pl.isHomeWorld || pl.name === "Home World") return 'crab';
     if (isCryo(pl)) return 'waddler';
     const ore = pl.ore && pl.ore.name;
-    return { "Iron": 'roller', "Titanium": 'blob', "Plasma Crystal": 'jelly', "Dark Matter": 'stalker' }[ore] || 'crab';
+    return { "Iron": 'roller', "Titanium": 'blob', "Plasma Crystal": 'jelly', "Void Crystal": 'stalker' }[ore] || 'crab';
   }
   function spawnGroup(pl, r, ang, dist) {
     const sp = speciesFor(pl);
@@ -24684,7 +24816,8 @@ requestAnimationFrame(gameLoop);
   function isHomeP(p) { return !!p && (p.isHomeWorld || p.name === 'Home World'); }
   function makePool(visor) { return { drops: [], last: 0, visor, acc: 0 }; }
   const POOL = { visor: makePool(true), glass: makePool(false) };
-  function rainLevel() { return window.__homeSky ? window.__homeSky.state.w.rain : 0; }
+  function plasmaP(p) { return !!(window.__plasmaSky && window.__plasmaSky.applies(p)); }
+  function rainLevel() { if (gameMode === 'SURFACE' && plasmaP(landedPlanet)) return window.__plasmaSky.sheltered() ? 0 : window.__plasmaSky.rain; /* no drops on the visor under the ship */ return window.__homeSky ? window.__homeSky.state.w.rain : 0; }
   // spawn rate (drops/s) + airflow (px/s, negative = streaks up the glass)
   function stepPool(P, spawn, air) {
     const now = performance.now() / 1000;
@@ -24715,17 +24848,22 @@ requestAnimationFrame(gameLoop);
     }
     P.drops = P.drops.filter(d => d.life > 0 && d.y < V_HEIGHT + 6 && d.y > -20 && d.x > -10 && d.x < V_WIDTH + 10);
   }
-  function drawPool(P, night) {
+  function drawPool(P, night, plasmaNight) {
     if (!P.drops.length) return;
     ctx.save();
     const a0 = P.visor ? 0.75 : 1;
+    const pl = plasmaNight !== undefined && plasmaNight >= 0;   // plasma rain: lilac drops, glowing green at night
+    const pk = pl ? Math.max(0, Math.min(1, (plasmaNight - 0.25) / 0.6)) : 0;
+    const TR = pl ? [Math.round(216 - 82 * pk), Math.round(180 + 59 * pk), Math.round(254 - 82 * pk)] : [210, 228, 245];
+    const LIP = pl ? [Math.round(233 - 99 * pk), Math.round(213 + 26 * pk), Math.round(255 - 83 * pk)] : [186, 215, 240];
+    if (pl && pk > 0.05) ctx.globalCompositeOperation = 'lighter';
     // trails
     ctx.lineWidth = 1;
     for (const d of P.drops) {
       if (d.trail.length < 2) continue;
       for (let i = 1; i < d.trail.length; i++) {
         const t = d.trail[i]; if (t[2] <= 0) continue;
-        ctx.strokeStyle = `rgba(210,228,245,${(0.16 * t[2] * a0).toFixed(3)})`;
+        ctx.strokeStyle = `rgba(${TR[0]},${TR[1]},${TR[2]},${(0.16 * t[2] * a0 * (1 + pk)).toFixed(3)})`;
         ctx.beginPath(); ctx.moveTo(d.trail[i - 1][0], d.trail[i - 1][1]); ctx.lineTo(t[0], t[1]); ctx.stroke();
       }
     }
@@ -24733,9 +24871,9 @@ requestAnimationFrame(gameLoop);
       const fade = Math.min(1, d.life / 1.5) * a0;
       const stretch = 1 + Math.min(2.5, Math.abs(d.vy) / 40);
       const rx = d.r, ry = d.r * stretch;
-      ctx.fillStyle = `rgba(15,23,42,${(0.28 * fade).toFixed(3)})`;           // refracted dark body
+      ctx.fillStyle = pl ? `rgba(${pk > 0.5 ? '20,83,45' : '59,7,100'},${(0.28 * fade).toFixed(3)})` : `rgba(15,23,42,${(0.28 * fade).toFixed(3)})`;           // refracted dark body
       ctx.beginPath(); ctx.ellipse(d.x, d.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = `rgba(186,215,240,${(0.32 * fade).toFixed(3)})`;        // lit lower lip
+      ctx.fillStyle = `rgba(${LIP[0]},${LIP[1]},${LIP[2]},${(0.32 * fade * (1 + pk)).toFixed(3)})`;        // lit lower lip
       ctx.beginPath(); ctx.ellipse(d.x + rx * 0.1, d.y + ry * 0.35, rx * 0.7, ry * 0.45, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = `rgba(255,255,255,${((night ? 0.4 : 0.7) * fade).toFixed(3)})`;   // specular glint
       ctx.fillRect(Math.round(d.x - rx * 0.45), Math.round(d.y - ry * 0.5), 1, 1);
@@ -24749,10 +24887,10 @@ requestAnimationFrame(gameLoop);
   window.drawHandheldBlaster = function() {
     const r = prevHand.apply(this, arguments);
     try {
-      if (gameMode === 'SURFACE' && !cabin && !surfacePassActive && isHomeP(landedPlanet)) {
+      if (gameMode === 'SURFACE' && !cabin && !surfacePassActive && (isHomeP(landedPlanet) || plasmaP(landedPlanet))) {
         const look = 1 + Math.max(0, -playerFoot.pitch) * 2.5;
         stepPool(POOL.visor, rainLevel() * 7 * look, 0);
-        drawPool(POOL.visor, nightNow());
+        drawPool(POOL.visor, nightNow(), plasmaP(landedPlanet) ? window.__plasmaSky.night : -1);
       }
     } catch (e) {}
     return r;
@@ -24812,7 +24950,7 @@ requestAnimationFrame(gameLoop);
   window.landOnPlanet = function(planet) {
     const r = prevLand.apply(this, arguments);
     try {
-      if (planet && planet.ore && planet.ore.name === "Dark Matter" && surfaceSentinels.length > 6) {
+      if (planet && planet.ore && planet.ore.name === "Void Crystal" && surfaceSentinels.length > 6) {
         const keep = 5 + (Math.random() < 0.5 ? 1 : 0);
         surfaceSentinels.splice(keep);
       }
@@ -25173,7 +25311,7 @@ requestAnimationFrame(gameLoop);
    PIRATE BUNKERS: underground hideouts dug into random planets.
    A blast-door mound or a rock-outcrop door sits well away from the ship and
    the ore nodes. Walk in with whatever gun you took off the rack and fight
-   room to room: sentinels, a Pirate Warlord, flame jets, proximity mines and
+   room to room: sentinels, a Void Slave Warlord, flame jets, proximity mines and
    tripwire alarms. Loot the crates and the Warlord's vaults.
    Progress (kills, loot, doors, alarms) is kept for the whole run, so a
    cleared bunker stays cleared - it only resets on a brand new run.
@@ -25657,7 +25795,7 @@ requestAnimationFrame(gameLoop);
     playerFoot.suitShieldRechargeTimer = 3.5;
     if (playerFoot.suitHp <= 0) {
       playerFoot.suitHp = 0; B.phase = 'dead'; stopSiren(); stopHum(); miningLaserState.active = false;
-      const D = { mine: ["BLOWN TO BITS", "Stepped on a pirate proximity mine in an underground bunker."], flame: ["WELL DONE", "Roasted by flame jets in a pirate bunker."], shot: ["BUNKER BUSTED", "Gunned down by pirate sentinels in an underground bunker."], boss: ["WARLORD'S TROPHY", "Shot down by a Pirate Warlord in his own bunker."] }[cause] || ["BUNKER BUSTED", "Died in a pirate bunker."];
+      const D = { mine: ["BLOWN TO BITS", "Stepped on a pirate proximity mine in an underground bunker."], flame: ["WELL DONE", "Roasted by flame jets in a pirate bunker."], shot: ["BUNKER BUSTED", "Gunned down by pirate sentinels in an underground bunker."], boss: ["ENSLAVED", "Cut down by the Void Warlord in the pirates' bunker - one more slave for the Void."] }[cause] || ["BUNKER BUSTED", "Died in a pirate bunker."];
       try { vibrateGamepad(700, 1, 1); } catch (e) {}
       setTimeout(() => { try { triggerGameOver(D[0], D[1]); } catch (e) {} }, 900);
     }
@@ -25675,7 +25813,7 @@ requestAnimationFrame(gameLoop);
     ship.credits += pay; runStats.creditsEarned += pay;
     try { playSfx('explosion'); vibrateGamepad(250, 0.6, 0.7); } catch (e2) {}
     gore(e);
-    if (e.boss) { addPopup(`PIRATE WARLORD DOWN! +$${pay.toLocaleString()} BOUNTY`, "#facc15"); addPopup("THE VAULTS ARE UNLOCKED", "#facc15"); try { playSfx('upgrade'); } catch (e2) {} screenShake = 0.6; }
+    if (e.boss) { addPopup(`VOID WARLORD DOWN! +$${pay.toLocaleString()} BOUNTY`, "#facc15"); addPopup("THE VAULTS ARE UNLOCKED", "#facc15"); try { playSfx('upgrade'); } catch (e2) {} screenShake = 0.6; }
     else addPopup("SENTINEL DESTROYED! +$150", "#c084fc");
     checkCleared();
   }
@@ -25735,6 +25873,7 @@ requestAnimationFrame(gameLoop);
   function damageEnemy(e, dmg) {
     if (dmg <= 0) return;
     e.hp -= dmg; e.hitT = 0.12; e.alert = true; e.lastSeen = [playerFoot.x, playerFoot.z];
+    if (B.rifleShot) { try { addRifleHole({ isBerzerk: !!e.boss, holes: e.holes || (e.holes = []) }); } catch (er) {} }   // pulse rifle: a see-through wound
     alertNear(e.x, e.z, 45);
     if (e.hp <= 0) killEnemy(e);
   }
@@ -25800,7 +25939,7 @@ requestAnimationFrame(gameLoop);
     if (w === 'rifle') {
       const wdt = burstRifleTick(dt); if (!wdt) return;
       const h = targetsInCone(0.035, RIFLE.range)[0];
-      if (h) { if (h.o.state) explodeMine(h.o, true); else damageEnemy(h.o, ship.laserDamage * wdt * 2.2); sparks(h.x, h.y, h.z, ["#fb923c", "#ffffff", "#c084fc"], 6, 18); }
+      if (h) { if (h.o.state) explodeMine(h.o, true); else { B.rifleShot = true; damageEnemy(h.o, ship.laserDamage * wdt * 2.2); B.rifleShot = false; } sparks(h.x, h.y, h.z, ["#fb923c", "#ffffff", "#c084fc"], 6, 18); }
       else { const p = rayWall(); sparks(p[0], p[1], p[2], ["#fb923c", "#fde68a"], 5, 14); }
       alertNear(playerFoot.x, playerFoot.z, 60);
       return;
@@ -25821,7 +25960,7 @@ requestAnimationFrame(gameLoop);
       e.hitT = Math.max(0, e.hitT - dt);
       const d = Math.hypot(px - e.x, pz - e.z);
       const seen = d < (e.boss ? 120 : 95) && los(e.x, e.z, px, pz);
-      if (e.boss && !B.bossAwake) { if (seen && d < 70) { B.bossAwake = true; e.alert = true; addPopup("THE PIRATE WARLORD IS AWAKE!", "#f43f5e"); try { playSfx('boss'); } catch (er) {} } else continue; }
+      if (e.boss && !B.bossAwake) { if (seen && d < 70) { B.bossAwake = true; e.alert = true; addPopup("THE VOID WARLORD IS AWAKE!", "#c084fc"); try { playSfx('boss'); } catch (er) {} } else continue; }
       if (seen) { if (!e.alert) { e.alert = true; tone('square', 900, 1300, 0.12, 0.04); } e.lastSeen = [px, pz]; e.lostT = 0; }
       else if (e.alert) { e.lostT += dt; if (e.lostT > 12) { e.alert = false; e.lastSeen = null; } }
       let mx = 0, mz = 0;
@@ -25982,7 +26121,7 @@ requestAnimationFrame(gameLoop);
       const pay = (lo, hi) => { const cr = Math.round((lo + Math.random() * (hi - lo)) * profit() / 10) * 10; ship.credits += cr; runStats.creditsEarned += cr; return cr; };
       const take = () => { l.gone = true; B.p.done.add(l.id); checkCleared(); };
       if (l.kind === 'V') {
-        if (B.enemies.some(e => e.boss)) return { label: "LOCKED", banner: ">> WARLORD'S VAULT: TIME-LOCKED WHILE THE WARLORD LIVES <<", run: () => { addPopup("TAKE OUT THE PIRATE WARLORD FIRST", "#f43f5e"); tone('square', 220, 160, 0.2, 0.05); } };
+        if (B.enemies.some(e => e.boss)) return { label: "LOCKED", banner: ">> WARLORD'S VAULT: TIME-LOCKED WHILE THE WARLORD LIVES <<", run: () => { addPopup("TAKE OUT THE VOID WARLORD FIRST", "#f43f5e"); tone('square', 220, 160, 0.2, 0.05); } };
         return { label: "CRACK VAULT", banner: ">> WARLORD'S VAULT: TAP CRACK VAULT <<", run: () => { take(); try { playSfx('upgrade'); playSfx('coin'); vibrateGamepad(300, 0.6, 0.6); } catch (e) {} addPopup(`VAULT CRACKED: +$${pay(4000, 6000).toLocaleString()} IN STOLEN CREDITS!`, "#facc15"); } };
       }
       if (l.kind === 'C') return { label: "OPEN CRATE", banner: ">> PIRATE STASH: TAP OPEN CRATE <<", run: () => { take(); try { playSfx('coin'); vibrateGamepad(120, 0.3, 0.4); } catch (e) {} addPopup(`PIRATE STASH: +$${pay(900, 1600).toLocaleString()}`, "#4ade80"); } };
@@ -26212,14 +26351,20 @@ requestAnimationFrame(gameLoop);
     const hit = e.hitT > 0;
     const col = hit ? "#ffffff" : (boss ? (e.alert ? "#f43f5e" : "#facc15") : (e.alert ? "#ef4444" : "#c084fc"));
     if (e.warp > 0) ctx.globalAlpha *= Math.max(0.2, 1 - e.warp / 0.6);
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (e.holes && e.holes.length) { renderHoledSprite(spr, cols, px, col, "#ffffff", e.holes); ctx.drawImage(HOLE_CV, 0, 0, w, h, ox, oy, w, h); }
+    else for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const ch = spr[r][c];
       if (ch === '#') { ctx.fillStyle = col; ctx.fillRect(ox + c * px, oy + r * px, px, px); }
       else if (ch === '.') { ctx.fillStyle = "#ffffff"; ctx.fillRect(ox + c * px, oy + r * px, px, px); }
     }
-    if (boss && s > 2) {   // the Warlord's crown of spikes
-      ctx.fillStyle = "#facc15"; for (let i = 0; i < 3; i++) ctx.fillRect(ox + (1.5 + i * 2.2) * px, oy - px * 1.4, px, px * 1.4);
+    if (boss && s > 2) {   // the Void Warlord's crown of spikes, dark violet with glowing tips
+      for (let i = 0; i < 3; i++) {
+        const sx = ox + (1.5 + i * 2.2) * px, tall = i === 1 ? 2 : 1.4;
+        ctx.fillStyle = "#581c87"; ctx.fillRect(sx, oy - px * tall, px, px * tall);
+        ctx.fillStyle = "#e879f9"; ctx.fillRect(sx, oy - px * tall, px, Math.max(1, px * 0.4));
+      }
     }
+    if (boss && !hit) drawVoidEye(ox, oy, px, performance.now());   // a Void Slave warlord: purple eye bar + void-fire
     if (e.hp < e.max) {
       const bw = Math.max(16, w);
       ctx.fillStyle = "#1e293b"; ctx.fillRect(Math.round(x - bw / 2), oy - 6, bw, 3);
@@ -27411,6 +27556,528 @@ requestAnimationFrame(gameLoop);
     return r;
   };
   window.__outpost3d = { faces: F.length, F, frame, toL, toW: (p) => { const s = frame(); return s ? toW(s, p) : null; } };
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   PLASMA CRYSTAL WORLDS: violet day/night cycle, purple clouds crackling with
+   static plasma, and random PLASMA STORMS. In a storm, bolts slam into the
+   ground around you (a glowing ring warns you first) and static charge builds
+   on your suit. You're safe inside the ship or standing under its belly -
+   bolts that would have hit you there strike the hull instead.
+   Only the sky, light and weather change: ground, nodes, critters stay as is.
+   ========================================================================== */
+(function() {
+  const DAY_LEN = 420;
+  const S = {
+    t: 0.32, w: { cloud: 0.35, storm: 0, charge: 0.25, rain: 0 }, tgt: { cloud: 0.35, storm: 0, charge: 0.25, rain: 0 }, drops: [], splashes: [],
+    state: 'calm', stateT: 60, flash: 0, flashC: [240, 171, 252],
+    zaps: [], nextZap: 1, skyBolt: null, skyBoltT: 0, nextSkyBolt: 4,
+    strikes: [], scorches: [], nextStrike: 3, charge: 0, chargeZaps: 0, lastCloudPos: [], key: ''
+  };
+  const WEATHER = {
+    calm:    { cloud: 0.35, storm: 0,    charge: 0.25, rain: 0 },
+    charged: { cloud: 0.75, storm: 0.05, charge: 0.75, rain: 0 },
+    brewing: { cloud: 0.95, storm: 0.5,  charge: 1,    rain: 0.35 },
+    storm:   { cloud: 1,    storm: 1,    charge: 1,    rain: 1 }
+  };
+  function setWeather(name, quiet) {
+    const was = S.state; S.state = name; S.tgt = WEATHER[name];
+    if (name === 'calm') S.stateT = 25 + Math.random() * 25;
+    else if (name === 'charged') S.stateT = 18 + Math.random() * 17;
+    else if (name === 'brewing') S.stateT = 12;
+    else if (name === 'storm') { S.stateT = 30 + Math.random() * 20; S.nextStrike = 1.5; }
+    if (quiet || !onPlasma() || cabinOrBunker()) return;
+    try {
+      if (name === 'brewing') addPopup("⚡ PLASMA STORM BUILDING - GET UNDER YOUR SHIP!", "#f0abfc");
+      else if (name === 'storm') addPopup("⚡ PLASMA STORM! TAKE COVER!", "#f472b6");
+      else if (was === 'storm') addPopup("PLASMA STORM PASSING", "#c4b5fd");
+    } catch (e) {}
+  }
+  function nextWeather() {
+    if (S.state === 'brewing') return 'storm';
+    if (S.state === 'storm') return Math.random() < 0.6 ? 'charged' : 'calm';
+    if (S.forceStorm || Math.random() < (S.state === 'charged' ? 0.9 : 0.6)) { S.forceStorm = false; return 'brewing'; }
+    return S.state === 'calm' ? 'charged' : 'calm';
+  }
+
+  // ---------- helpers ----------
+  function hex(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  function mix(a, b, k) { return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]; }
+  function css(c, a) { return a === undefined ? `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})` : `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const sm = (a, b, v) => { const k = clamp01((v - a) / (b - a)); return k * k * (3 - 2 * k); };
+  const KEYS = [   // sun elevation -> sky top / mid / horizon, all in the planet's violets
+    [-0.40, hex('#05010d'), hex('#0d0420'), hex('#1a0838')],
+    [-0.14, hex('#10052a'), hex('#2a0c4f'), hex('#4c1d6e')],
+    [-0.03, hex('#2a0f5c'), hex('#7e2a8a'), hex('#f472b6')],
+    [ 0.06, hex('#3b1580'), hex('#a855f7'), hex('#f0abfc')],
+    [ 0.20, hex('#4c1d95'), hex('#9d5cf0'), hex('#e9d5ff')],
+    [ 0.55, hex('#5b21b6'), hex('#a78bfa'), hex('#f3e8ff')]
+  ];
+  function skyAt(e) {
+    if (e <= KEYS[0][0]) return KEYS[0].slice(1);
+    for (let i = 1; i < KEYS.length; i++) if (e <= KEYS[i][0]) { const a = KEYS[i - 1], b = KEYS[i], k = (e - a[0]) / (b[0] - a[0]); return [mix(a[1], b[1], k), mix(a[2], b[2], k), mix(a[3], b[3], k)]; }
+    return KEYS[KEYS.length - 1].slice(1);
+  }
+  function sunElev() { return Math.sin((S.t - 0.25) * Math.PI * 2); }
+  function sunDir() { return { az: -Math.PI / 2 + (S.t - 0.25) * Math.PI * 2, el: sunElev() * 0.95 }; }
+
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const STARS = []; for (let i = 0; i < 150; i++) STARS.push({ az: rnd() * Math.PI * 2, el: 0.05 + Math.pow(rnd(), 0.7) * 1.35, b: 0.35 + rnd() * 0.65, big: rnd() < 0.08, tw: rnd() * 6, pink: rnd() < 0.35 });
+  const CLOUDS = [];
+  for (let i = 0; i < 16; i++) {
+    const puffs = [], n = 3 + Math.floor(rnd() * 4);
+    for (let j = 0; j < n; j++) puffs.push({ dx: (j - (n - 1) / 2) * (0.55 + rnd() * 0.3), dy: -rnd() * 0.45, r: 0.55 + rnd() * 0.55 });
+    CLOUDS.push({ az: rnd() * Math.PI * 2, el: 0.05 + rnd() * 0.42, size: 0.75 + rnd() * 0.8, puffs, order: rnd(), glow: 0 });
+  }
+  CLOUDS.sort((a, b) => a.order - b.order);
+  function projDir(az, el) { const D = 20000, ce = Math.cos(el); return projectSurface(playerFoot.x + Math.sin(az) * ce * D, playerFoot.y - Math.sin(el) * D, playerFoot.z + Math.cos(az) * ce * D); }
+  function jag(n, amp) { const p = []; let x = 0; for (let i = 0; i < n; i++) { x += (Math.random() - 0.5) * amp; p.push(x); } return p; }
+
+  const skyCv = document.createElement('canvas'); let sg = skyCv.getContext('2d'); const SK = 2;
+  let F = null;
+
+  // ---------- where am I / am I covered ----------
+  function onPlasma() { return gameMode === 'SURFACE' && landedPlanet && !(landedPlanet.isHomeWorld || landedPlanet.name === 'Home World') && landedPlanet.ore && landedPlanet.ore.name === 'Plasma Crystal'; }
+  function cabinOrBunker() { return !!cabin || !!(window.__bunker && (window.__bunker.state || window.__bunker.cut)); }
+  function underShip() { return Math.abs(playerFoot.x) < 12.5 && playerFoot.z > -50 && playerFoot.z < 44 && playerFoot.y > -14; }
+  function sheltered() { return cabinOrBunker() || underShip(); }
+  function onFootHere() { return onPlasma() && !cabinOrBunker() && !(typeof landingSeq !== 'undefined' && landingSeq) && !(typeof takeoffSeq !== 'undefined' && takeoffSeq) && !gameOver; }
+
+  function frameState() {
+    const e = sunElev(), w = S.w;
+    const night = 1 - sm(-0.22, 0.02, e), golden = sm(-0.12, 0.0, e) * (1 - sm(0.08, 0.22, e));
+    let [top, mid, low] = skyAt(e);
+    const over = clamp01(w.cloud * 0.45 + w.storm * 0.5);
+    const lum = 0.3 + 0.7 * (1 - night);
+    const dark = [hex('#2e1065'), hex('#4a1d6e'), hex('#6b2a7a')].map(c => c.map(v => v * lum * (1 - w.storm * 0.35)));
+    top = mix(top, dark[0], over); mid = mix(mid, dark[1], over); low = mix(low, dark[2], over * 0.8);
+    let tintA = night * 0.72 + golden * 0.16 + w.storm * 0.32 + w.cloud * 0.05;
+    tintA = Math.min(0.8, tintA) * (1 - S.flash * 0.8);
+    const tintC = mix(mix(hex('#86198f'), hex('#12052a'), night), hex('#1e0b3a'), clamp01(w.storm) * (1 - night));
+    return { e, night, golden, top, mid, low, tintA, tintC, over, mountain: landedPlanet.ore.darkColor, ground: [landedPlanet.ore.darkColor] };
+  }
+
+  function drawSkyLayer(hY) {
+    const W = V_WIDTH, H = V_HEIGHT;
+    if (skyCv.width !== W * SK || skyCv.height !== H * SK) { skyCv.width = W * SK; skyCv.height = H * SK; sg = skyCv.getContext('2d'); }
+    const g = sg; g.setTransform(SK, 0, 0, SK, 0, 0);
+    const w = S.w, now = performance.now() / 1000;
+    const span = H * 0.55, gr = g.createLinearGradient(0, hY - span, 0, hY);
+    gr.addColorStop(0, css(F.top)); gr.addColorStop(0.6, css(F.mid)); gr.addColorStop(1, css(F.low));
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    // aurora-ish shimmer on charged skies
+    if (w.charge > 0.4) {
+      const a = (w.charge - 0.4) * 0.22 * (0.6 + 0.4 * Math.sin(now * 0.7));
+      const ag = g.createLinearGradient(0, hY - span * 0.9, 0, hY - span * 0.3);
+      ag.addColorStop(0, 'rgba(240,171,252,0)'); ag.addColorStop(0.5, `rgba(240,171,252,${a.toFixed(3)})`); ag.addColorStop(1, 'rgba(240,171,252,0)');
+      g.fillStyle = ag; g.fillRect(0, 0, W, H);
+    }
+    const sd = sunDir(), sunP = projDir(sd.az, Math.max(-0.2, sd.el));
+    if (F.golden > 0.02 && sunP) {
+      const rg = g.createRadialGradient(sunP.x, hY, 0, sunP.x, hY, W * 0.55);
+      rg.addColorStop(0, `rgba(244,114,182,${0.55 * F.golden * (1 - F.over * 0.7)})`); rg.addColorStop(1, 'rgba(244,114,182,0)');
+      g.fillStyle = rg; g.fillRect(0, 0, W, H);
+    }
+    const starA = sm(0.25, 0.85, F.night) * (1 - clamp01(w.cloud * 0.9 - 0.15));
+    if (starA > 0.03) {
+      const spin = S.t * Math.PI * 2 * 0.25;
+      for (const st of STARS) {
+        const p = projDir(st.az + spin, st.el);
+        if (!p || p.x < -2 || p.x > W + 2 || p.y < -2 || p.y > hY - 3) continue;
+        const a = starA * st.b * (0.75 + 0.25 * Math.sin(now * 2.3 + st.tw));
+        g.fillStyle = st.pink ? `rgba(240,171,252,${a.toFixed(3)})` : `rgba(243,232,255,${a.toFixed(3)})`;
+        const s = st.big ? 1.5 : 1; g.fillRect(Math.round(p.x), Math.round(p.y), s, s);
+      }
+    }
+    // violet sun
+    const sunVis = 1 - clamp01(w.cloud * 0.7 + w.storm * 0.4 - 0.1);
+    if (sd.el > -0.08 && sunP && sunP.y < hY + 12) {
+      const R = 9 + F.golden * 3;
+      const halo = g.createRadialGradient(sunP.x, sunP.y, R * 0.6, sunP.x, sunP.y, R * 4.8);
+      halo.addColorStop(0, `rgba(232,121,249,${0.55 * sunVis})`); halo.addColorStop(1, 'rgba(232,121,249,0)');
+      g.fillStyle = halo; g.fillRect(sunP.x - R * 5, sunP.y - R * 5, R * 10, R * 10);
+      g.globalAlpha = 0.25 + 0.75 * sunVis;
+      g.fillStyle = F.golden > 0.3 ? '#fbcfe8' : '#fdf4ff'; g.beginPath(); g.arc(sunP.x, sunP.y, R, 0, Math.PI * 2); g.fill();
+      g.fillStyle = F.golden > 0.3 ? '#e879f9' : '#f5d0fe'; g.beginPath(); g.arc(sunP.x, sunP.y, R * 0.72, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+    }
+    // lilac moon
+    const mP = projDir(sd.az + Math.PI, -sd.el * 0.62 + 0.1);
+    if (mP && mP.y < hY + 10) {
+      const R = 9, a = (0.3 + 0.7 * F.night) * (1 - clamp01(w.cloud * 0.7 - 0.1));
+      if (F.night > 0.2) { const halo = g.createRadialGradient(mP.x, mP.y, R, mP.x, mP.y, R * 4); halo.addColorStop(0, `rgba(216,180,254,${0.32 * a})`); halo.addColorStop(1, 'rgba(216,180,254,0)'); g.fillStyle = halo; g.fillRect(mP.x - R * 4, mP.y - R * 4, R * 8, R * 8); }
+      g.globalAlpha = a;
+      g.fillStyle = '#e9d5ff'; g.beginPath(); g.arc(mP.x, mP.y, R, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#a855f7';
+      g.beginPath(); g.arc(mP.x - 2.5, mP.y - 1.5, 2.2, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(mP.x + 2.8, mP.y + 2.6, 1.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(mP.x + 3, mP.y - 3.2, 1.1, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+    }
+    // distant plasma bolt, sky to horizon, in storms
+    if (S.skyBolt && S.skyBoltT > 0) {
+      const b = S.skyBolt, p0 = projDir(b.az, 0.55);
+      if (p0) {
+        g.save(); g.globalAlpha = Math.min(1, S.skyBoltT * 6); g.strokeStyle = '#fae8ff'; g.lineWidth = 1.6; g.shadowColor = '#e879f9'; g.shadowBlur = 10;
+        g.beginPath(); const yTop = Math.min(p0.y, hY - 60), dy = (hY - yTop) / b.pts.length; g.moveTo(p0.x, yTop);
+        for (let i = 0; i < b.pts.length; i++) g.lineTo(p0.x + b.pts[i] * 14, yTop + dy * (i + 1));
+        g.stroke(); g.restore();
+      }
+    }
+    // purple clouds, glowing where they discharge
+    const nC = Math.round(4 + w.cloud * 12);
+    const lit = mix(mix(hex('#ead7ff'), hex('#f5b8f0'), F.golden), hex('#3b1a5c'), F.night * 0.85);
+    const body = mix(lit, mix(hex('#7e5aa8'), hex('#3b0764'), w.storm), clamp01(w.cloud * 0.45 + w.storm * 0.5));
+    const under = mix(body, hex('#1e0533'), 0.3 + w.storm * 0.3);
+    const cA = 0.55 + 0.4 * clamp01(w.cloud) + S.flash * 0.25;
+    const pos = [];
+    for (let i = 0; i < nC && i < CLOUDS.length; i++) {
+      const c = CLOUDS[i], p = projDir(c.az, c.el);
+      if (!p || p.y > hY + 4) continue;
+      const k = p.scale * 20000 * 0.11 * c.size * (0.55 + c.el * 1.4) * (1 + w.cloud * 0.35);
+      if (p.x < -k * 4 || p.x > W + k * 4) continue;
+      pos.push({ i, x: p.x, y: p.y, k });
+      g.globalAlpha = Math.min(0.95, cA);
+      g.fillStyle = css(under);
+      for (const q of c.puffs) { g.beginPath(); g.ellipse(p.x + q.dx * k, p.y + q.dy * k * 0.5 + k * 0.12, q.r * k, q.r * k * 0.45, 0, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = css(body);
+      for (const q of c.puffs) { g.beginPath(); g.ellipse(p.x + q.dx * k, p.y + q.dy * k * 0.5, q.r * k * 0.92, q.r * k * 0.4, 0, 0, Math.PI * 2); g.fill(); }
+      if (c.glow > 0.01) {   // lit from inside by a discharge
+        g.globalAlpha = 1; g.globalCompositeOperation = 'lighter';
+        const gg = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, k * 1.8);
+        gg.addColorStop(0, `rgba(240,171,252,${(c.glow * 0.7).toFixed(3)})`); gg.addColorStop(1, 'rgba(240,171,252,0)');
+        g.fillStyle = gg; g.fillRect(p.x - k * 2, p.y - k * 2, k * 4, k * 4);
+        g.globalCompositeOperation = 'source-over';
+      }
+    }
+    S.lastCloudPos = pos;
+    g.globalAlpha = 1;
+    // static arcs crawling through / between clouds
+    for (const z of S.zaps) {
+      const c = pos.find(q => q.i === z.cloud); if (!c) continue;
+      const a = Math.min(1, z.t * 8);
+      g.save(); g.globalAlpha = a; g.strokeStyle = '#fdf4ff'; g.lineWidth = 1.1; g.shadowColor = '#e879f9'; g.shadowBlur = 6;
+      g.beginPath();
+      const x0 = c.x + z.a * c.k, y0 = c.y + z.ay * c.k * 0.4, x1 = c.x + z.b * c.k, y1 = c.y + z.by * c.k * 0.4 + (z.down ? c.k * 0.9 : 0);
+      g.moveTo(x0, y0);
+      for (let i = 0; i < z.pts.length; i++) { const f = (i + 1) / (z.pts.length + 1); g.lineTo(x0 + (x1 - x0) * f + z.pts[i] * c.k * 0.12, y0 + (y1 - y0) * f + z.pts[(i + 3) % z.pts.length] * c.k * 0.08); }
+      g.lineTo(x1, y1); g.stroke(); g.restore();
+    }
+    if (S.flash > 0.02) { g.fillStyle = css(S.flashC, (S.flash * 0.4).toFixed(3)); g.fillRect(0, 0, W, H); }
+  }
+
+  // ---------- audio ----------
+  let zapBuf = null, crackBuf = null, humSrc = null, humGain = null, humBuf = null;
+  function bus() { try { return (typeof sfxBus !== 'undefined' && sfxBus) ? sfxBus : audioOut(); } catch (e) { return null; } }
+  function bufs() {
+    if (!actx) return false;
+    const sr = 22050;
+    if (!zapBuf) {
+      const n = Math.floor(sr * 1.4); zapBuf = actx.createBuffer(1, n, sr); const d = zapBuf.getChannelData(0); let lp = 0;
+      for (let i = 0; i < n; i++) { const t = i / sr, x = Math.random() * 2 - 1; lp = lp * 0.92 + x * 0.08;
+        const crack = t < 0.12 ? x * (1 - t / 0.12) * 1.2 : 0, buzz = Math.sign(Math.sin(t * 2 * Math.PI * (120 - t * 40))) * 0.18 * Math.exp(-t * 5);
+        const sizzle = (Math.random() < 0.06 ? x : 0) * Math.exp(-t * 2.5);
+        d[i] = crack + lp * 3 * Math.exp(-t * 2.2) + buzz + sizzle * 0.7; }
+    }
+    if (!crackBuf) {
+      const n = Math.floor(sr * 0.35); crackBuf = actx.createBuffer(1, n, sr); const d = crackBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) { const t = i / sr; d[i] = (Math.random() < 0.25 ? Math.random() * 2 - 1 : 0) * Math.exp(-t * 9) * 0.9; }
+    }
+    if (!humBuf) {
+      const n = sr * 2; humBuf = actx.createBuffer(1, n, sr); const d = humBuf.getChannelData(0); let lp = 0;
+      for (let i = 0; i < n; i++) { const t = i / sr; lp = lp * 0.97 + (Math.random() * 2 - 1) * 0.03; d[i] = lp * 4 + Math.sin(t * 2 * Math.PI * 55) * 0.12 + Math.sin(t * 2 * Math.PI * 110) * 0.05 + (Math.random() < 0.004 ? (Math.random() * 2 - 1) * 0.5 : 0); }
+      for (let i = 0; i < 600; i++) { const k = i / 600; d[i] = d[i] * k + d[n - 600 + i] * (1 - k); }
+    }
+    return true;
+  }
+  function play(buf, vol, rate, delay, lpHz) {
+    if (!actx || actx.state !== 'running' || !bufs()) return; const out = bus(); if (!out) return;
+    const s = actx.createBufferSource(); s.buffer = buf === 'zap' ? zapBuf : crackBuf; s.playbackRate.value = rate || 1;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpHz || 6000;
+    const gn = actx.createGain(); gn.gain.value = vol; s.connect(lp); lp.connect(gn); gn.connect(out); s.start(actx.currentTime + (delay || 0));
+  }
+  let rainSrc = null, rainGain = null, rainBuf = null;
+  function rainAudio(level) {
+    if (!actx || actx.state !== 'running') return; const out = bus(); if (!out) return;
+    if (!rainBuf) {
+      const sr = 22050, n = sr * 2; rainBuf = actx.createBuffer(1, n, sr); const d = rainBuf.getChannelData(0); let last = 0;
+      for (let i = 0; i < n; i++) { const x = Math.random() * 2 - 1; last = last * 0.6 + x * 0.4; d[i] = last * (0.7 + (Math.random() < 0.002 ? 1.5 : 0)); }
+      for (let i = 0; i < 800; i++) { const k = i / 800; d[i] = d[i] * k + d[n - 800 + i] * (1 - k); }
+    }
+    if (level > 0.02 && !rainSrc) {
+      rainSrc = actx.createBufferSource(); rainSrc.buffer = rainBuf; rainSrc.loop = true;
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.5;
+      rainGain = actx.createGain(); rainGain.gain.value = 0; rainSrc.connect(bp); bp.connect(rainGain); rainGain.connect(out); rainSrc.start();
+    }
+    if (rainGain) rainGain.gain.setTargetAtTime(Math.max(0, level) * 0.15, actx.currentTime, 0.4);
+    if (level <= 0.02 && rainSrc && rainGain && rainGain.gain.value < 0.003) { try { rainSrc.stop(); } catch (e) {} rainSrc = null; rainGain = null; }
+  }
+  function hum(level) {
+    if (!actx || actx.state !== 'running') return; const out = bus(); if (!out || !bufs()) return;
+    if (level > 0.02 && !humSrc) {
+      humSrc = actx.createBufferSource(); humSrc.buffer = humBuf; humSrc.loop = true;
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+      humGain = actx.createGain(); humGain.gain.value = 0; humSrc.connect(lp); lp.connect(humGain); humGain.connect(out); humSrc.start();
+    }
+    if (humGain) humGain.gain.setTargetAtTime(Math.max(0, level) * 0.14, actx.currentTime, 0.5);
+    if (level <= 0.02 && humSrc && humGain && humGain.gain.value < 0.003) { try { humSrc.stop(); } catch (e) {} humSrc = null; humGain = null; }
+  }
+
+  // ---------- damage (plasma, not sentinels) ----------
+  function hurt(dmg, why) {
+    if (gameOver) return;
+    try { screenShake = Math.max(screenShake, 0.3); flashEffect = Math.max(flashEffect, 0.25); vibrateGamepad(260, 0.8, 0.9); } catch (e) {}
+    if (playerFoot.suitShield > 0) { try { playSfx('shield'); } catch (e) {} playerFoot.suitShield -= dmg; if (playerFoot.suitShield < 0) { playerFoot.suitHp += playerFoot.suitShield; playerFoot.suitShield = 0; } }
+    else { try { playSfx('hullClang'); } catch (e) {} playerFoot.suitHp -= dmg; }
+    playerFoot.suitShieldRechargeTimer = 3.5;
+    if (playerFoot.suitHp <= 0) { playerFoot.suitHp = 0; try { vibrateGamepad(700, 1, 1); triggerGameOver("FRIED BY A PLASMA STORM", why || "A plasma bolt cooked your suit. Should've sheltered under the ship.", "#e879f9"); } catch (e) {} }
+  }
+  function sparks(x, y, z, n, col) {
+    try { for (let i = 0; i < n; i++) particles.push({ x: x + (Math.random() - 0.5) * 2, y: y - Math.random() * 2, z: z + (Math.random() - 0.5) * 2, is3D: true, vx: (Math.random() - 0.5) * 34, vy: -8 - Math.random() * 30, vz: (Math.random() - 0.5) * 34, life: 0.45 + Math.random() * 0.4, maxLife: 0.85, color: col || (Math.random() < 0.5 ? '#f0abfc' : '#fdf4ff') }); } catch (e) {}
+  }
+
+  // ---------- ground strikes ----------
+  function planStrike() {
+    const px = playerFoot.x, pz = playerFoot.z, hiding = underShip();
+    let x, z, roof = false;
+    if (Math.random() < 0.65) {
+      if (hiding) { roof = true; x = (Math.random() - 0.5) * 14; z = -40 + Math.random() * 80; }
+      else {
+        const a = Math.random() * Math.PI * 2, r = Math.random() < 0.35 ? Math.random() * 4 : 8 + Math.random() * 22;
+        const lead = 0.6; let mx = 0, mz = 0;
+        if (S.lastP) { mx = (px - S.lastP[0]) * lead * 60; mz = (pz - S.lastP[1]) * lead * 60; }
+        x = px + Math.cos(a) * r + Math.max(-10, Math.min(10, mx)); z = pz + Math.sin(a) * r + Math.max(-10, Math.min(10, mz));
+      }
+    } else { const a = Math.random() * Math.PI * 2, r = 40 + Math.random() * 180; x = px + Math.cos(a) * r; z = pz + Math.sin(a) * r; }
+    // never strike under the ship's belly: those land on the hull
+    if (!roof && Math.abs(x) < 12.5 && z > -50 && z < 44) { roof = true; }
+    const y = roof ? -26 : 0;
+    S.strikes.push({ x, z, y, roof, warn: roof ? 0.6 : 1.15, hit: 0, pts: jag(14, 1.3), bran: jag(6, 1.6) });
+  }
+  function strikeHit(s) {
+    s.hit = 0.35;
+    const d = Math.hypot(playerFoot.x - s.x, playerFoot.z - s.z);
+    S.flash = Math.max(S.flash, Math.max(0.25, 1 - d / 120)); S.flashC = [240, 171, 252];
+    play('zap', Math.max(0.12, 0.75 - d / 260), 0.85 + Math.random() * 0.3, 0, d < 40 ? 7000 : 2200);
+    sparks(s.x, s.y, s.z, s.roof ? 14 : 22);
+    if (!s.roof) S.scorches.push({ x: s.x, z: s.z, t: 14, r: 5 + Math.random() * 2 });
+    if (d < 40) { try { screenShake = Math.max(screenShake, 0.25 * (1 - d / 40)); } catch (e) {} }
+    if (!s.roof && d < 9 && !sheltered()) hurt(d < 3.5 ? 30 : 20, "A plasma bolt hit right where you stood. Get under the ship when the sky turns!");
+  }
+
+  // ---------- step ----------
+  function step(dt) {
+    dt = Math.min(0.1, Math.max(0, dt || 0));
+    const here = onPlasma();
+    if (here) { const k = planetKey(); if (k !== S.key) { S.key = k; S.t = 0.3 + Math.random() * 0.15; setWeather('charged', true); S.stateT = 20 + Math.random() * 25; S.forceStorm = true; /* first storm rolls in within a minute of landing */ for (const q in S.w) S.w[q] = S.tgt[q]; S.strikes.length = 0; S.scorches.length = 0; S.charge = 0; } }
+    const e = sunElev();
+    S.t = (S.t + dt / DAY_LEN * (e < -0.15 ? 1.7 : 1)) % 1;
+    S.stateT -= dt; if (S.stateT <= 0) setWeather(nextWeather());
+    const rate = S.state === 'storm' || S.state === 'brewing' ? 0.16 : 0.06;
+    for (const k in S.w) { const d = S.tgt[k] - S.w[k]; S.w[k] += Math.sign(d) * Math.min(Math.abs(d), dt * rate); }
+    S.flash = Math.max(0, S.flash - dt * 3); S.skyBoltT = Math.max(0, S.skyBoltT - dt);
+    for (const c of CLOUDS) c.glow = Math.max(0, c.glow - dt * 3.5);
+    // static discharges inside the clouds
+    S.nextZap -= dt;
+    if (S.nextZap <= 0) {
+      S.nextZap = (0.35 + Math.random() * 1.6) / (0.4 + S.w.charge + S.w.storm);
+      const vis = S.lastCloudPos; if (vis && vis.length) {
+        const c = vis[Math.floor(Math.random() * vis.length)];
+        S.zaps.push({ cloud: c.i, t: 0.12 + Math.random() * 0.14, a: (Math.random() - 0.5) * 2.2, ay: (Math.random() - 0.5), b: (Math.random() - 0.5) * 2.2, by: (Math.random() - 0.5), down: S.w.storm > 0.4 && Math.random() < 0.3, pts: jag(7, 1.6) });
+        CLOUDS[c.i].glow = 0.6 + Math.random() * 0.4;
+        if (here && !cabinOrBunker() && Math.random() < 0.55) play('crack', 0.1 + S.w.charge * 0.1, 0.8 + Math.random() * 0.5, 0.05 + Math.random() * 0.3, 3000);
+      }
+    }
+    for (const z of S.zaps) z.t -= dt; S.zaps = S.zaps.filter(z => z.t > 0);
+    // distant bolts in storms
+    if (S.w.storm > 0.5) {
+      S.nextSkyBolt -= dt;
+      if (S.nextSkyBolt <= 0) { S.nextSkyBolt = 1.5 + Math.random() * 4; S.skyBolt = { az: playerFoot.yaw + (Math.random() - 0.5) * 2.4, pts: jag(9, 1.6) }; S.skyBoltT = 0.25; S.flash = Math.max(S.flash, 0.35); if (here) play('zap', 0.12, 0.6, 0.4 + Math.random() * 1.5, 900); }
+    }
+    hum(here ? S.w.storm * (cabinOrBunker() ? 0.35 : 1) : 0);
+    rainAudio(here && !(window.__bunker && (window.__bunker.state || window.__bunker.cut)) ? S.w.rain * (cabin ? 0.45 : 1) : 0);
+    if (!here) return;
+    // plasma rain (screen space, same as the Home World's)
+    const want = Math.round(S.w.rain * 150);
+    while (S.drops.length < want) S.drops.push({ x: Math.random() * (V_WIDTH + 80) - 40, y: Math.random() * V_HEIGHT, v: 0.8 + Math.random() * 0.5, l: 0.6 + Math.random() * 0.6 });
+    if (S.drops.length > want) S.drops.length = want;
+    const slant = 0.18 + S.w.storm * 0.25;
+    for (const d of S.drops) {
+      d.y += 330 * d.v * dt; d.x += 330 * d.v * slant * dt;
+      if (d.y > V_HEIGHT + 10) { d.y = -10 - Math.random() * 30; d.x = Math.random() * (V_WIDTH + 80) - 80; if (Math.random() < 0.5) S.splashes.push({ x: Math.random() * V_WIDTH, f: Math.random(), t: 0.18 }); }
+      if (d.x > V_WIDTH + 40) d.x -= V_WIDTH + 80;
+    }
+    for (const sp of S.splashes) sp.t -= dt;
+    S.splashes = S.splashes.filter(sp => sp.t > 0);
+    const foot = onFootHere();
+    // ground strikes during the storm
+    if (S.w.storm > 0.7 && foot) {
+      S.nextStrike -= dt;
+      if (S.nextStrike <= 0) { S.nextStrike = 2.2 + Math.random() * 3.3; planStrike(); }
+    }
+    for (const s of S.strikes) {
+      if (s.warn > 0) { s.warn -= dt; if (s.warn <= 0) strikeHit(s); }
+      else s.hit -= dt;
+    }
+    S.strikes = S.strikes.filter(s => s.warn > 0 || s.hit > 0);
+    for (const s of S.scorches) s.t -= dt; S.scorches = S.scorches.filter(s => s.t > 0);
+    // static charge builds on an exposed suit in a storm
+    if (foot && S.w.storm > 0.7 && !sheltered()) {
+      S.charge += dt / 7;
+      if (S.charge >= 1) { S.charge = 0; S.flash = Math.max(S.flash, 0.5); play('zap', 0.55, 1.3, 0, 7000); sparks(playerFoot.x, playerFoot.y + 4, playerFoot.z, 16); hurt(12, "Static charge built up on your suit until it arced through you."); try { addPopup("⚡ STATIC DISCHARGE! GET UNDER THE SHIP", "#f472b6"); } catch (e) {} }
+    } else S.charge = Math.max(0, S.charge - dt * (sheltered() ? 0.6 : 0.25));
+    S.lastP = [playerFoot.x, playerFoot.z];
+  }
+  function planetKey() { const pl = landedPlanet; return pl ? (pl.name || '') + ':' + (pl.x | 0) + ':' + (pl.z | 0) : ''; }
+
+  // ---------- 3D strike visuals, depth-sorted with the world ----------
+  function pushStrikes(list) {
+    if (!onPlasma() || cabinOrBunker()) return;
+    const now = performance.now() / 1000;
+    const P = (x, y, z) => projectSurface(x, y, z);
+    for (const sc of S.scorches) {
+      const c = P(sc.x, -0.05, sc.z); if (!c) continue; const a = Math.min(1, sc.t / 4);
+      const pts = []; for (let i = 0; i < 16; i++) { const an = i / 16 * Math.PI * 2, q = P(sc.x + Math.cos(an) * sc.r, -0.05, sc.z + Math.sin(an) * sc.r); if (!q) { pts.length = 0; break; } pts.push(q); }
+      if (pts.length < 3) continue;
+      list.push({ type: 'custom', proj: { x: c.x, y: c.y, scale: c.scale, dist: c.dist, depth: c.depth + 6 }, draw: () => {
+        ctx.fillStyle = `rgba(30,6,48,${(0.65 * a).toFixed(3)})`; ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (const q of pts) ctx.lineTo(q.x, q.y); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = `rgba(232,121,249,${(0.5 * a * (0.6 + 0.4 * Math.sin(now * 9 + sc.x))).toFixed(3)})`;
+        for (let i = 0; i < 5; i++) { const q = pts[(i * 3) % pts.length]; const mx = (q.x + c.x) / 2, my = (q.y + c.y) / 2; ctx.fillRect(Math.round(mx), Math.round(my), Math.max(1, c.scale * 0.6), Math.max(1, c.scale * 0.6)); }
+      } });
+    }
+    for (const s of S.strikes) {
+      const c = P(s.x, s.y - 0.1, s.z); if (!c) continue;
+      if (s.warn > 0) {     // warning ring on the ground (or hull) that tightens before the hit
+        const k = 1 - s.warn / (s.roof ? 0.6 : 1.15), R = (s.roof ? 6 : 10) * (1.2 - k * 0.6), pul = 0.55 + 0.45 * Math.sin(now * 30);
+        const ring = []; for (let i = 0; i < 20; i++) { const an = i / 20 * Math.PI * 2, q = P(s.x + Math.cos(an) * R, s.y - 0.1, s.z + Math.sin(an) * R); if (!q) { ring.length = 0; break; } ring.push(q); }
+        if (ring.length < 3) continue;
+        list.push({ type: 'custom', proj: { x: c.x, y: c.y, scale: c.scale, dist: c.dist, depth: c.depth + 1 }, draw: () => {
+          ctx.save(); ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = `rgba(217,70,239,${(0.18 + 0.25 * k).toFixed(3)})`; ctx.beginPath(); ctx.moveTo(ring[0].x, ring[0].y); for (const q of ring) ctx.lineTo(q.x, q.y); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = `rgba(250,232,255,${(0.5 + 0.5 * pul).toFixed(3)})`; ctx.lineWidth = Math.max(1, c.scale * 0.5); ctx.stroke();
+          ctx.restore();
+        } });
+      } else {              // the bolt itself, sky to ground, with a branch
+        const top = -520, n = s.pts.length, pts = [];
+        for (let i = 0; i <= n; i++) { const f = i / n, y = top + (s.y - top) * f, sway = i === n ? 0 : s.pts[i] * 15 * (1 - f * 0.6); const q = P(s.x + sway, y, s.z + sway * 0.5); if (q) pts.push(q); }
+        if (pts.length < 2) continue;
+        const br = []; const bi = Math.floor(n * 0.55); for (let i = 0; i < s.bran.length; i++) { const f = (bi + i * 0.8) / n, y = top + (s.y - top) * Math.min(0.95, f); const q = P(s.x + s.pts[bi] * 9 + s.bran[i] * 7 + i * 3, y, s.z); if (q) br.push(q); }
+        const a = Math.min(1, s.hit / 0.2);
+        list.push({ type: 'custom', proj: { x: c.x, y: c.y, scale: c.scale, dist: c.dist, depth: c.depth - 2 }, draw: () => {
+          ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round';
+          const line = (arr, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(arr[0].x, arr[0].y); for (const q of arr) ctx.lineTo(q.x, q.y); ctx.stroke(); };
+          line(pts, Math.max(3, c.scale * 3.5), `rgba(217,70,239,${(0.45 * a).toFixed(3)})`);
+          line(pts, Math.max(1.4, c.scale * 1.2), `rgba(253,244,255,${a.toFixed(3)})`);
+          if (br.length > 1) line(br, Math.max(1, c.scale * 0.7), `rgba(240,171,252,${(0.8 * a).toFixed(3)})`);
+          const gr = Math.max(8, c.scale * 14), g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, gr);
+          g.addColorStop(0, `rgba(253,244,255,${(0.9 * a).toFixed(3)})`); g.addColorStop(0.4, `rgba(232,121,249,${(0.45 * a).toFixed(3)})`); g.addColorStop(1, 'rgba(232,121,249,0)');
+          ctx.fillStyle = g; ctx.fillRect(c.x - gr, c.y - gr, gr * 2, gr * 2);
+          ctx.restore();
+        } });
+      }
+    }
+  }
+  const prevExtra = window.surfaceExtraEntities;
+  window.surfaceExtraEntities = function(list) { if (prevExtra) prevExtra(list); try { if (!(typeof surfacePassActive !== 'undefined' && surfacePassActive)) pushStrikes(list); } catch (e) { console.warn('plasma strikes', e); } };
+
+  // ---------- render hooks (same contract as the Home World sky) ----------
+  window.__plasmaSky = {
+    state: S, setWeather: (n) => { setWeather(n); }, setTime(t) { S.t = ((t % 1) + 1) % 1; }, snap() { for (const k in S.w) S.w[k] = S.tgt[k]; },
+    applies: (pl) => !!(pl && !(pl.isHomeWorld || pl.name === 'Home World') && pl.ore && pl.ore.name === 'Plasma Crystal'),
+    sheltered, strike: planStrike, get rain() { return S.w.rain; }, get night() { return 1 - sm(-0.22, 0.02, sunElev()); },
+    begin() {
+      F = frameState();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.restore();
+      return F;
+    },
+    finish(hY) {
+      const W = V_WIDTH, H = V_HEIGHT, onFoot = !surfacePassActive && !cabin;
+      if (F.tintA > 0.01) {
+        ctx.save(); ctx.globalCompositeOperation = 'source-atop';
+        if (onFoot && F.night > 0.3) {
+          const g = ctx.createRadialGradient(W / 2, H * 0.62, 10, W / 2, H * 0.6, W * 0.55);
+          g.addColorStop(0, css(F.tintC, (F.tintA * 0.42).toFixed(3))); g.addColorStop(0.45, css(F.tintC, (F.tintA * 0.75).toFixed(3))); g.addColorStop(1, css(F.tintC, Math.min(0.9, F.tintA * 1.12).toFixed(3)));
+          ctx.fillStyle = g;
+        } else ctx.fillStyle = css(F.tintC, F.tintA.toFixed(3));
+        ctx.fillRect(-30, -30, W + 60, H + 60); ctx.restore();
+      }
+      drawSkyLayer(hY);
+      ctx.save(); ctx.globalCompositeOperation = 'destination-over';
+      ctx.drawImage(skyCv, 0, 0, W, H);
+      ctx.fillStyle = css(F.low); ctx.fillRect(-40, -40, W + 80, H + 80);
+      ctx.restore();
+      // purple haze low on the horizon during storms
+      if (S.w.storm > 0.05) {
+        const fa = S.w.storm * 0.35, fc = mix(F.low, hex('#581c87'), 0.5);
+        const fg = ctx.createLinearGradient(0, hY - H * 0.3, 0, hY + H * 0.4);
+        fg.addColorStop(0, css(fc, 0)); fg.addColorStop(0.45, css(fc, fa.toFixed(3))); fg.addColorStop(1, css(fc, (fa * 0.1).toFixed(3)));
+        ctx.fillStyle = fg; ctx.fillRect(-20, -20, W + 40, H + 40);
+      }
+      if (S.flash > 0.02) { ctx.fillStyle = css(S.flashC, (S.flash * 0.22).toFixed(3)); ctx.fillRect(-20, -20, W + 40, H + 40); }
+      // plasma rain: pale lilac by day, glowing green in the dark
+      const aboveClouds = (typeof takeoffSeq !== 'undefined' && takeoffSeq && takeoffSeq.t > TAKEOFF_T.punch) || (typeof landingSeq !== 'undefined' && landingSeq && landingSeq.t < LANDING_T.entry + 0.6);
+      if (S.drops.length && !aboveClouds) {
+        const slant = 0.18 + S.w.storm * 0.25, nk = sm(0.25, 0.85, F.night);
+        const day = [233, 213, 255], glow = [134, 239, 172], c = mix(day, glow, nk);
+        const path = () => { ctx.beginPath(); for (const d of S.drops) { const L = 9 * d.l * d.v; ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - L * slant, d.y - L); } };
+        ctx.save();
+        if (nk > 0.05) { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = css(c, (0.16 * nk).toFixed(3)); ctx.lineWidth = 3; path(); ctx.stroke(); }   // the glow
+        ctx.strokeStyle = css(c, (0.5 + 0.2 * nk).toFixed(3)); ctx.lineWidth = 1; path(); ctx.stroke();
+        const gTop = Math.max(hY + 4, 0);
+        if (gTop < H) {
+          ctx.fillStyle = css(c, (0.6 + 0.3 * nk).toFixed(3));
+          for (const sp of S.splashes) { const y = gTop + sp.f * (H - gTop), u = 1 + sp.f * 2, x = sp.x; ctx.fillRect(x - u, y - u * (sp.t * 5), 1, 1); ctx.fillRect(x + u, y - u * (sp.t * 5), 1, 1); ctx.fillRect(x - u * 0.5, y, u, 1); }
+        }
+        ctx.restore();
+      }
+      if (!onFoot || !onFootHere()) return;
+      // static crawling over the visor as charge builds
+      if (S.charge > 0.15) {
+        const c = S.charge, t = performance.now() / 1000;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = `rgba(240,171,252,${(0.25 + c * 0.6).toFixed(3)})`; ctx.lineWidth = 1;
+        const n = Math.round(2 + c * 7);
+        for (let i = 0; i < n; i++) {
+          const side = (i + Math.floor(t * 12)) % 4, u = ((Math.sin(t * 7 + i * 13.1) + 1) / 2);
+          let x = side < 2 ? u * W : (side === 2 ? 4 : W - 4), y = side < 2 ? (side === 0 ? 4 : H - 4) : u * H;
+          ctx.beginPath(); ctx.moveTo(x, y);
+          for (let j = 0; j < 5; j++) { x += (Math.random() - 0.5) * 16 + (side === 2 ? 6 : side === 3 ? -6 : 0) * c; y += (Math.random() - 0.5) * 16 + (side === 0 ? 6 : side === 1 ? -6 : 0) * c; ctx.lineTo(x, y); }
+          ctx.stroke();
+        }
+        const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+        vg.addColorStop(0, 'rgba(217,70,239,0)'); vg.addColorStop(1, `rgba(217,70,239,${(c * 0.22).toFixed(3)})`);
+        ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+      // storm status line
+      if (S.state === 'brewing' || S.w.storm > 0.6) {
+        const t = performance.now() / 1000, cover = sheltered();
+        let txt, col;
+        if (S.state === 'brewing' && S.w.storm < 0.7) { txt = '⚡ PLASMA STORM BUILDING - TAKE COVER UNDER THE SHIP'; col = `rgba(240,171,252,${(0.6 + 0.4 * Math.sin(t * 6)).toFixed(2)})`; }
+        else if (cover) { txt = '⚡ PLASMA STORM - SHELTERED'; col = '#86efac'; }
+        else { txt = '⚡ PLASMA STORM - EXPOSED!'; col = `rgba(244,114,182,${(0.65 + 0.35 * Math.sin(t * 9)).toFixed(2)})`; }
+        ctx.save(); ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+        const tw = ctx.measureText(txt).width + 10;
+        ctx.fillStyle = 'rgba(15,5,30,0.7)'; ctx.fillRect(W / 2 - tw / 2, 54, tw, 12);
+        ctx.fillStyle = col; ctx.fillText(txt, W / 2, 63);
+        if (!cover && S.charge > 0.05 && S.w.storm > 0.6) {
+          ctx.fillStyle = 'rgba(15,5,30,0.7)'; ctx.fillRect(W / 2 - 40, 68, 80, 6);
+          ctx.fillStyle = '#e879f9'; ctx.fillRect(W / 2 - 39, 69, 78 * S.charge, 4);
+        }
+        ctx.restore();
+      }
+    }
+  };
+
+  setWeather('calm', true);
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    const r = prevUpdate.apply(this, arguments);
+    try { step(dt); } catch (e) { console.warn('plasmaSky step', e); }
+    return r;
+  };
 })();
 
 </script>
