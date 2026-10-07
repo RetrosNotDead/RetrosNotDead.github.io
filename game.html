@@ -5941,8 +5941,7 @@ function takeOffIntoSpace() {
   }
 
   if (typeof playerFoot !== 'undefined' && playerFoot && playerFoot.maxSuitHp) {
-    playerFoot.suitHp = playerFoot.maxSuitHp;
-    playerFoot.suitShield = playerFoot.maxSuitShield;
+    playerFoot.suitShield = playerFoot.maxSuitShield;   // shields recharge in flight; suit damage now has to be slept off in the med bed
   }
 
   ship.speed = evacuating ? 45 : 55;
@@ -7631,6 +7630,10 @@ function cabinCollide(x, z) {
   if (x > PDESK.x0 - R && x < PDESK.x1 + R && z > PDESK.z0 - R) z = PDESK.z0 - R;          // camera desk
   if (z > JUKEBOX.z0 - 0.3 - R && z < JUKEBOX.z1 + 0.3 + R) x = Math.max(x, JUKEBOX.x1 + 0.3 + R);   // jukebox, port
   if (z > RECORD_CRATE.z0 - R && z < RECORD_CRATE.z1 + R) x = Math.max(x, RECORD_CRATE.x1 + R);           // record crate, port
+  if (bedRaise > 0.02 && x > BED.x0 - R && x < BED.x1 + R && z > BED.z0 - R && z < BED.z1 + R) {          // med bed / open floor hatch
+    const pl = x - (BED.x0 - R), pr = (BED.x1 + R) - x, pb = z - (BED.z0 - R), pf = (BED.z1 + R) - z, m = Math.min(pl, pr, pb, pf);
+    if (m === pl) x = BED.x0 - R; else if (m === pr) x = BED.x1 + R; else if (m === pb) z = BED.z0 - R; else z = BED.z1 + R;
+  }
   return [x, z];
 }
 
@@ -7677,11 +7680,24 @@ function getCabinAction() {
       hint: "GRAB YOUR HELMET & A WEAPON FROM THE RACK FIRST!", run: startAirlockOut };
   }
   if (c.lookJuke && c.x < -5 && c.z > JUKEBOX.z0 - 3 && c.z < JUKEBOX.z1 + 3.5) return jukeboxAction();
+  if (c.x > 4 && c.x < 16 && c.z > 6.5 && playerFoot.pitch > 0.4) {   // looking down at the lower panel under the lights
+    const up = bedTarget > 0;
+    return { label: up ? "BED DOWN" : "BED UP", banner: `>> MED BED: TAP TO ${up ? 'LOWER THE BED INTO THE FLOOR' : 'RAISE THE BED OUT OF THE FLOOR HATCH'} <<`, enabled: true, run: () => {
+      if (!up && c.x > BED.x0 - 0.5 && c.x < BED.x1 + 0.5 && c.z > BED.z0 - 0.5 && c.z < BED.z1 + 0.5) { addPopup("STAND CLEAR OF THE HATCH", "#facc15"); return; }
+      bedTarget = up ? 0 : 1; cabinSfx('servo'); playSfx('hullClang'); vibrateGamepad(70, 0.3, 0.2);
+      addPopup(up ? "MED BED STOWING" : "MED BED DEPLOYING", "#4ade80");
+    } };
+  }
+  if (bedRaise >= 0.99 && c.x < BED.x1 + 3 && c.x > BED.x0 - 4.5 && c.z > BED.z0 - 3 && c.z < BED.z1 + 1) {
+    const max = playerFoot.maxSuitHp || 100, hurt = (playerFoot.suitHp ?? max) < max - 0.5;
+    return { label: "REST", banner: hurt ? `>> MED BED: TAP REST TO HEAL UP (HEALTH ${Math.round(playerFoot.suitHp)}/${max}) <<` : ">> MED BED: HEALTH AT 100% - NO NEED TO REST <<", enabled: hurt,
+      hint: "HEALTH'S ALREADY AT 100%", run: startBedRest };
+  }
   if (Math.hypot(c.x - DANCE_SPOT.x, c.z - DANCE_SPOT.z) < DANCE_SPOT.r) {
     return { label: "DANCE", banner: ">> DANCE FLOOR: TAP DANCE TO BUST A MOVE <<", enabled: true, run: startDance };
   }
   if (c.x > 4 && c.x < 16 && c.z > 6.5) {
-    return { label: "LIGHTS", banner: `>> CABIN LIGHTS: TAP FOR ${({ on: 'LIGHTS OFF', off: 'RGB MODE', rgb: 'LIGHTS ON' })[cabinLightMode]} <<`, enabled: true, run: toggleCabinLights };
+    return { label: "LIGHTS", banner: `>> CABIN LIGHTS: TAP FOR ${({ on: 'LIGHTS OFF', off: 'RGB MODE', rgb: 'LIGHTS ON' })[cabinLightMode]} - LOOK DOWN FOR THE MED BED SWITCH <<`, enabled: true, run: toggleCabinLights };
   }
   if (c.x < PDESK.x1 + 2.5 && c.z > PDESK.z0 - 7) {
     return { label: "SNAP!", banner: `>> POLAROID WALL: ${photosTaken.size}/${PHOTOS.length} SNAPSHOTS - TAP THE CAMERA <<`, enabled: true, run: () => {
@@ -7721,6 +7737,22 @@ function startAirlockOut() {
   cabinSfx('servo');
 }
 
+// MED BED: a switch post at the foot of the bed raises it out of a floor hatch; lie in it to heal the suit
+const BED = { x0: 2.6, x1: 8.8, z0: -6.0, z1: 4.8, h: 4.2 };
+const BPANEL = { x0: 8.9, x1: 11.5, yTop: -4.8, yBot: -1.2, z: 13.75 };   // bed switch: on the bulkhead right under the light switch
+let bedTarget = 0, bedRaise = 0;   // raise 0-0.3 hatch doors slide open, 0.3-1 bed rises
+function stepMedBed(dt) {
+  const before = bedRaise;
+  bedRaise += Math.sign(bedTarget - bedRaise) * Math.min(Math.abs(bedTarget - bedRaise), dt / 3.2);
+  if ((before < 0.3) !== (bedRaise < 0.3) || (before > 0 && bedRaise === 0) || (before < 1 && bedRaise === 1)) { try { playSfx('hullClang'); } catch (e) {} }
+}
+function startBedRest() {
+  const c = cabin;
+  c.seq = { type: 'rest', t: 0, from: playerFoot.suitHp ?? 0 };
+  cabinSfx('step');
+  cabinTween({ x: (BED.x0 + BED.x1) / 2, z: BED.z1 - 2.4, eyeY: -BED.h - 1.0, yaw: Math.PI, pitch: -1.3 }, 1.8, () => { c.seq.lying = true; cabinSfx('servo'); }, 'smooth');
+}
+
 function takeCabinSeat() {
   const c = cabin;
   c.seq = { type: 'seat', t: 0 };
@@ -7743,10 +7775,23 @@ function stepCabinSeq(dt) {
         c.chairFollow = false; c.chairYaw = Math.PI;
         cabinTween({ x: 0, z: CAB.seatZ, eyeY: CAB.seatEye, yaw: Math.PI, pitch: 0.02 }, 0.35, () => {      // settle before standing
           cabinSfx('step');
-          cabinTween({ x: 0, z: 3, eyeY: CAB.eye, yaw: Math.PI, pitch: 0 }, 1.4, () => { c.seq = null; addPopup("EVA RACK IS AFT - AIRLOCK IS STARBOARD", "#facc15"); }, 'smooth');
+          cabinTween({ x: 0, z: 3, eyeY: CAB.eye, yaw: Math.PI, pitch: 0 }, 1.4, () => { c.seq = null; }, 'smooth');
         });
       }, 'smooth');
     });
+  } else if (s.type === 'rest') {
+    // lie down -> heal while the bed glows -> sit back up beside the bed
+    const max = playerFoot.maxSuitHp || 100;
+    if (s.lying && !s.up) {
+      s.heal = (s.heal || 0) + dt;
+      playerFoot.suitHp = Math.min(max, s.from + (max - s.from) * Math.min(1, s.heal / 4));
+      once('zz', 0.2, () => addPopup("RESTING... HEALING UP", "#4ade80"));
+      if (s.heal >= 4.4) {
+        s.up = true; playerFoot.suitHp = max;
+        playSfx('upgrade'); addPopup("FULLY HEALED - HEALTH 100%", "#4ade80");
+        cabinTween({ x: BED.x0 - 2.6, z: (BED.z0 + BED.z1) / 2, eyeY: CAB.eye, yaw: -Math.PI / 2, pitch: 0.1 }, 1.6, () => { c.seq = null; }, 'smooth');
+      }
+    }
   } else if (s.type === 'seat') {
     if (s.seated) {
       s.seatT = (s.seatT || 0) + dt;
@@ -7785,6 +7830,7 @@ function updateCabin(dt, walkX, walkZ, interact) {
   c.hatch += Math.sign(c.hatchTarget - c.hatch) * Math.min(Math.abs(c.hatchTarget - c.hatch), dt * 1.6);
   c.mist = Math.max(0, c.mist - dt * 0.6);
   stepCabinLights(dt);
+  stepMedBed(dt);
   updateCabinAmbience(c, dt);
   if (c.time > 3 && actx) Jukebox.warm();
   {   // turntable: platter spins up / winds down, tone arm swings on and off the record
@@ -7852,6 +7898,7 @@ function updateCabin(dt, walkX, walkZ, interact) {
     if (c.seq && c.seq.type === 'airlockOut') banner.innerText = c.lights === 'red' ? "⚠ AIRLOCK DEPRESSURIZING ⚠" : (c.lights === 'green' ? ">> OUTER HATCH OPENING <<" : ">> AIRLOCK CYCLING <<");
     else if (c.seq && c.seq.type === 'airlockIn') banner.innerText = c.lights === 'red' ? "⚠ AIRLOCK REPRESSURIZING ⚠" : ">> WELCOME ABOARD <<";
     else if (c.seq && c.seq.type === 'seat') banner.innerText = ">> PRE-FLIGHT CHECKS <<";
+    else if (c.seq && c.seq.type === 'rest') banner.innerText = `>> MED BED: RESTING... HEALTH ${Math.round(playerFoot.suitHp)}/${playerFoot.maxSuitHp || 100} <<`;
     else if (c.seq && c.seq.type === 'standUp') banner.innerText = `>> TOUCHDOWN: ${landedPlanet ? landedPlanet.name.toUpperCase() : ''} <<`;
     else if (act) banner.innerText = act.banner;
     else banner.innerText = c.dir === 'out' && !(c.hasHelmet && c.hasLaser) ? "SHIP INTERIOR: EVA RACK IS AFT, AIRLOCK STARBOARD" : (c.dir === 'in' && (c.hasHelmet || c.hasLaser) ? "SHIP INTERIOR: RACK YOUR GEAR AFT" : "SHIP INTERIOR");
@@ -8293,6 +8340,24 @@ function drawLightPanelLabel(x, y, s) {
   ctx.font = `bold ${Math.max(4, Math.min(9, s * 0.5))}px monospace`; ctx.textAlign = "center";
   ctx.fillStyle = cabinLightLevel > 0.5 ? "#cbd5e1" : "#7dd3fc";
   ctx.fillText("CABIN LIGHTS", x, y);
+  ctx.restore();
+}
+function drawBedLabel(x, y, s) {
+  if (s < 2) return;
+  ctx.save();
+  ctx.font = `bold ${Math.max(4, Math.min(9, s * 0.5))}px monospace`; ctx.textAlign = "center";
+  ctx.fillStyle = "#0f172a"; ctx.fillText("MED BED", Math.round(x) + 1, Math.round(y) + 1);
+  ctx.fillStyle = "#4ade80"; ctx.fillText("MED BED", Math.round(x), Math.round(y));
+  ctx.restore();
+}
+function drawBedPosLabel(isUp, x, y, s) {
+  if (s < 2.2) return;
+  const on = (bedTarget > 0) === isUp;
+  ctx.save();
+  ctx.font = `bold ${Math.max(4, Math.min(8, s * 0.42))}px monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const col = on ? (isUp ? "#4ade80" : "#f87171") : "#64748b", t = isUp ? "UP" : "DOWN";
+  ctx.fillStyle = "#0f172a"; ctx.fillText(t, Math.round(x) + 1, Math.round(y) + 1);
+  ctx.fillStyle = col; ctx.fillText(t, Math.round(x), Math.round(y));
   ctx.restore();
 }
 // one switch-position label on the panel face (ON / OFF / RGB), lit up when selected
@@ -9565,6 +9630,54 @@ function buildCabinDynamic(c) {
     cabBox(F, AL.cx1 - 0.4, AL.cx1 + 0.4, -13, 0, AL.z0 + 0.5, AL.zc - hh * h, "#78716c", { side: "#a8a29e" });
     cabBox(F, AL.cx1 - 0.4, AL.cx1 + 0.4, -13, 0, AL.zc + hh * h, AL.z1 - 0.5, "#78716c", { side: "#a8a29e" });
   }
+  if (!c.wreck) {   // MED BED floor hatch + bed + switch post
+    const B = BED, o = Math.min(1, bedRaise / 0.3), r = Math.max(0, (bedRaise - 0.3) / 0.7), mx = (B.x0 + B.x1) / 2;
+    const resting = c.seq && c.seq.type === 'rest' && c.seq.lying && !c.seq.up;
+    // hazard-striped frame round the hatch, always there
+    const hz = { bias: 1.4, alt: "#111827" };
+    cabRect(F, 'y', -0.03, B.x0 - 0.6, B.x1 + 0.6, B.z0 - 0.6, B.z0, [0, -1, 0], "#eab308", 0.9, hz);
+    cabRect(F, 'y', -0.03, B.x0 - 0.6, B.x1 + 0.6, B.z1, B.z1 + 0.6, [0, -1, 0], "#eab308", 0.9, hz);
+    cabRect(F, 'y', -0.03, B.x0 - 0.6, B.x0, B.z0, B.z1, [0, -1, 0], "#eab308", 0.9, hz);
+    cabRect(F, 'y', -0.03, B.x1, B.x1 + 0.6, B.z0, B.z1, [0, -1, 0], "#eab308", 0.9, hz);
+    if (o > 0) cabRect(F, 'y', -0.02, B.x0, B.x1, B.z0, B.z1, [0, -1, 0], "#020617", null, { bias: 1.3 });      // dark shaft
+    if (o < 1) {   // two tread-plate doors slide apart under the floor
+      const hw = (B.x1 - B.x0) / 2, l1 = mx - hw * o, r0 = mx + hw * o;
+      cabRect(F, 'y', -0.05, B.x0, l1, B.z0, B.z1, [0, -1, 0], "#475569", 1.2, { bias: 1.5, alt: "#3f4a5c" });
+      cabRect(F, 'y', -0.05, r0, B.x1, B.z0, B.z1, [0, -1, 0], "#475569", 1.2, { bias: 1.5, alt: "#3f4a5c" });
+      if (o < 0.02) {   // green med cross across the closed doors
+        const cz = (B.z0 + B.z1) / 2;
+        cabRect(F, 'y', -0.07, mx - 0.5, mx + 0.5, cz - 1.7, cz + 1.7, [0, -1, 0], "#22c55e", 0.5, { bias: 2.7, emissive: true });   // small pieces, lifted over the tread tiles
+        cabRect(F, 'y', -0.07, mx - 1.7, mx + 1.7, cz - 0.5, cz + 0.5, [0, -1, 0], "#22c55e", 0.5, { bias: 2.7, emissive: true });
+      }
+    }
+    if (r > 0) {
+      const top = -B.h * r;
+      cabBox(F, B.x0 + 0.7, B.x1 - 0.7, 0, Math.min(-0.05, top + 1.3), B.z0 + 0.7, B.z1 - 0.7, "#334155", { side: "#1e293b", bias: 1.2 });            // lift column
+      cabBox(F, B.x0 + 0.1, B.x1 - 0.1, top + 1.3, top + 0.7, B.z0 + 0.1, B.z1 - 0.1, "#64748b", { top: "#94a3b8", side: "#475569", bias: 1.3 });    // steel frame
+      const glow = resting ? Math.round(120 + 100 * Math.abs(Math.sin(c.time * 3))) : 0;
+      const gcol = resting ? '#' + [30, glow + 40, 70].map(v => Math.min(255, v).toString(16).padStart(2, '0')).join('') : "#16a34a";
+      cabBox(F, B.x0 + 0.05, B.x1 - 0.05, top + 1.05, top + 0.85, B.z0 + 0.05, B.z1 - 0.05, gcol, { emissive: true, bias: 1.35 });                // green trim light
+      cabBox(F, B.x0 + 0.3, B.x1 - 0.3, top + 0.7, top, B.z0 + 0.3, B.z1 - 0.3, "#cbd5e1", { top: "#f1f5f9", side: "#94a3b8", bias: 1.4 });         // mattress
+      cabBox(F, B.x0 + 0.25, B.x1 - 0.25, top + 0.4, top - 0.25, B.z0 + 0.25, B.z1 - 3.4, "#1d4ed8", { top: "#2563eb", side: "#1e40af", bias: 1.5 }); // blanket
+      cabBox(F, B.x0 + 0.25, B.x1 - 0.25, top + 0.4, top - 0.28, B.z1 - 4.0, B.z1 - 3.4, "#e2e8f0", { top: "#f8fafc", bias: 1.55 });                 // folded-back sheet
+      cabBox(F, mx - 2.2, mx + 2.2, top, top - 0.7, B.z1 - 2.6, B.z1 - 0.7, "#ffffff", { top: "#ffffff", side: "#e2e8f0", bias: 1.6 });               // pillow
+      // headboard with a green med cross
+      cabBox(F, B.x0 + 0.1, B.x1 - 0.1, top + 0.7, top - 2.2, B.z1 - 0.5, B.z1, "#475569", { front: "#334155", side: "#334155", bias: 1.45 });
+      cabRect(F, 'z', B.z1 - 0.52, mx - 0.35, mx + 0.35, top - 1.85, top - 0.55, [0, 0, -1], "#22c55e", null, { bias: 1.7, emissive: true });
+      cabRect(F, 'z', B.z1 - 0.52, mx - 1.0, mx + 1.0, top - 1.55, top - 0.85, [0, 0, -1], "#22c55e", null, { bias: 1.7, emissive: true });
+    }
+    // wall switch under the cabin lights: steel plate, dark slot, lever up = bed up, status LED
+    const P = BPANEL, lx0 = (P.x0 + P.x1) / 2 - 0.45, lx1 = lx0 + 0.9, mid = (P.yTop + P.yBot) / 2;
+    cabBox(F, P.x0, P.x1, P.yTop, P.yBot, P.z, 14, "#334155", { front: "#3f4b5f", edge: "#64748b", bias: 1.5 });
+    cabBox(F, lx0 - 0.1, lx1 + 0.1, P.yTop + 1.2, P.yBot - 0.4, P.z - 0.08, P.z, "#0f172a", { bias: 1.6 });
+    const up = bedTarget > 0, ly = up ? [mid - 1.3, mid + 0.1] : [mid - 0.1, mid + 1.3];
+    cabBox(F, lx0, lx1, ly[0], ly[1], P.z - 0.9, P.z - 0.08, "#e5e7eb", { top: "#f8fafc", side: "#cbd5e1", bias: 1.8 });
+    cabBox(F, lx0 - 0.15, lx1 + 0.15, up ? ly[0] - 0.5 : ly[1], up ? ly[0] : ly[1] + 0.5, P.z - 1.05, P.z - 0.08, up ? "#22c55e" : "#ef4444", { bias: 1.9 });
+    const moving = Math.abs(bedTarget - bedRaise) > 0.001, blink = moving && Math.floor(c.time * 4) % 2;
+    cabBox(F, P.x0 + 0.35, P.x0 + 0.85, mid - 0.25, mid + 0.25, P.z - 0.12, P.z - 0.02, blink ? "#facc15" : (bedRaise >= 1 ? "#22c55e" : "#64748b"), { emissive: true, bias: 1.8 });
+    for (const sx of [P.x0 + 0.3, P.x1 - 0.6]) for (const sy of [P.yTop + 0.3, P.yBot - 0.6])
+      cabBox(F, sx, sx + 0.3, sy, sy + 0.3, P.z - 0.06, P.z, "#94a3b8", { bias: 1.6 });   // screws
+  }
   // EVA rack: boots while the suit is racked, status LEDs on the header
   // light switch lever: up = on, middle = off, down = rgb, plus a status LED
   {
@@ -9903,7 +10016,7 @@ function renderCabinView() {
   };
   if (!c.hasHelmet && !rackSpeakers) { addSprite(0, -7.3, -42.6, dimSprite(inRack(drawRackSuit))); addSprite(0, -13.2, -42.3, dimSprite(inRack(drawRackHelmet))); }
   // laser stays on display aboard the derelict (left behind); the headlamp is always on show at home
-  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon === 'rifle')) addSprite(-4.89, -9.0, -41.9, dimSprite(inRack(drawRackLaser)));
+  if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon !== 'laser')) addSprite(-4.89, -9.0, -41.9, dimSprite(inRack(drawRackLaser)));
   if (!rackSpeakers && (c.wreck || !c.hasLaser || fieldWeapon !== 'rifle')) addSprite(-5.6, -13.3, -41.9, dimSprite(inRack(drawRackRifle)));
   if (!rackSpeakers && !c.wreck && (!c.hasLaser || fieldWeapon !== 'shotgun')) addSprite(-5.4, -4.9, -41.9, dimSprite(inRack(drawRackShotgun)));
   {   // which weapon is the crosshair nearer? (picks laser vs rifle at the weapons bay)
@@ -9936,6 +10049,9 @@ function renderCabinView() {
       addSprite(lx, ly, LPANEL.z - 0.15, (x, y, s) => drawLightPosLabel(m, x, y, s), 2.6));
   }
   addSprite(DICE_ANCHOR[0], DICE_ANCHOR[1], DICE_ANCHOR[2], drawCabinDice);
+  if (!c.wreck) addSprite((BPANEL.x0 + BPANEL.x1) / 2 - 0.4, BPANEL.yTop - 0.6, BPANEL.z - 0.3, (x, y, s) => drawBedLabel(x, y, s), 2.6);
+  if (!c.wreck) addSprite((BPANEL.x0 + BPANEL.x1) / 2 + 1.0, (BPANEL.yTop + BPANEL.yBot) / 2 - 0.7, BPANEL.z - 0.15, (x, y, s) => drawBedPosLabel(true, x, y, s), 2.6);
+  if (!c.wreck) addSprite((BPANEL.x0 + BPANEL.x1) / 2 + 1.0, (BPANEL.yTop + BPANEL.yBot) / 2 + 0.7, BPANEL.z - 0.15, (x, y, s) => drawBedPosLabel(false, x, y, s), 2.6);
   updateNeonSign(c.time);
   if (cabinDisco > 0.4) {
     const drop = (cabinDisco - 0.4) / 0.6, ease = drop * drop * (3 - 2 * drop);
@@ -10063,12 +10179,7 @@ function drawCabinPrompts(c, showGear) {
     ctx.fillStyle = c.hasHelmet ? "#4ade80" : "#64748b"; ctx.fillText(`HELMET ${c.hasHelmet ? "■" : "□"}`, gx - 28, 53);
     ctx.fillStyle = c.hasLaser ? "#4ade80" : "#64748b"; ctx.fillText(`${c.hasLaser && fieldWeapon === 'rifle' ? "PULSE" : (c.hasLaser && fieldWeapon === 'shotgun' ? "SHOTGUN" : "LASER")} ${c.hasLaser ? "■" : "□"}`, gx + 28, 53);
   }
-  if (c.action) {
-    const blink = Math.floor(Date.now() / 400) % 2 === 0;
-    ctx.font = "bold 8.5px monospace";
-    ctx.fillStyle = c.action.enabled ? (blink ? "#facc15" : "#fde68a") : "#94a3b8";
-    ctx.fillText(c.action.enabled ? `▶ ${c.action.label} ◀` : c.action.label + " (LOCKED)", gx, V_HEIGHT / 2 + 26);
-  }
+  // (no floating ▶ ACTION ◀ text: the HUD banner + action button already say what's here)
   ctx.restore();
 }
 
@@ -10104,16 +10215,24 @@ function updateCabinCrt(c) {
     const brg = Math.round(((Math.atan2(surfaceOutpost.x, surfaceOutpost.z) * 180 / Math.PI) + 360) % 360);
     lines.push(["OUTPOST", `${d}m  BRG ${String(brg).padStart(3, "0")}`]);
   }
+  try {   // pirate bunker, if this world has one
+    const bk = window.__bunker && window.__bunker.site;
+    if (bk) {
+      const d = Math.round(Math.hypot(bk.x, bk.z)), brg = Math.round(((Math.atan2(bk.x, bk.z) * 180 / Math.PI) + 360) % 360);
+      lines.push(["BUNKER", window.__bunker.cleared(bk) ? `CLEARED  ${d}m` : `${d}m  BRG ${String(brg).padStart(3, "0")}`]);
+    }
+  } catch (e) {}
   const sent = surfaceSentinels.length;
   lines.push(["HOSTILES", sent ? `${sent} SENTINEL${sent > 1 ? "S" : ""}` : "NONE ON SCOPE"]);
   g.font = "10px monospace";
+  const LH = lines.length > 6 ? 11.5 : 13;   // squeeze the rows a touch when the bunker line is there
   lines.forEach(([k, v], i) => {
-    const y = 26 + i * 13;
+    const y = 26 + i * LH;
     g.fillStyle = DIM; g.fillText(k, 8, y);
-    g.fillStyle = (k === "HOSTILES" && sent) ? "#f87171" : GREEN; g.fillText(v, 74, y);
+    g.fillStyle = (k === "HOSTILES" && sent) ? "#f87171" : (k === "BUNKER" ? (v.startsWith("CLEARED") ? GREEN : "#f472b6") : GREEN); g.fillText(v, 74, y);
   });
   const mono = (window.surfaceMonoliths || [])[0];
-  const ay = 26 + lines.length * 13 + 4;
+  const ay = 26 + lines.length * LH + 4;
   if (mono) {
     const d = Math.round(Math.hypot(mono.x, mono.z));
     const flash = Math.floor(t * 3) % 2 === 0;
@@ -10892,7 +11011,7 @@ function openStationShop(st, isSurface = false) {
     receipt.innerText = `SOLD ${itemsSold} ORES TO REFINERY: +$${earned}`;
     playSfx('coin');
   } else {
-    receipt.innerText = isSurface ? "OUTPOST TERMINAL READY: BOUNTY CLAIMS, SUIT REPAIRS & UPGRADES" : "CARGO HOLD EMPTY. STATION SERVICES READY.";
+    receipt.innerText = isSurface ? "OUTPOST TERMINAL READY: BOUNTY CLAIMS, MEDICAL & UPGRADES" : "CARGO HOLD EMPTY. STATION SERVICES READY.";
   }
 
   document.getElementById("shop-station-name").innerText = isSurface ? `${st.name.toUpperCase()}` : `${st.name.toUpperCase()} TERMINAL`;
@@ -10963,7 +11082,7 @@ function updateShopUI(isSurface = false) {
 
   const repairBtn = document.getElementById("srv-repair");
   const refuelBtn = document.getElementById("srv-refuel");
-  repairBtn.innerText = repairCost > 0 ? (isSurface ? `REPAIR SUIT & SHIELD ($${repairCost})` : `REPAIR HULL ($${repairCost})`) : (isSurface ? "SUIT & SHIELD AT 100%" : "HULL AT 100%");
+  repairBtn.innerText = repairCost > 0 ? (isSurface ? `HEAL & RECHARGE SHIELD ($${repairCost})` : `REPAIR HULL ($${repairCost})`) : (isSurface ? "HEALTH & SHIELD AT 100%" : "HULL AT 100%");
   repairBtn.disabled = repairCost <= 0 || ship.credits < repairCost;
   repairBtn.onclick = () => {
     if (ship.credits >= repairCost && repairCost > 0) {
@@ -13077,7 +13196,7 @@ function update(dt) {
         const maxHp = playerFoot.maxSuitHp || 100;
         playerFoot.suitHp = Math.min(maxHp, (playerFoot.suitHp || 0) + 25);
         playSfx('upgrade');
-        addPopup("👆 E.T. HEALING TOUCH: +25 SUIT HEALTH!", "#4ade80");
+        addPopup("👆 E.T. HEALING TOUCH: +25 HEALTH!", "#4ade80");
       } else {
         const maxHull = ship.maxHull || 100;
         ship.hull = Math.min(maxHull, ship.hull + 25);
@@ -13573,7 +13692,7 @@ function update(dt) {
   const isSurface = (gameMode === 'SURFACE');
   const hpEl = document.getElementById("hull-pct");
   if (hpEl && hpEl.parentElement && hpEl.parentElement.childNodes[0]) {
-    hpEl.parentElement.childNodes[0].textContent = isSurface ? "SUIT " : "HULL ";
+    hpEl.parentElement.childNodes[0].textContent = isSurface ? "HEALTH " : "HULL ";
   }
 
   const curShield = isSurface ? (playerFoot.suitShield || 0) : ship.shield;
@@ -14527,7 +14646,7 @@ function drawHandheldRig() {
   if (weap === 'shotgun') {
     if (ssgState.cues >= 2 && HH.lastSsgCue < 2 && ssgState.fired > 0) {
       const b = toS(L * 0.4, 0);
-      for (const side of [-1, 1]) HH.shells.push({ x: b[0] + side * 10, y: b[1], vx: 30 + side * 45 + Math.random() * 20, vy: -190 - Math.random() * 50, r: Math.random() * 6, vr: 10 + Math.random() * 8, life: 0 });
+      for (const side of [-1, 1]) HH.shells.push({ x: b[0] + side * 16, y: b[1], vx: 30 + side * 45 + Math.random() * 20, vy: -190 - Math.random() * 50, r: Math.random() * 6, vr: 10 + Math.random() * 8, life: 0 });
     }
     HH.lastSsgCue = ssgState.cues;
     // buckshot: each blast throws a spread of pellet streaks into a ragged pattern round the crosshair
@@ -14634,9 +14753,15 @@ function drawHandheldRig() {
   // ejected shotgun shells (screen space): neon green body, pink cap, spinning
   for (const q of HH.shells) {
     ctx.save(); ctx.translate(Math.round(q.x), Math.round(q.y)); ctx.rotate(q.r);
-    const k = 1 + q.life * 0.6; ctx.scale(k, k);   // they fly back past you, so they grow a touch
-    ctx.fillStyle = "#0f172a"; ctx.fillRect(-9, -5, 19, 10);
-    ctx.fillStyle = "#39ff14"; ctx.fillRect(-7, -3, 11, 6); ctx.fillStyle = "#ff2bd6"; ctx.fillRect(4, -3, 4, 6);
+    const k = 1 + q.life * 0.4; ctx.scale(k, k);   // they fly back past you, so they grow a touch
+    // full-size shell, as fat as the ones you see in the chambers: green hull, lit stripe, pink head with a rim
+    ctx.fillStyle = "#0f172a"; ctx.fillRect(-20, -12, 41, 24);
+    ctx.fillStyle = "#39ff14"; ctx.fillRect(-18, -10, 27, 20);
+    ctx.fillStyle = "#b9ffa8"; ctx.fillRect(-18, -7, 27, 4);
+    ctx.fillStyle = "#15803d"; ctx.fillRect(-18, 6, 27, 4);
+    ctx.fillStyle = "#0b3d12"; ctx.fillRect(-18, -10, 2, 20);   // crimped end
+    ctx.fillStyle = "#ff2bd6"; ctx.fillRect(9, -10, 10, 20); ctx.fillStyle = "#ff9cf0"; ctx.fillRect(9, -7, 10, 3);
+    ctx.fillStyle = "#a3168f"; ctx.fillRect(17, -12, 3, 24);   // rim
     ctx.restore();
   }
   // buckshot pellets (screen space): fast streaks out of the muzzle, then a little spark + dust where each lands
@@ -21935,12 +22060,7 @@ requestAnimationFrame(gameLoop);
       ctx.fillStyle = c.hasHelmet ? "#4ade80" : "#64748b"; ctx.fillText(`HELMET ${c.hasHelmet ? "■" : "□"}`, gx - 30, 53);
       ctx.fillStyle = c.hasLaser ? "#4ade80" : "#64748b"; ctx.fillText(`LIGHT ${c.hasLaser ? "■" : "□"}`, gx + 30, 53);
     }
-    if (c.action) {
-      const blink = Math.floor(Date.now() / 400) % 2 === 0;
-      ctx.font = "bold 8.5px monospace";
-      ctx.fillStyle = c.action.enabled ? (blink ? "#facc15" : "#fde68a") : "#94a3b8";
-      ctx.fillText(c.action.enabled ? `▶ ${c.action.label} ◀` : c.action.label + " (LOCKED)", gx, V_HEIGHT / 2 + 26);
-    }
+  // (no floating ▶ ACTION ◀ text: the HUD banner + action button already say what's here)
     ctx.restore();
   };
   // what's outside the cabin windows while docked: space and the dreadnought's torn hull
@@ -25044,9 +25164,2255 @@ requestAnimationFrame(gameLoop);
   // run resets heal the face too
   const prevInit = window.initGame;
   window.initGame = function() { const r = prevInit.apply(this, arguments); F.lastHp = null; F.pain = F.ouch = F.grin = 0; return r; };
-  window.__pilotFace = { F, draw, cv };
+  window.__pilotFace = { F, draw, cv, step };
   draw();
 })();
+</script>
+<script>
+/* ==========================================================================
+   PIRATE BUNKERS: underground hideouts dug into random planets.
+   A blast-door mound or a rock-outcrop door sits well away from the ship and
+   the ore nodes. Walk in with whatever gun you took off the rack and fight
+   room to room: sentinels, a Pirate Warlord, flame jets, proximity mines and
+   tripwire alarms. Loot the crates and the Warlord's vaults.
+   Progress (kills, loot, doors, alarms) is kept for the whole run, so a
+   cleared bunker stays cleared - it only resets on a brand new run.
+   ========================================================================== */
+(function() {
+  const T = 12, CEIL = -16, EYE = -10, RAD = 2.4;
+  const LAYOUTS = [
+    { name: "THE DESCENT", map: [
+      "#####U#####",
+      "#####E#####",
+      "#####.#####",
+      "#S.......C#",
+      "#..##.##..#",
+      "#H.##.##.S#",
+      "#..##.##..#",
+      "#####F#####",
+      "#####F#####",
+      "#####L#####",
+      "#.........#",
+      "#.S.....S.#",
+      "#A..#.#..C#",
+      "#####.#####",
+      "#M...M...M#",
+      "#...M.....#",
+      "#.M.....M.#",
+      "#####=#####",
+      "#C.......H#",
+      "#..S...S..#",
+      "#....B....#",
+      "#V.......V#",
+      "###########"] },
+    { name: "THE WARREN", map: [
+      "#U###########",
+      "#E.#...S..C##",
+      "#..#.###.####",
+      "#..F.#H#..S.#",
+      "#.##.#.##.#.#",
+      "#.#..#..L.#.#",
+      "#.#S##.####.#",
+      "#.#..M.#A...#",
+      "#.####.#.####",
+      "#C..S..#..M.#",
+      "######.####.#",
+      "#H..M.....S.#",
+      "#.#######.###",
+      "#....S..#..C#",
+      "####=########",
+      "#.....B.....#",
+      "#V....H....V#",
+      "#############"] },
+    { name: "THE HUB", keys: 3, map: [
+      "######U######",
+      "#K..S#E#S..K#",
+      "#..C.#.#.A..#",
+      "#.M..#.#..M.#",
+      "#....#.#....#",
+      "##.###.###.##",
+      "#.....S.....#",
+      "#.F...H...F.#",
+      "#.S.......S.#",
+      "######L######",
+      "#..S..K..S..#",
+      "#.M..C.C..M.#",
+      "#...........#",
+      "######=######",
+      "#C...B.....C#",
+      "#V.........V#",
+      "#############"] }
+  ];
+
+  // ---------- run-scoped progress ----------
+  const PROG = new Map();
+  const prog = (key) => { let p = PROG.get(key); if (!p) { p = { done: new Set(), keys: 0, cleared: false }; PROG.set(key, p); } return p; };
+
+  // ---------- which planets hide one, and where ----------
+  const hashStr = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rngFrom = (seed) => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const planetKey = (pl) => pl ? (pl.name || "") + ":" + (pl.x | 0) + ":" + (pl.z | 0) : "";
+  const BUNKER_CHANCE = 0.45;
+  let site = null, siteFor = "";
+  function makeSite(pl) {
+    if (!pl || pl.isHomeWorld) return null;
+    const key = planetKey(pl) + ":" + (typeof galaxySeed !== 'undefined' ? galaxySeed : 0);
+    const r = rngFrom(hashStr(key) ^ 0xB0B5);
+    if (r() > BUNKER_CHANCE) return null;
+    const layout = Math.floor(r() * LAYOUTS.length) % LAYOUTS.length, style = r() < 0.5 ? 0 : 1;
+    let best = null, bestScore = -1;
+    for (let i = 0; i < 40; i++) {
+      const a = r() * Math.PI * 2, d = 1150 + r() * 300, x = Math.cos(a) * d, z = Math.sin(a) * d;   // out past the ore fields, well away from the landing site
+      let m = 1e9;
+      for (const n of surfaceNodes) m = Math.min(m, Math.hypot(n.x - x, n.z - z));
+      if (surfaceOutpost) m = Math.min(m, Math.hypot(surfaceOutpost.x - x, surfaceOutpost.z - z) - 60);
+      if (window.surfaceMonoliths) for (const mo of window.surfaceMonoliths) m = Math.min(m, Math.hypot(mo.x - x, mo.z - z));
+      if (m > bestScore) { bestScore = m; best = { x, z }; }
+      if (m > 160) break;
+    }
+    const len = Math.hypot(best.x, best.z) || 1, fx = -best.x / len, fz = -best.z / len;   // the door faces the ship
+    return { key, x: best.x, z: best.z, fx, fz, door: [best.x + fx * 38, best.z + fz * 38], layout, style, announced: false };
+  }
+  function currentSite() {
+    if (gameMode !== 'SURFACE' || !landedPlanet) return null;
+    const k = planetKey(landedPlanet) + ":" + galaxySeed;
+    if (k !== siteFor) {
+      if (!surfaceNodes || !surfaceNodes.length) return null;    // wait until the planet's nodes are laid out
+      siteFor = k; site = makeSite(landedPlanet);
+    }
+    return site;
+  }
+  const isCleared = (s) => !!(s && PROG.has(s.key) && PROG.get(s.key).cleared);
+
+  // ---------- surface: the entrance ----------
+  function drawEntrance(s, p) {
+    const u = p.scale * 0.62, cx = Math.round(p.x), by = Math.round(p.y);   // true perspective: a speck on the horizon that grows as you walk in
+    if (u > 40) return;
+    if (u < 0.05) {   // too far to draw: just the beacon blinking on the horizon
+      if (Math.floor(Date.now() / 450) % 2 || isCleared(s)) { ctx.fillStyle = isCleared(s) ? "#22c55e" : "#ef4444"; ctx.fillRect(cx - 1, by - 2, 2, 2); }
+      return;
+    }
+    const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(cx + x * u), Math.round(by + y * u), Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u))); };
+    const P = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(cx + pts[0][0] * u, by + pts[0][1] * u); for (let i = 1; i < pts.length; i++) ctx.lineTo(cx + pts[i][0] * u, by + pts[i][1] * u); ctx.closePath(); ctx.fill(); };
+    const cleared = isCleared(s), blink = Math.floor(Date.now() / 450) % 2;
+    const op = (CUT && CUT.site === s) ? CUT.doorOpen || 0 : 0;
+    const lamp = cleared ? "#22c55e" : (blink ? "#ef4444" : "#7f1d1d");
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx, by, 64 * u, 9 * u, 0, 0, Math.PI * 2); ctx.fill();
+    if (s.style === 0) {
+      // BLAST-DOOR BUNKER: concrete mound, ramp down to striped blast doors, red beacon, sandbags
+      P([[-58, 0], [-36, -40], [36, -40], [58, 0]], "#57534e");
+      P([[-36, -40], [36, -40], [33, -36], [-33, -36]], "#78716c");
+      P([[-58, 0], [-36, -40], [-30, -40], [-50, 0]], "#44403c");
+      P([[-24, 0], [-16, -30], [16, -30], [24, 0]], "#1c1917");
+      if (op > 0) { R(-16, -30, 32, 20, "#78350f"); R(-12, -27, 24, 17, "#b45309"); R(-6, -30, 12, 2, "#fde68a"); }   // lit lift cab behind the doors
+      { const w = 16 * (1 - op);
+        if (w > 0.2) {
+          R(-16, -30, w, 20, "#52525b"); R(16 - w, -30, w, 20, "#3f3f46");
+          for (let i = 0; i < 2; i++) { R(-16 + i * 8, -13.5, Math.min(4, Math.max(0, w - i * 8)), 3.5, "#eab308"); R(16 - w + i * 8 + 4, -13.5, Math.min(4, Math.max(0, w - i * 8 - 4)), 3.5, "#eab308"); }
+          if (op < 0.02) R(-0.5, -30, 1, 20, "#18181b");
+        } }
+      R(-3, -48, 6, 5, lamp); R(-2, -50, 4, 2, cleared ? "#bbf7d0" : "#fecaca");
+      if (!cleared && blink) { ctx.fillStyle = "rgba(239,68,68,0.28)"; ctx.beginPath(); ctx.arc(cx, by - 46 * u, 12 * u, 0, Math.PI * 2); ctx.fill(); }
+      for (let i = 0; i < 5; i++) { R(-62 + i * 7, -5, 7, 5, i % 2 ? "#a8a29e" : "#d6d3d1"); R(27 + i * 7, -5, 7, 5, i % 2 ? "#a8a29e" : "#d6d3d1"); }
+      R(40, -62, 1.4, 22, "#94a3b8"); R(37, -63, 7, 2, "#94a3b8");          // radio mast
+    } else {
+      // ROCK OUTCROP HIDEOUT: boulders round a steel shutter door, KEEP OUT neon, a searchlight
+      const rock = (x, y, w, h, c) => { R(x, y, w, h, c); R(x + 2, y - 3, w - 4, 3, c); R(x, y, w, 2, "#a8a29e"); };
+      rock(-62, -44, 40, 44, "#57534e"); rock(22, -48, 42, 48, "#44403c"); rock(-30, -58, 60, 22, "#6b6259"); rock(-38, -36, 76, 36, "#4b4540");
+      R(-18, -32, 36, 32, "#1c1917");
+      if (op > 0) { R(-15, -30, 30, 30, "#78350f"); R(-11, -27, 22, 27, "#b45309"); R(-6, -30, 12, 2, "#fde68a"); }
+      { const hh = 30 * (1 - op); if (hh > 0.3) { R(-15, -30, 30, hh, "#3f3f46"); for (let i = 0; i < 5; i++) if (-26 + i * 7 < -30 + hh) R(-15, -26 + i * 7, 30, 1.5, "#27272a"); R(-15, -30 + hh - 2, 30, 2, "#eab308"); } }
+      R(11, -16, 2.5, 3, lamp);
+      R(-20, -44, 40, 9, "#111827");
+      if (u > 0.9) { ctx.save(); ctx.font = `bold ${Math.round(6.5 * u)}px monospace`; ctx.textAlign = "center"; ctx.fillStyle = cleared ? "#4ade80" : "#ff2bd6"; ctx.fillText(cleared ? "CLEARED" : "KEEP OUT", cx, by - 37.5 * u); ctx.restore(); }
+      else R(-16, -41, 32, 3, cleared ? "#4ade80" : "#ff2bd6");
+      R(-58, -10, 14, 10, "#a16207"); R(-56, -8, 10, 1.5, "#ca8a04"); R(44, -12, 10, 12, "#7c2d12"); R(44, -8, 10, 1.5, "#9a3412");
+      R(-34, -60, 6, 4, "#facc15");
+      if (!cleared) { ctx.fillStyle = "rgba(254,240,138,0.12)"; const a = Date.now() / 1400; ctx.beginPath(); ctx.moveTo(cx - 31 * u, by - 58 * u); ctx.lineTo(cx + (-31 + Math.cos(a) * 80) * u, by - 120 * u); ctx.lineTo(cx + (-31 + Math.cos(a) * 80 + 26) * u, by - 120 * u); ctx.fill(); }
+    }
+  }
+
+  // ======================================================================
+  // 3D ENTRANCE MODEL: real geometry on the surface (like the derelicts in
+  // space), so you can walk right round it. Local frame: u = across the
+  // front, v = forward (towards the ship), y = up (negative).
+  // ======================================================================
+  const PF = 28, CAB_V0 = 20.5, CAB_HW = 8, CAB_H = 13, DOOR_V = 38;
+  const L2W = (s, u, y, v) => [s.x + s.fz * u + s.fx * v, y, s.z - s.fx * u + s.fz * v];
+  const SUN = (() => { const v = [0.35, 1, 0.25], l = Math.hypot(...v); return v.map(c => c / l); })();
+  function signTex(txt, col) {
+    const cv = document.createElement("canvas"); cv.width = 128; cv.height = 28; const g = cv.getContext("2d");
+    g.fillStyle = "#111827"; g.fillRect(0, 0, 128, 28);
+    g.font = "bold 18px monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.globalAlpha = 0.45; g.fillStyle = col; g.fillText(txt, 65, 15); g.globalAlpha = 1; g.fillText(txt, 64, 14);
+    return cv;
+  }
+  const SIGN_KEEP = signTex("KEEP OUT", "#ff2bd6"), SIGN_CLEAR = signTex("CLEARED", "#4ade80");
+  function faceN(pts, ctr) {   // world normal from the corners, flipped to point away from the part's centre
+    const a = pts[0], b = pts[1], c = pts[2];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; const l = Math.hypot(...n) || 1; n = n.map(q => q / l);
+    if (ctr) { let fx = 0, fy = 0, fz = 0; for (const p of pts) { fx += p[0]; fy += p[1]; fz += p[2]; } fx /= pts.length; fy /= pts.length; fz /= pts.length; if (n[0] * (fx - ctr[0]) + n[1] * (fy - ctr[1]) + n[2] * (fz - ctr[2]) < 0) n = n.map(q => -q); }
+    return n;
+  }
+  function lq(F, s, lpts, col, o) {   // a quad in local coords; o.n = local normal, o.ctr = local part centre, o.two = double sided
+    o = o || {};
+    const pts = lpts.map(p => L2W(s, p[0], p[1], p[2]));
+    let n = null;
+    if (o.n) n = [s.fz * o.n[0] + s.fx * o.n[2], o.n[1], -s.fx * o.n[0] + s.fz * o.n[2]];
+    else if (!o.two) n = faceN(pts, o.ctr ? L2W(s, o.ctr[0], o.ctr[1], o.ctr[2]) : null);
+    F.push({ pts, n, rgb: hexRgb(col), emis: !!o.emis, lit: o.lit, bias: o.bias || 0, alpha: o.alpha, deep: o.deep || 0, tex: o.tex });
+  }
+  function lbox(F, s, u0, u1, y0, y1, v0, v1, col, o) {
+    o = o || {}; const top = Math.min(y0, y1), bot = Math.max(y0, y1), ctr = [(u0 + u1) / 2, (top + bot) / 2, (v0 + v1) / 2];
+    const T2 = o.top || col, SD = o.side || col, FR = o.front || SD, q = (pts, c) => lq(F, s, pts, c, Object.assign({}, o, { ctr }));
+    q([[u0, top, v0], [u1, top, v0], [u1, top, v1], [u0, top, v1]], T2);
+    q([[u0, top, v1], [u1, top, v1], [u1, bot, v1], [u0, bot, v1]], FR);
+    q([[u0, top, v0], [u1, top, v0], [u1, bot, v0], [u0, bot, v0]], SD);
+    q([[u0, top, v0], [u0, top, v1], [u0, bot, v1], [u0, bot, v0]], SD);
+    q([[u1, top, v0], [u1, top, v1], [u1, bot, v1], [u1, bot, v0]], SD);
+  }
+  function lfrust(F, s, cu, cv, bu, bv, tu, tv, h, col, o) {   // truncated pyramid standing on the ground
+    o = o || {}; const ctr = [cu, -h / 2, cv], ou = o.ou || 0, ov = o.ov || 0;
+    const b = [[cu - bu, 0, cv - bv], [cu + bu, 0, cv - bv], [cu + bu, 0, cv + bv], [cu - bu, 0, cv + bv]];
+    const t = [[cu - tu + ou, -h, cv - tv + ov], [cu + tu + ou, -h, cv - tv + ov], [cu + tu + ou, -h, cv + tv + ov], [cu - tu + ou, -h, cv + tv + ov]];
+    const q = (pts, c) => lq(F, s, pts, c, Object.assign({}, o, { ctr }));
+    q(t, o.top || col);
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; q([b[i], b[j], t[j], t[i]], i === 2 ? (o.front || col) : (i % 2 ? (o.side2 || col) : (o.side || col))); }
+  }
+  function buildModel(s) {
+    const F = [], st = s.style;
+    const cabCol = st === 0 ? { back: "#b45309", wall: "#92400e", ceil: "#78350f", floor: "#57534e" } : { back: "#a16207", wall: "#854d0e", ceil: "#713f12", floor: "#4b4540" };
+    lq(F, s, [[-40, -0.04, -30], [40, -0.04, -30], [40, -0.04, 36], [-40, -0.04, 36]], "#000000", { n: [0, -1, 0], alpha: 0.32, deep: 60 });   // ground shadow
+    if (st === 0) {
+      lq(F, s, [[-14, -0.07, PF], [14, -0.07, PF], [14, -0.07, 36], [-14, -0.07, 36]], "#44403c", { n: [0, -1, 0], deep: 30 });              // concrete apron
+      lfrust(F, s, 0, 0, 30, 20, 22, 13, 18, "#57534e", { top: "#78716c", side: "#4a4743", side2: "#504c47", front: "#5c5853" });            // the mound
+      lbox(F, s, -13, -CAB_HW, 0, -19, 18, PF, "#605a52", { front: "#6b645b", top: "#7c756b" });
+      lbox(F, s, CAB_HW, 13, 0, -19, 18, PF, "#605a52", { front: "#6b645b", top: "#7c756b" });
+      lbox(F, s, -CAB_HW, CAB_HW, -CAB_H, -19, 18, PF, "#605a52", { front: "#6b645b", top: "#7c756b" });
+      for (let i = 0; i < 8; i++) lq(F, s, [[-13 + i * 3.25, -15.6, PF + 0.06], [-11.4 + i * 3.25, -15.6, PF + 0.06], [-11.4 + i * 3.25, -13.6, PF + 0.06], [-13 + i * 3.25, -13.6, PF + 0.06]], i % 2 ? "#111827" : "#eab308", { n: [0, 0, 1], bias: 1 });
+      for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) {
+        const u0 = sd > 0 ? 15 + i * 4.2 : -15 - (i + 1) * 4.2;
+        lbox(F, s, u0, u0 + 4, 0, -2.6, 30, 33.5, i % 2 ? "#a8a29e" : "#d6d3d1", { top: i % 2 ? "#c4beb8" : "#e7e5e4" });
+        if (i < 3) lbox(F, s, u0 + 2, u0 + 6, -2.6, -4.8, 30.4, 33.1, i % 2 ? "#d6d3d1" : "#a8a29e");
+      }
+      lbox(F, s, 18, 18.8, -18, -38, -2, -1.2, "#94a3b8"); lbox(F, s, 15.5, 21.5, -35.5, -36.3, -2, -1.2, "#94a3b8");   // radio mast on the roof
+    } else {
+      lfrust(F, s, -25, 0, 13, 19, 8, 12, 24, "#57534e", { top: "#6b6259", side: "#4b4540", ou: 1.5 });
+      lfrust(F, s, 26, -3, 13, 17, 8, 10, 28, "#44403c", { top: "#5a524b", side: "#3a3633", ov: -1.5 });
+      lfrust(F, s, 0, -13, 21, 10, 13, 6, 31, "#4b4540", { top: "#5f574f" });
+      lfrust(F, s, 0, 7, 17, 12, 11, 7, 25, "#5b5048", { top: "#6b6259", front: "#635850" });
+      lbox(F, s, -11, -CAB_HW, 0, -19.5, 18, PF, "#27272a", { front: "#3f3f46" });
+      lbox(F, s, CAB_HW, 11, 0, -19.5, 18, PF, "#27272a", { front: "#3f3f46" });
+      lbox(F, s, -CAB_HW, CAB_HW, -CAB_H, -19.5, 18, PF, "#1c1917", { front: "#27272a" });
+      lbox(F, s, -21, -14, 0, -6, 30, 36, "#a16207", { top: "#ca8a04" }); lbox(F, s, -19.5, -15.5, -6, -9, 31, 35, "#854d0e", { top: "#a16207" });
+      lbox(F, s, 15, 19.5, 0, -7.5, 30, 34, "#7c2d12", { top: "#9a3412" }); lbox(F, s, 20.5, 24.5, 0, -7.5, 31, 35, "#7f1d1d", { top: "#991b1b" });
+      lbox(F, s, 23, 26.5, -28, -31, -5, -1.5, "#facc15", { emis: true });   // searchlight on the big rock
+    }
+    // the lift cab behind the doors: warm-lit walls, ceiling lamp
+    const lit = { lit: true };
+    lq(F, s, [[-CAB_HW, -CAB_H, CAB_V0], [CAB_HW, -CAB_H, CAB_V0], [CAB_HW, 0, CAB_V0], [-CAB_HW, 0, CAB_V0]], cabCol.back, Object.assign({ n: [0, 0, 1] }, lit));
+    lq(F, s, [[-CAB_HW + 0.05, -CAB_H, CAB_V0], [-CAB_HW + 0.05, -CAB_H, PF], [-CAB_HW + 0.05, 0, PF], [-CAB_HW + 0.05, 0, CAB_V0]], cabCol.wall, Object.assign({ n: [1, 0, 0], bias: 0.6 }, lit));
+    lq(F, s, [[CAB_HW - 0.05, -CAB_H, CAB_V0], [CAB_HW - 0.05, -CAB_H, PF], [CAB_HW - 0.05, 0, PF], [CAB_HW - 0.05, 0, CAB_V0]], cabCol.wall, Object.assign({ n: [-1, 0, 0], bias: 0.6 }, lit));
+    lq(F, s, [[-CAB_HW, -CAB_H + 0.05, CAB_V0], [CAB_HW, -CAB_H + 0.05, CAB_V0], [CAB_HW, -CAB_H + 0.05, PF], [-CAB_HW, -CAB_H + 0.05, PF]], cabCol.ceil, Object.assign({ n: [0, 1, 0], bias: 0.6 }, lit));
+    lq(F, s, [[-CAB_HW, -0.08, CAB_V0], [CAB_HW, -0.08, CAB_V0], [CAB_HW, -0.08, PF], [-CAB_HW, -0.08, PF]], cabCol.floor, Object.assign({ n: [0, -1, 0], bias: 0.2 }, lit));
+    lq(F, s, [[-3, -CAB_H + 0.12, 22.5], [3, -CAB_H + 0.12, 22.5], [3, -CAB_H + 0.12, 26], [-3, -CAB_H + 0.12, 26]], "#fde68a", { n: [0, 1, 0], emis: true, bias: 1.2 });
+    for (let i = 0; i < 3; i++) lq(F, s, [[-CAB_HW + 0.1, -7 - i * 0.01, CAB_V0 + 1 + i * 2.2], [-CAB_HW + 0.1, -7, CAB_V0 + 2.6 + i * 2.2], [-CAB_HW + 0.1, -6, CAB_V0 + 2.6 + i * 2.2], [-CAB_HW + 0.1, -6, CAB_V0 + 1 + i * 2.2]], i === 0 ? "#22c55e" : "#475569", { n: [1, 0, 0], emis: true, bias: 1.4 });   // call panel
+    return F;
+  }
+  function dynFaces(s) {   // doors / shutter, beacon, sign: change with state
+    const F = [], op = (CUT && CUT.site === s) ? (CUT.doorOpen || 0) : 0, cleared = isCleared(s), blink = Math.floor(Date.now() / 450) % 2;
+    if (s.style === 0) {
+      const w = CAB_HW * (1 - op);
+      if (w > 0.05) {
+        lq(F, s, [[-CAB_HW, -CAB_H, PF + 0.1], [-CAB_HW + w, -CAB_H, PF + 0.1], [-CAB_HW + w, 0, PF + 0.1], [-CAB_HW, 0, PF + 0.1]], "#52525b", { two: true, bias: 0.4 });
+        lq(F, s, [[CAB_HW - w, -CAB_H, PF + 0.1], [CAB_HW, -CAB_H, PF + 0.1], [CAB_HW, 0, PF + 0.1], [CAB_HW - w, 0, PF + 0.1]], "#46464e", { two: true, bias: 0.4 });
+        for (let i = 0; i < 4; i++) {
+          const a = -CAB_HW + i * 2, b2 = Math.min(-CAB_HW + w, a + 1); if (b2 > a) lq(F, s, [[a, -2.6, PF + 0.16], [b2, -2.6, PF + 0.16], [b2, -1.2, PF + 0.16], [a, -1.2, PF + 0.16]], "#eab308", { two: true, bias: 0.9 });
+          const c0 = CAB_HW - w + i * 2 + 1, c1 = Math.min(CAB_HW, c0 + 1); if (c1 > c0 && c0 >= CAB_HW - w) lq(F, s, [[c0, -2.6, PF + 0.16], [c1, -2.6, PF + 0.16], [c1, -1.2, PF + 0.16], [c0, -1.2, PF + 0.16]], "#eab308", { two: true, bias: 0.9 });
+        }
+      }
+      lbox(F, s, -1.4, 1.4, -19, -21.6, 22, 24, cleared ? "#22c55e" : (blink ? "#ef4444" : "#7f1d1d"), { emis: true });
+    } else {
+      const hh = CAB_H * (1 - op);
+      if (hh > 0.05) {
+        lq(F, s, [[-CAB_HW, -CAB_H, PF + 0.1], [CAB_HW, -CAB_H, PF + 0.1], [CAB_HW, -CAB_H + hh, PF + 0.1], [-CAB_HW, -CAB_H + hh, PF + 0.1]], "#57534e", { two: true, bias: 0.4 });
+        for (let y = -CAB_H + 1.4; y < -CAB_H + hh - 1.2; y += 1.6) lq(F, s, [[-CAB_HW, y, PF + 0.14], [CAB_HW, y, PF + 0.14], [CAB_HW, y + 0.35, PF + 0.14], [-CAB_HW, y + 0.35, PF + 0.14]], "#3a3632", { two: true, bias: 0.8 });
+        lq(F, s, [[-CAB_HW, -CAB_H + hh - 0.9, PF + 0.16], [CAB_HW, -CAB_H + hh - 0.9, PF + 0.16], [CAB_HW, -CAB_H + hh, PF + 0.16], [-CAB_HW, -CAB_H + hh, PF + 0.16]], "#eab308", { two: true, bias: 1 });
+      }
+      lq(F, s, [[9, -18.6, PF + 0.12], [-9, -18.6, PF + 0.12], [-9, -14.2, PF + 0.12], [9, -14.2, PF + 0.12]], "#111827", { n: [0, 0, 1], bias: 1.2, tex: cleared ? SIGN_CLEAR : SIGN_KEEP });
+      lbox(F, s, 8.6, 9.6, -12, -13, PF, PF + 0.6, cleared ? "#22c55e" : (blink ? "#ef4444" : "#7f1d1d"), { emis: true });
+    }
+    return F;
+  }
+  function pushModel(s, list) {
+    if (!s.model) s.model = buildModel(s);
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const ex = playerFoot.x, ey = playerFoot.y, ez = playerFoot.z, fov = V_HEIGHT * 0.9, NEAR = 0.5;
+    const tx = (p) => { const dx = p[0] - ex, dy = p[1] - ey, dz = p[2] - ez, x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    const faces = s.model.concat(dynFaces(s));
+    for (const f of faces) {
+      let cx = 0, cyy = 0, cz = 0; for (const p of f.pts) { cx += p[0]; cyy += p[1]; cz += p[2]; } cx /= f.pts.length; cyy /= f.pts.length; cz /= f.pts.length;
+      if (f.n && f.n[0] * (ex - cx) + f.n[1] * (ey - cyy) + f.n[2] * (ez - cz) <= 0) continue;
+      const cam = f.pts.map(tx), clipped = [];
+      for (let i = 0; i < cam.length; i++) {
+        const a = cam[i], b = cam[(i + 1) % cam.length], ain = a[2] > NEAR, bin = b[2] > NEAR;
+        if (ain) clipped.push(a);
+        if (ain !== bin) { const t = (NEAR - a[2]) / (b[2] - a[2]); clipped.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]); }
+      }
+      if (clipped.length < 3) continue;
+      const scr = clipped.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+      let mnx = Infinity, mxx = -Infinity; for (const q of scr) { if (q[0] < mnx) mnx = q[0]; if (q[0] > mxx) mxx = q[0]; }
+      if (mxx < -20 || mnx > V_WIDTH + 20) continue;
+      const zc = tx([cx, cyy, cz])[2];
+      let k = 1;
+      if (!f.emis && !f.lit && f.n) k = 0.72 + 0.48 * Math.max(0, -(f.n[0] * SUN[0] + f.n[1] * SUN[1] + f.n[2] * SUN[2]));
+      const col = `rgb(${Math.min(255, f.rgb[0] * k) | 0},${Math.min(255, f.rgb[1] * k) | 0},${Math.min(255, f.rgb[2] * k) | 0})`;
+      const draw = f.tex ? () => { try { drawTexturedQuad({ tex: f.tex, pts: f.pts, grid: [4, 2] }, tx, NEAR, fov); } catch (e) {} }
+        : () => {
+          if (f.alpha !== undefined) ctx.globalAlpha = f.alpha;
+          ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 0.6;
+          ctx.beginPath(); ctx.moveTo(scr[0][0], scr[0][1]); for (let i = 1; i < scr.length; i++) ctx.lineTo(scr[i][0], scr[i][1]); ctx.closePath(); ctx.fill();
+          if (f.alpha === undefined) ctx.stroke();
+          ctx.globalAlpha = 1;
+        };
+      list.push({ type: 'custom', proj: { x: scr[0][0], y: scr[0][1], scale: 1, dist: zc, depth: zc + f.deep - f.bias * 0.05 }, draw });
+    }
+    if (s.style === 1 && !isCleared(s)) {   // searchlight beam sweeping the sky
+      const lp = tx(L2W(s, 24.7, -30, -3.2));
+      if (lp[2] > NEAR) {
+        const X = V_WIDTH / 2 + lp[0] / lp[2] * fov, Y = V_HEIGHT / 2 + lp[1] / lp[2] * fov, a = Date.now() / 1400, L = 260;
+        list.push({ type: 'custom', proj: { x: X, y: Y, scale: 1, dist: lp[2], depth: lp[2] - 0.5 }, draw: () => {
+          ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = "rgba(254,240,138,0.10)";
+          ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(a) * L - 20, Y - L); ctx.lineTo(X + Math.cos(a) * L + 20, Y - L); ctx.fill(); ctx.restore();
+        } });
+      }
+    }
+  }
+  function collideModel(s) {
+    const R0 = 2.6, boxes = s.style === 0
+      ? [[-30, 30, -20, 20], [-13, 13, 18, PF], [-32, -14, 30, 33.5], [14, 32, 30, 33.5]]
+      : [[-38, -12, -19, 19], [13, 39, -20, 14], [-21, 21, -23, -3], [-17, 17, -5, 19], [-11, 11, 18, PF], [-21, -14, 30, 36], [15, 24.5, 30, 35]];
+    const dx = playerFoot.x - s.x, dz = playerFoot.z - s.z;
+    let u = dx * s.fz - dz * s.fx, v = dx * s.fx + dz * s.fz;   // world -> local
+    for (const [u0, u1, v0, v1] of boxes) {
+      if (u > u0 - R0 && u < u1 + R0 && v > v0 - R0 && v < v1 + R0) {
+        const pl = u - (u0 - R0), pr = (u1 + R0) - u, pb = v - (v0 - R0), pf = (v1 + R0) - v, m = Math.min(pl, pr, pb, pf);
+        if (m === pl) u = u0 - R0; else if (m === pr) u = u1 + R0; else if (m === pb) v = v0 - R0; else v = v1 + R0;
+      }
+    }
+    const w = L2W(s, u, 0, v); playerFoot.x = w[0]; playerFoot.z = w[2];
+  }
+
+  // ======================================================================
+  // INTERIOR
+  // ======================================================================
+  let B = null;
+  const solidCh = (ch) => ch === '#' || ch === 'U';
+  function cellAt(c, r) { if (!B || r < 0 || c < 0 || r >= B.ROWS || c >= B.COLS) return '#'; return B.map[r][c]; }
+  function isSolid(c, r) {
+    const ch = cellAt(c, r);
+    if (solidCh(ch)) return true;
+    if (ch === '=') { const d = B.doors.find(o => o.r === r && o.c === c); return !d || d.open < 0.9; }
+    return false;
+  }
+  const tileOf = (x, z) => [Math.floor(x / T), Math.floor(z / T)];
+  function los(x0, z0, x1, z1) {
+    const d = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(d / 2);
+    for (let i = 1; i < n; i++) { const k = i / n, [c, r] = tileOf(x0 + (x1 - x0) * k, z0 + (z1 - z0) * k); if (isSolid(c, r)) return false; }
+    return true;
+  }
+  function wallHit(x, z, rad) {
+    const c0 = Math.floor((x - rad) / T), c1 = Math.floor((x + rad) / T), r0 = Math.floor((z - rad) / T), r1 = Math.floor((z + rad) / T);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      if (!isSolid(c, r)) continue;
+      const nx = Math.max(c * T, Math.min(x, c * T + T)), nz = Math.max(r * T, Math.min(z, r * T + T));
+      if (Math.hypot(x - nx, z - nz) < rad) return true;
+    }
+    return false;
+  }
+  function blocked(x, z) {
+    if (wallHit(x, z, RAD)) return true;
+    for (const o of B.obst) { const nx = Math.max(o[0], Math.min(x, o[1])), nz = Math.max(o[2], Math.min(z, o[3])); if (Math.hypot(x - nx, z - nz) < RAD) return true; }
+    for (const l of B.loot) { if (l.gone) continue; const h = l.kind === 'V' ? 4.2 : 3.2; if (Math.abs(x - l.x) < h + RAD - 0.6 && Math.abs(z - l.z) < h + RAD - 0.6) return true; }
+    return false;
+  }
+
+  function build(s) {
+    const L = LAYOUTS[s.layout], map = L.map, p = prog(s.key);
+    const st = { site: s, L, map, ROWS: map.length, COLS: map[0].length, p, t: 0, fade: 1, phase: 'in',
+      enemies: [], bolts: [], fx: [], gore: [], mines: [], flames: [], trips: [], doors: [], loot: [], obst: [], lamps: [], seen: new Set(),
+      alarm: 0, hurtFlash: 0, burnT: 0, action: null, spawn: null, exit: null, humT: 0, siren: null, lastHp: null, msgCleared: p.cleared, shooters: 0, bossAwake: false };
+    const id = (k, r, c) => k + "@" + r + "," + c;
+    for (let r = 0; r < map.length; r++) for (let c = 0; c < map[r].length; c++) {
+      const ch = map[r][c], x = c * T + T / 2, z = r * T + T / 2;
+      const axis = () => (!solidCh(map[r - 1] ? map[r - 1][c] : '#') && !solidCh(map[r + 1] ? map[r + 1][c] : '#')) ? 'z' : 'x';   // which way you walk through the tile
+      if (ch === 'E') { st.spawn = [x, z + 2]; st.exit = [x, z]; }
+      else if (ch === 'S' || ch === 'B') {
+        const i = id(ch, r, c); if (p.done.has(i)) continue;
+        const boss = ch === 'B';
+        st.enemies.push({ id: i, boss, x, z, y: boss ? -7.5 : -8, home: [x, z], hp: boss ? 650 : 105, max: boss ? 650 : 105, alert: false, lastSeen: null, lostT: 0,
+          cd: 1 + Math.random() * 1.5, burst: 0, burstT: 0, strafe: Math.random() < 0.5 ? 1 : -1, strafeT: 1 + Math.random() * 2, ph: Math.random() * 6.28, hitT: 0, walk: 0 });
+      }
+      else if (ch === 'F') st.flames.push({ r, c, x, z, ph: (r * 0.9 + c * 0.6) % 3.4 });
+      else if (ch === 'M') { const i = id('M', r, c); if (!p.done.has(i)) st.mines.push({ id: i, x: x + ((r * 7 + c * 3) % 5 - 2), z: z + ((r * 3 + c * 5) % 5 - 2), state: 'armed', t: 0 }); }
+      else if (ch === 'L') { const i = id('L', r, c); st.trips.push({ id: i, r, c, x, z, axis: axis(), live: !p.done.has(i) }); }
+      else if (ch === '=') { const i = id('D', r, c); const open = p.done.has(i); st.doors.push({ id: i, r, c, x, z, axis: axis(), open: open ? 1 : 0, opening: false }); }
+      else if ('CAHVK'.includes(ch)) { const i = id(ch, r, c); st.loot.push({ id: i, kind: ch, x, z, gone: p.done.has(i) }); }
+    }
+    // caged ceiling bulbs: one every few tiles, red ones by the traps
+    const rng = rngFrom(hashStr(s.key) ^ 0x1A3);
+    for (let r = 0; r < st.ROWS; r++) for (let c = 0; c < st.COLS; c++) {
+      const ch = map[r][c]; if (solidCh(ch)) continue;
+      const trap = ch === 'F' || ch === 'L' || ch === 'M';
+      if (trap ? rng() < 0.5 : ((r * 5 + c * 3) % 4 === 0 && rng() < 0.8)) {
+        st.lamps.push({ p: [c * T + T / 2, CEIL + 1.2, r * T + T / 2], col: trap ? [255, 60, 40] : [255, 200, 140], rad: trap ? 30 : 36, flick: rng() < 0.15, trap });
+      }
+    }
+    // corner clutter: oil drums + ammo boxes in room corners (solid)
+    for (let r = 1; r < st.ROWS - 1; r++) for (let c = 1; c < st.COLS - 1; c++) {
+      if (map[r][c] !== '.') continue;
+      const n = solidCh(map[r - 1][c]), sth = solidCh(map[r + 1][c]), w = solidCh(map[r][c - 1]), e = solidCh(map[r][c + 1]);
+      if ((n && sth) || (w && e)) continue;                  // corridor
+      if (!((n || sth) && (w || e))) continue;               // not a corner
+      if (((r * 13 + c * 7) % 3) !== 0) continue;
+      const x = c * T + (w ? 3.2 : T - 3.2), z = r * T + (n ? 3.2 : T - 3.2);
+      st.obst.push([x - 2.6, x + 2.6, z - 2.6, z + 2.6]);
+      st.decor = st.decor || []; st.decor.push({ x, z, kind: ((r + c) % 2) ? 'drum' : 'box' });
+    }
+    return st;
+  }
+
+  // ---------- audio ----------
+  function tone(type, f0, f1, dur, vol, at) {
+    try {
+      ensureAudio(); if (!actx) return;
+      const t = actx.currentTime + (at || 0), o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(typeof sfxBus !== 'undefined' && sfxBus ? sfxBus : audioOut()); o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) {}
+  }
+  function startHum() {
+    try {
+      ensureAudio(); if (!actx || B.hum) return;
+      const o = actx.createOscillator(), o2 = actx.createOscillator(), g = actx.createGain(), f = actx.createBiquadFilter();
+      o.type = 'sawtooth'; o.frequency.value = 52; o2.type = 'sine'; o2.frequency.value = 104.6;
+      f.type = 'lowpass'; f.frequency.value = 240; g.gain.value = 0.0;
+      o.connect(f); o2.connect(f); f.connect(g); g.connect(audioOut()); o.start(); o2.start();
+      g.gain.linearRampToValueAtTime(0.035, actx.currentTime + 1.5);
+      B.hum = { o, o2, g };
+    } catch (e) {}
+  }
+  function stopHum() { try { if (B && B.hum) { const t = actx.currentTime; B.hum.g.gain.cancelScheduledValues(t); B.hum.g.gain.setValueAtTime(B.hum.g.gain.value, t); B.hum.g.gain.linearRampToValueAtTime(0, t + 0.3); B.hum.o.stop(t + 0.35); B.hum.o2.stop(t + 0.35); B.hum = null; } } catch (e) {} }
+
+  // ---------- UI plumbing ----------
+  function ui(on) {
+    ['threat-banner', 'btn-msl', 'surface-nav-box'].forEach(i => { const el = document.getElementById(i); if (el) el.style.display = on ? 'none' : ''; });
+    if (on) {
+      [btn1, btn4].forEach(b => { b.style.opacity = "0.3"; b.innerText = "—"; });
+      btn2.style.opacity = ""; btn2.innerText = fieldWeapon === 'rifle' ? "PULSE RIFLE" : (fieldWeapon === 'shotgun' ? "SHOTGUN" : "MINING LASER"); btn2.className = "cockpit-btn fire";
+    } else {
+      [btn1, btn2, btn4].forEach(b => { b.style.opacity = ""; });
+      const sn = document.getElementById('surface-nav-box'); if (sn) sn.style.display = 'flex';
+      updateButtonLayout();
+    }
+  }
+  function enter(s, quiet) {
+    B = build(s);
+    B.surf = { x: playerFoot.x, z: playerFoot.z, yaw: playerFoot.yaw, pitch: playerFoot.pitch };
+    playerFoot.x = B.spawn[0]; playerFoot.z = B.spawn[1]; playerFoot.y = -10; playerFoot.vy = 0; playerFoot.isGrounded = true;
+    playerFoot.yaw = 0; playerFoot.pitch = 0.05;
+    miningLaserState.active = false; touchFire = false; touchJetpack = false;
+    ui(true); startHum();
+    if (quiet) B.fade = 0; else try { playSfx('airlock'); } catch (e) {}
+    const left = B.enemies.length, loot = B.loot.filter(l => !l.gone).length;
+    addPopup(`PIRATE BUNKER: ${B.L.name}`, "#f59e0b");
+    addPopup(B.p.cleared ? "ALREADY CLEARED - NOTHING LEFT DOWN HERE" : `${left} HOSTILE${left === 1 ? '' : 'S'} · ${loot} STASH${loot === 1 ? '' : 'ES'} TO LOOT`, B.p.cleared ? "#4ade80" : "#fca5a5");
+    if (B.L.keys && !B.doors.every(d => d.open)) addPopup(`WARLORD'S VAULT NEEDS ${B.L.keys} KEYCARDS`, "#22d3ee");
+  }
+  function exitBunker(quiet) {
+    const s = B.site;
+    stopHum(); stopSiren();
+    playerFoot.x = s.door[0] + s.fx * 4; playerFoot.z = s.door[1] + s.fz * 4; playerFoot.y = -10; playerFoot.vy = 0;
+    playerFoot.yaw = Math.atan2(s.fx, s.fz); playerFoot.pitch = 0.05;
+    miningLaserState.active = false; touchFire = false;
+    B = null;
+    ui(false);
+    if (!quiet) { landingFade = 0.5; try { playSfx('airlock'); } catch (e) {} }
+    addPopup(isCleared(s) ? "BUNKER CLEARED" : "BACK TOPSIDE", isCleared(s) ? "#4ade80" : "#38bdf8");
+  }
+
+  // ---------- combat ----------
+  const profit = () => (typeof getLoopProfitMult === 'function' ? getLoopProfitMult() : 1);
+  function hurt(dmg, cause) {
+    if (!B || B.phase !== 'in' || gameOver) return;
+    screenShake = Math.max(screenShake, 0.3); B.hurtFlash = 0.35;
+    try { vibrateGamepad(200, 0.6, 0.8); } catch (e) {}
+    if (playerFoot.suitShield > 0) {
+      try { playSfx('shield'); } catch (e) {}
+      playerFoot.suitShield -= dmg;
+      if (playerFoot.suitShield < 0) { playerFoot.suitHp += playerFoot.suitShield; playerFoot.suitShield = 0; }
+    } else { try { playSfx('hullClang'); } catch (e) {} playerFoot.suitHp -= dmg; }
+    playerFoot.suitShieldRechargeTimer = 3.5;
+    if (playerFoot.suitHp <= 0) {
+      playerFoot.suitHp = 0; B.phase = 'dead'; stopSiren(); stopHum(); miningLaserState.active = false;
+      const D = { mine: ["BLOWN TO BITS", "Stepped on a pirate proximity mine in an underground bunker."], flame: ["WELL DONE", "Roasted by flame jets in a pirate bunker."], shot: ["BUNKER BUSTED", "Gunned down by pirate sentinels in an underground bunker."], boss: ["WARLORD'S TROPHY", "Shot down by a Pirate Warlord in his own bunker."] }[cause] || ["BUNKER BUSTED", "Died in a pirate bunker."];
+      try { vibrateGamepad(700, 1, 1); } catch (e) {}
+      setTimeout(() => { try { triggerGameOver(D[0], D[1]); } catch (e) {} }, 900);
+    }
+  }
+  function sparks(x, y, z, cols, n, sp) {
+    for (let i = 0; i < n; i++) B.fx.push({ x, y, z, vx: (Math.random() - 0.5) * sp, vy: -Math.random() * sp * 0.6, vz: (Math.random() - 0.5) * sp, life: 0.3 + Math.random() * 0.4, max: 0.7, col: cols[i % cols.length], g: 30 });
+  }
+  function alertNear(x, z, rad) { for (const e of B.enemies) if (Math.hypot(e.x - x, e.z - z) < rad) e.alert = true; }
+  function killEnemy(e) {
+    const i = B.enemies.indexOf(e); if (i < 0) return;
+    B.enemies.splice(i, 1);
+    if (e.id) B.p.done.add(e.id);
+    runStats.sentinelsKilled++;
+    const pay = e.boss ? Math.round(3000 * profit() / 10) * 10 : 150;
+    ship.credits += pay; runStats.creditsEarned += pay;
+    try { playSfx('explosion'); vibrateGamepad(250, 0.6, 0.7); } catch (e2) {}
+    gore(e);
+    if (e.boss) { addPopup(`PIRATE WARLORD DOWN! +$${pay.toLocaleString()} BOUNTY`, "#facc15"); addPopup("THE VAULTS ARE UNLOCKED", "#facc15"); try { playSfx('upgrade'); } catch (e2) {} screenShake = 0.6; }
+    else addPopup("SENTINEL DESTROYED! +$150", "#c084fc");
+    checkCleared();
+  }
+  // the exact surface death (spawnSentinelGore + visor splats), with its particles taken into the bunker
+  function gore(e) {
+    const n0 = particles.length;
+    try { spawnSentinelGore({ x: e.x, y: e.y + Math.sin(B.t * 2.6 + e.ph) * 0.6, z: e.z, isBerzerk: e.boss, isFrost: false }); } catch (er) {}
+    const fresh = particles.splice(n0);
+    for (const p of fresh) { if (p.grav) { p.shape = makeGoreShape(p); p.drip = Math.random() < 0.45; p.vy *= 0.5; } B.gore.push(p); }   // low ceiling: flatter arcs so most of it paints the walls
+    if (B.gore.length > 300) { let n = B.gore.length - 300; for (let i = 0; i < B.gore.length && n > 0; i++) if (B.gore[i].landed) { B.gore.splice(i, 1); i--; n--; } }
+  }
+  function stepGore(dt) {
+    for (let i = B.gore.length - 1; i >= 0; i--) {
+      const p = B.gore[i];
+      if (p.landed) { p.life -= dt; if (p.life <= 0) { B.gore.splice(i, 1); continue; } if (p.wall && p.drip && p.y < -0.4) { p.y += 0.7 * dt; p.run = (p.run || 0) + 0.7 * dt; if (p.run > 3) p.drip = false; } continue; }
+      p.life -= dt;
+      if (p.grav) { p.vy += p.grav * dt; p.shape.rot += p.shape.spin * dt; }
+      const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt, nz = p.z + p.vz * dt;
+      if (p.grav) {
+        const [c, r] = tileOf(nx, nz);
+        if (isSolid(c, r)) {               // splat against the wall it hit
+          const [c0, r0] = tileOf(p.x, p.z);
+          if (c !== c0) { p.x = c > c0 ? c * T - 0.08 : (c + 1) * T + 0.08; p.z = nz; p.wall = [c > c0 ? -1 : 1, 0, 0]; }
+          else { p.z = r > r0 ? r * T - 0.08 : (r + 1) * T + 0.08; p.x = nx; p.wall = [0, 0, r > r0 ? -1 : 1]; }
+          p.y = Math.max(CEIL + 0.3, Math.min(-0.3, ny)); p.landed = true; p.life = 3 + Math.random() * 2; continue;
+        }
+        if (ny >= 0) { p.x = nx; p.z = nz; p.y = 0; p.landed = true; p.floor = true; p.life = 3 + Math.random() * 2; continue; }
+        if (ny <= CEIL) { p.x = nx; p.z = nz; p.y = CEIL + 0.05; p.landed = true; p.ceil = true; p.life = 3 + Math.random() * 2; p.drip = false; continue; }
+      }
+      p.x = nx; p.y = ny; p.z = nz;
+      if (p.life <= 0) B.gore.splice(i, 1);
+    }
+  }
+  function drawGore(p, x, y, s, ex, ez) {
+    const col = p.color, sh = p.shape;
+    if (p.landed) ctx.globalAlpha *= Math.max(0, Math.min(1, p.life / 1.2));   // fades away a few seconds after it lands
+    if (!p.grav) { const q = Math.max(1, Math.min(6, (p.sz || 3) * s * 0.35)); ctx.fillStyle = col; ctx.fillRect(Math.round(x - q / 2), Math.round(y - q / 2), q, q); return; }
+    const R = Math.min(p.gib ? 10 : 12, Math.max(1.5, (p.sz || 3) * s * (p.gib ? 0.4 : 0.6)));
+    if (!p.landed) {
+      if (p.gib) drawGibChunk(x, y, R, sh.rot, sh, col, 1);
+      else { ctx.fillStyle = "#450a0a"; ctx.beginPath(); ctx.arc(x, y, R * 0.5 + 0.7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, R * 0.5, 0, Math.PI * 2); ctx.fill(); }
+      return;
+    }
+    let flat = 0.36;
+    if (p.wall) { const vx = ex - p.x, vz = ez - p.z, l = Math.hypot(vx, vz) || 1; flat = Math.max(0.3, Math.min(1, Math.abs(p.wall[0] * vx + p.wall[2] * vz) / l)); }
+    if (p.wall && p.run > 0.05) {   // the run of blood left behind as it slides down the wall
+      ctx.fillStyle = "#7f1d1d"; ctx.fillRect(Math.round(x - Math.max(1, R * 0.12)), Math.round(y - p.run * s), Math.max(1, Math.round(R * 0.24)), Math.max(1, Math.round(p.run * s)));
+    }
+    if (p.gib) {
+      if (p.wall) { ctx.save(); ctx.translate(x, y); ctx.scale(flat, 1); drawGoreSplat(0, 0, R * 1.15, 1, sh, "#b91c1c", 0.9); drawGibChunk(0, 0, R, sh.rot, sh, col, 1); ctx.restore(); }
+      else { drawGoreSplat(x, y + R * 0.3, R * 1.15, 0.36, sh, "#b91c1c", 0.9); drawGibChunk(x, y, R, sh.rot, sh, col, 1); }
+      return;
+    }
+    if (p.wall) { ctx.save(); ctx.translate(x, y); ctx.scale(flat, 1); drawGoreSplat(0, 0, R, 1, sh, col, 0.95); ctx.restore(); }
+    else drawGoreSplat(x, y, R, flat, sh, col, 0.95);
+  }
+  function damageEnemy(e, dmg) {
+    if (dmg <= 0) return;
+    e.hp -= dmg; e.hitT = 0.12; e.alert = true; e.lastSeen = [playerFoot.x, playerFoot.z];
+    alertNear(e.x, e.z, 45);
+    if (e.hp <= 0) killEnemy(e);
+  }
+  function explodeMine(m, shot) {
+    if (m.state === 'gone') return;
+    m.state = 'gone'; B.p.done.add(m.id);
+    try { playSfx('explosion'); if (typeof dcPlayBoom === 'function') dcPlayBoom(70, 0.6, 0.5); } catch (e) {}
+    B.fx.push({ boom: true, x: m.x, y: -2, z: m.z, life: 0.55, max: 0.55, r: 11 });
+    sparks(m.x, -1, m.z, ["#fde047", "#f97316", "#ef4444", "#78716c"], 40, 46);
+    const d = Math.hypot(playerFoot.x - m.x, playerFoot.z - m.z);
+    screenShake = Math.max(screenShake, Math.max(0.15, 0.7 - d / 60));
+    if (d < 15) hurt(Math.round(70 * (1 - d / 15) + 10), 'mine');
+    for (const e of B.enemies.slice()) if (Math.hypot(e.x - m.x, e.z - m.z) < 16) damageEnemy(e, e.boss ? 120 : 999);
+    for (const o of B.mines) if (o !== m && o.state === 'armed' && Math.hypot(o.x - m.x, o.z - m.z) < 13) { o.state = 'beep'; o.t = 0.45; }   // chain reaction
+    if (shot) addPopup("MINE DETONATED", "#fb923c");
+  }
+
+  // what's under the crosshair: enemies and mines, nearest first, with line of sight
+  function targetsInCone(cone, range) {
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, f = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    const ex = playerFoot.x, ey = EYE, ez = playerFoot.z, out = [];
+    const test = (o, x, y, z, rad) => {
+      const vx = x - ex, vy = y - ey, vz = z - ez, d = Math.hypot(vx, vy, vz);
+      if (d > range || d < 0.5) return;
+      const ang = Math.acos(Math.max(-1, Math.min(1, (vx * f[0] + vy * f[1] + vz * f[2]) / d)));
+      if (ang > cone + Math.atan(rad / d)) return;
+      if (!los(ex, ez, x, z)) return;
+      out.push({ o, d, x, y, z, ang });
+    };
+    for (const e of B.enemies) test(e, e.x, e.y + Math.sin(B.t * 2.6 + e.ph) * 0.6, e.z, e.boss ? 5 : 3.6);
+    for (const m of B.mines) if (m.state !== 'gone') test(m, m.x, -0.6, m.z, 1.8);
+    out.sort((a, b) => a.d - b.d);
+    return out;
+  }
+  function rayWall() {   // where the beam lands when it hits nothing
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, f = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    let x = playerFoot.x, y = EYE, z = playerFoot.z;
+    for (let i = 0; i < 200; i++) {
+      x += f[0]; y += f[1]; z += f[2];
+      const [c, r] = tileOf(x, z);
+      if (isSolid(c, r) || y > 0 || y < CEIL) return [x - f[0], y - f[1], z - f[2]];
+    }
+    return [x, y, z];
+  }
+  function fire(dt, wants) {
+    const w = fieldWeapon;
+    if (w === 'shotgun') stepShotgun(dt);
+    miningLaserState.active = wants;
+    B.beam = null;
+    if (!wants) return;
+    if (w === 'shotgun') {
+      const m = shotgunTick(); if (!m) return;
+      const hits = targetsInCone(SSG.cone, SSG.range);
+      for (const h of hits) {
+        if (h.o.state) explodeMine(h.o, true);
+        else { damageEnemy(h.o, h.o.boss ? 150 : 999); sparks(h.x, h.y, h.z, ["#39ff14", "#ff2bd6", "#ffffff"], 12, 26); }
+      }
+      // pellets that miss chip the walls
+      const p = rayWall(); sparks(p[0], p[1], p[2], ["#39ff14", "#ff2bd6", "#e5e7eb"], 10, 18);
+      alertNear(playerFoot.x, playerFoot.z, 70);
+      return;
+    }
+    if (w === 'rifle') {
+      const wdt = burstRifleTick(dt); if (!wdt) return;
+      const h = targetsInCone(0.035, RIFLE.range)[0];
+      if (h) { if (h.o.state) explodeMine(h.o, true); else damageEnemy(h.o, ship.laserDamage * wdt * 2.2); sparks(h.x, h.y, h.z, ["#fb923c", "#ffffff", "#c084fc"], 6, 18); }
+      else { const p = rayWall(); sparks(p[0], p[1], p[2], ["#fb923c", "#fde68a"], 5, 14); }
+      alertNear(playerFoot.x, playerFoot.z, 60);
+      return;
+    }
+    // mining laser: continuous beam
+    B.humT -= dt; if (B.humT <= 0) { B.humT = 0.08; try { playSfx('miningHum'); } catch (e) {} }
+    const h = targetsInCone(0.03, 200)[0];
+    if (h) { B.beam = [h.x, h.y, h.z, "#f43f5e"]; if (h.o.state) explodeMine(h.o, true); else damageEnemy(h.o, ship.laserDamage * dt * 2.2); if (Math.random() < 0.5) sparks(h.x, h.y, h.z, ["#38bdf8", "#ffffff"], 2, 12); }
+    else { const p = rayWall(); B.beam = [p[0], p[1], p[2], "#38bdf8"]; if (Math.random() < 0.4) sparks(p[0], p[1], p[2], ["#38bdf8", "#e0f2fe"], 2, 10); }
+  }
+
+  // ---------- enemies ----------
+  function stepEnemies(dt) {
+    const px = playerFoot.x, pz = playerFoot.z;
+    let shooters = 0;
+    for (const e of B.enemies) if (e.burst > 0) shooters++;
+    for (const e of B.enemies.slice()) {
+      e.hitT = Math.max(0, e.hitT - dt);
+      const d = Math.hypot(px - e.x, pz - e.z);
+      const seen = d < (e.boss ? 120 : 95) && los(e.x, e.z, px, pz);
+      if (e.boss && !B.bossAwake) { if (seen && d < 70) { B.bossAwake = true; e.alert = true; addPopup("THE PIRATE WARLORD IS AWAKE!", "#f43f5e"); try { playSfx('boss'); } catch (er) {} } else continue; }
+      if (seen) { if (!e.alert) { e.alert = true; tone('square', 900, 1300, 0.12, 0.04); } e.lastSeen = [px, pz]; e.lostT = 0; }
+      else if (e.alert) { e.lostT += dt; if (e.lostT > 12) { e.alert = false; e.lastSeen = null; } }
+      let mx = 0, mz = 0;
+      if (!e.alert) {
+        const hx = e.home[0] + Math.sin(B.t * 0.4 + e.ph) * 4, hz = e.home[1] + Math.cos(B.t * 0.33 + e.ph) * 4;
+        mx = hx - e.x; mz = hz - e.z; const l = Math.hypot(mx, mz); if (l > 0.5) { mx /= l; mz /= l; } else mx = mz = 0;
+        mx *= 0.25; mz *= 0.25;
+      } else {
+        const tgt = seen ? [px, pz] : e.lastSeen;
+        if (tgt) {
+          const dx = tgt[0] - e.x, dz = tgt[1] - e.z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l;
+          const want = e.boss ? 30 : 26;
+          let fwd = 0;
+          if (!seen) fwd = l > 3 ? 1 : 0; else if (l > want + 6) fwd = 1; else if (l < want - 9) fwd = -0.8;
+          e.strafeT -= dt; if (e.strafeT <= 0) { e.strafeT = 1.2 + Math.random() * 2; e.strafe = -e.strafe; }
+          const sf = seen ? 0.65 : 0;
+          mx = ux * fwd - uz * e.strafe * sf; mz = uz * fwd + ux * e.strafe * sf;
+        }
+      }
+      if (d < 9) { const k = (9 - d) / 9; mx -= (px - e.x) / (d || 1) * k * 1.5; mz -= (pz - e.z) / (d || 1) * k * 1.5; }
+      for (const o of B.enemies) { if (o === e) continue; const od = Math.hypot(o.x - e.x, o.z - e.z); if (od < 7 && od > 0.01) { mx -= (o.x - e.x) / od * 0.5; mz -= (o.z - e.z) / od * 0.5; } }
+      const sp = (e.boss ? 9 : 13) * dt;
+      const nx = e.x + mx * sp, nz = e.z + mz * sp;
+      if (!wallHit(nx, e.z, 3)) e.x = nx; else e.strafe = -e.strafe;
+      if (!wallHit(e.x, nz, 3)) e.z = nz; else e.strafe = -e.strafe;
+      { const dd = Math.hypot(e.x - px, e.z - pz), MIN = e.boss ? 12 : 9;   // never right in your face
+        if (dd < MIN && dd > 0.01) { const qx = px + (e.x - px) / dd * MIN, qz = pz + (e.z - pz) / dd * MIN; if (!wallHit(qx, qz, 3)) { e.x = qx; e.z = qz; } } }
+      // flames hurt them too
+      for (const f of B.flames) if (flameState(f) === 'on' && Math.abs(e.x - f.x) < T / 2 && Math.abs(e.z - f.z) < T / 2) damageEnemy(e, 60 * dt);
+      if (!B.enemies.includes(e)) continue;
+      // shooting
+      if (e.burst > 0) {
+        e.burstT -= dt;
+        if (e.burstT <= 0) { shoot(e); e.burst--; e.burstT = 0.2; }
+      } else if (e.alert && seen && d < 110) {
+        e.cd -= dt;
+        if (e.cd <= 0 && shooters < 3) { shooters++; e.burst = 1; e.burstT = 0; e.cd = e.boss ? 1.1 + Math.random() * 0.5 : 1.6 + Math.random() * 1.2; }
+      }
+    }
+  }
+  function shoot(e) {
+    const ex = e.x, ey = e.y, ez = e.z, tx = playerFoot.x, ty = EYE + 1.5, tz = playerFoot.z;
+    const d = Math.hypot(tx - ex, ty - ey, tz - ez) || 1, sp = e.boss ? 80 : 70, spread = e.boss ? 0.03 : 0.05;
+    const vx = (tx - ex) / d + (Math.random() - 0.5) * spread, vy = (ty - ey) / d + (Math.random() - 0.5) * spread, vz = (tz - ez) / d + (Math.random() - 0.5) * spread;
+    B.bolts.push({ x: ex, y: ey, z: ez, vx: vx * sp, vy: vy * sp, vz: vz * sp, life: 3, boss: e.boss, dmg: e.boss ? 18 : 10 });
+    try { playSfx('enemyLaser'); } catch (er) {}
+  }
+  function stepBolts(dt) {
+    for (let i = B.bolts.length - 1; i >= 0; i--) {
+      const b = B.bolts[i], ox = b.x, oy = b.y, oz = b.z;
+      b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.life -= dt;
+      // swept test against the player (bolts are fast)
+      const sx = b.x - ox, sy = b.y - oy, sz = b.z - oz, L2 = sx * sx + sy * sy + sz * sz || 1;
+      const k = Math.max(0, Math.min(1, ((playerFoot.x - ox) * sx + (EYE + 1.5 - oy) * sy + (playerFoot.z - oz) * sz) / L2));
+      const cx = ox + sx * k, cy = oy + sy * k, cz = oz + sz * k;
+      if (Math.hypot(playerFoot.x - cx, (EYE + 1.5 - cy) * 0.6, playerFoot.z - cz) < 3.2) { B.bolts.splice(i, 1); hurt(b.dmg, b.boss ? 'boss' : 'shot'); if (!b.boss) try { splatVisor(3 + Math.floor(Math.random() * 2), 'acid'); } catch (e) {} continue; }
+      const [c, r] = tileOf(b.x, b.z);
+      if (b.life <= 0 || isSolid(c, r) || b.y > 0 || b.y < CEIL) { sparks(ox, oy, oz, b.boss ? ["#facc15", "#f43f5e"] : ["#39ff14", "#bef264", "#eaffd0"], 6, 10); B.bolts.splice(i, 1); }
+    }
+  }
+
+  // ---------- traps ----------
+  const FLAME_P = 3.4;
+  function flameState(f) { const k = (B.t + f.ph) % FLAME_P; return k < 1.7 ? 'off' : (k < 2.1 ? 'warn' : 'on'); }
+  function stepTraps(dt) {
+    const px = playerFoot.x, pz = playerFoot.z;
+    // flame jets
+    let inFire = false;
+    for (const f of B.flames) {
+      const s = flameState(f), dd = Math.hypot(px - f.x, pz - f.z);
+      if (s !== f.prev) { if (s === 'on' && dd < 70) { tone('sawtooth', 120, 60, 0.5, 0.06); try { playSfx('ignite'); } catch (e) {} } if (s === 'warn' && dd < 60) tone('square', 300, 280, 0.08, 0.03); f.prev = s; }
+      if (s === 'on' && Math.abs(px - f.x) < T / 2 - 0.5 && Math.abs(pz - f.z) < T / 2 - 0.5) inFire = true;
+      if (s === 'on' && Math.random() < dt * 60) B.fx.push({ x: f.x + (Math.random() - 0.5) * 8, y: -0.5, z: f.z + (Math.random() - 0.5) * 8, vx: (Math.random() - 0.5) * 3, vy: -22 - Math.random() * 14, vz: (Math.random() - 0.5) * 3, life: 0.5, max: 0.5, flame: true, g: 0 });
+      if (s === 'warn' && Math.random() < dt * 8) B.fx.push({ x: f.x + (Math.random() - 0.5) * 6, y: -0.3, z: f.z + (Math.random() - 0.5) * 6, vx: 0, vy: -6, vz: 0, life: 0.25, max: 0.25, flame: true, g: 0 });
+    }
+    if (inFire) { B.burnT -= dt; if (B.burnT <= 0) { B.burnT = 0.22; hurt(8, 'flame'); } } else B.burnT = 0;
+    // proximity mines
+    for (const m of B.mines) {
+      if (m.state === 'gone') continue;
+      const d = Math.hypot(px - m.x, pz - m.z);
+      if (m.state === 'armed' && d < 8) { m.state = 'beep'; m.t = 0.65; tone('square', 1500, 1500, 0.08, 0.06); addPopup("!! MINE !!", "#ef4444"); }
+      else if (m.state === 'beep') {
+        const before = m.t; m.t -= dt;
+        if (Math.floor(before * 10) !== Math.floor(m.t * 10) && Math.floor(m.t * 10) % 2 === 0) tone('square', 1800, 1800, 0.05, 0.05);
+        if (m.t <= 0) explodeMine(m, false);
+      }
+    }
+    // tripwires: break the beam and the whole bunker hears it
+    for (const tw of B.trips) {
+      if (!tw.live) continue;
+      const along = tw.axis === 'z' ? pz - tw.z : px - tw.x, across = tw.axis === 'z' ? px - tw.x : pz - tw.z;
+      if (Math.abs(along) < 1.4 && Math.abs(across) < T / 2) tripAlarm(tw);
+    }
+    // blast doors grinding open
+    for (const d of B.doors) if (d.opening && d.open < 1) { d.open = Math.min(1, d.open + dt / 1.6); if (d.open >= 1) { d.opening = false; try { playSfx('hullClang'); } catch (e) {} } }
+  }
+  function tripAlarm(tw) {
+    tw.live = false; B.p.done.add(tw.id);
+    B.alarm = 12; startSiren();
+    addPopup("!!! TRIPWIRE - ALARM RAISED !!!", "#ef4444");
+    addPopup("REINFORCEMENTS INBOUND", "#fca5a5");
+    screenShake = Math.max(screenShake, 0.25);
+    // two extra sentinels drop out of floor hatches a few tiles away
+    const cand = [];
+    for (let r = 0; r < B.ROWS; r++) for (let c = 0; c < B.COLS; c++) {
+      if (cellAt(c, r) !== '.') continue;
+      const dd = Math.hypot(c - tw.c, r - tw.r);
+      if (dd >= 2.5 && dd <= 6) cand.push([c, r, dd]);
+    }
+    cand.sort((a, b) => b[2] - a[2]);
+    for (let i = 0; i < Math.min(2, cand.length); i++) {
+      const [c, r] = cand[i * Math.max(1, Math.floor(cand.length / 3))] || cand[i];
+      const x = c * T + T / 2, z = r * T + T / 2;
+      B.enemies.push({ id: null, boss: false, x, z, y: -8, home: [x, z], hp: 105, max: 105, alert: true, lastSeen: [playerFoot.x, playerFoot.z], lostT: 0, cd: 1.5, burst: 0, burstT: 0, strafe: 1, strafeT: 1, ph: Math.random() * 6, hitT: 0, walk: 0, warp: 0.6 });
+      sparks(x, -4, z, ["#c084fc", "#ffffff"], 20, 20);
+    }
+    alertNear(tw.x, tw.z, 90);
+  }
+  function startSiren() {
+    try {
+      ensureAudio(); if (!actx || B.siren) return;
+      const o = actx.createOscillator(), l = actx.createOscillator(), lg = actx.createGain(), g = actx.createGain();
+      o.type = 'square'; o.frequency.value = 620; l.frequency.value = 1.6; lg.gain.value = 220;
+      l.connect(lg); lg.connect(o.frequency); o.connect(g); g.connect(audioOut()); g.gain.value = 0.025;
+      o.start(); l.start(); B.siren = { o, l, g };
+    } catch (e) {}
+  }
+  function stopSiren() { try { if (B && B.siren) { B.siren.o.stop(); B.siren.l.stop(); B.siren = null; } } catch (e) {} }
+
+  // ---------- actions ----------
+  function checkCleared() {
+    if (!B || B.p.cleared) return;
+    const lootLeft = B.loot.some(l => !l.gone), foes = B.enemies.length;
+    if (!lootLeft && !foes) {
+      B.p.cleared = true;
+      const bonus = Math.round(2500 * profit() / 10) * 10; ship.credits += bonus; runStats.creditsEarned += bonus;
+      addPopup(`BUNKER CLEARED! +$${bonus.toLocaleString()} CLEAN-SWEEP BONUS`, "#4ade80");
+      try { playSfx('upgrade'); } catch (e) {}
+    }
+  }
+  function getAction() {
+    const px = playerFoot.x, pz = playerFoot.z;
+    if (Math.hypot(px - B.exit[0], pz - B.exit[1]) < 9) return { label: "EXIT", banner: ">> LIFT TO THE SURFACE: TAP EXIT <<", run: startExitCut };
+    for (const d of B.doors) {
+      if (d.open > 0 || d.opening || Math.hypot(px - d.x, pz - d.z) > 15) continue;
+      const need = B.L.keys || 0;
+      if (need && B.p.keys < need) return { label: "LOCKED", banner: `>> WARLORD'S BLAST DOOR: ${B.p.keys}/${need} KEYCARDS <<`, run: () => { addPopup(`NEED ${need - B.p.keys} MORE KEYCARD${need - B.p.keys === 1 ? '' : 'S'}`, "#22d3ee"); tone('square', 220, 160, 0.2, 0.05); } };
+      return { label: "OPEN DOOR", banner: ">> BLAST DOOR: TAP OPEN DOOR <<", run: () => {
+        d.opening = true; B.p.done.add(d.id);
+        try { playSfx('crusher'); } catch (e) {} tone('sawtooth', 70, 50, 1.6, 0.07); screenShake = 0.3;
+        addPopup("SOMETHING BIG IS BEHIND THIS DOOR...", "#f43f5e");
+      } };
+    }
+    let best = null, bd = 10;
+    for (const l of B.loot) { if (l.gone) continue; const d = Math.hypot(px - l.x, pz - l.z); if (d < bd) { bd = d; best = l; } }
+    if (best) {
+      const l = best;
+      const pay = (lo, hi) => { const cr = Math.round((lo + Math.random() * (hi - lo)) * profit() / 10) * 10; ship.credits += cr; runStats.creditsEarned += cr; return cr; };
+      const take = () => { l.gone = true; B.p.done.add(l.id); checkCleared(); };
+      if (l.kind === 'V') {
+        if (B.enemies.some(e => e.boss)) return { label: "LOCKED", banner: ">> WARLORD'S VAULT: TIME-LOCKED WHILE THE WARLORD LIVES <<", run: () => { addPopup("TAKE OUT THE PIRATE WARLORD FIRST", "#f43f5e"); tone('square', 220, 160, 0.2, 0.05); } };
+        return { label: "CRACK VAULT", banner: ">> WARLORD'S VAULT: TAP CRACK VAULT <<", run: () => { take(); try { playSfx('upgrade'); playSfx('coin'); vibrateGamepad(300, 0.6, 0.6); } catch (e) {} addPopup(`VAULT CRACKED: +$${pay(4000, 6000).toLocaleString()} IN STOLEN CREDITS!`, "#facc15"); } };
+      }
+      if (l.kind === 'C') return { label: "OPEN CRATE", banner: ">> PIRATE STASH: TAP OPEN CRATE <<", run: () => { take(); try { playSfx('coin'); vibrateGamepad(120, 0.3, 0.4); } catch (e) {} addPopup(`PIRATE STASH: +$${pay(900, 1600).toLocaleString()}`, "#4ade80"); } };
+      if (l.kind === 'A') return { label: "GRAB AMMO", banner: ">> AMMO CRATE: TAP GRAB AMMO <<", run: () => { take(); ship.missiles = (ship.missiles || 0) + 3; try { playSfx('coin'); } catch (e) {} addPopup(`AMMO CRATE: +3 MISSILES, +$${pay(400, 700).toLocaleString()}`, "#a3e635"); } };
+      if (l.kind === 'H') return { label: "MEDKIT", banner: ">> MEDKIT: TAP TO PATCH UP (+50 HEALTH) <<", run: () => { take(); const mx = playerFoot.maxSuitHp || 100; playerFoot.suitHp = Math.min(mx, (playerFoot.suitHp || 0) + 50); playerFoot.suitShield = playerFoot.maxSuitShield || playerFoot.suitShield; try { playSfx('upgrade'); } catch (e) {} addPopup("MEDKIT: +50 HEALTH, SHIELD RECHARGED", "#4ade80"); } };
+      if (l.kind === 'K') return { label: "KEYCARD", banner: ">> KEYCARD: TAP TO TAKE IT <<", run: () => { take(); B.p.keys++; try { playSfx('targetLock'); } catch (e) {} addPopup(`KEYCARD ${B.p.keys}/${B.L.keys || 3}`, "#22d3ee"); if (B.p.keys >= (B.L.keys || 3)) addPopup("ALL KEYCARDS - THE WARLORD'S DOOR WILL OPEN", "#22d3ee"); } };
+    }
+    return null;
+  }
+
+  // ---------- update ----------
+  const kJ = (a) => keys[keyBindings[a]] && !prevKeys[keyBindings[a]];
+  const kA = (a) => keys[keyBindings[a]] === true;
+  let tapAction = false;
+  window.addEventListener("pointerdown", (e) => {
+    if (CUT && (e.target === btn1 || e.target === btn2 || e.target === btn3 || e.target === btn4)) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+    if (!B && !nearDoor()) return;
+    if (e.target === btn3 || (btn3.contains && btn3.contains(e.target))) {
+      if (B && B.phase === 'in') { tapAction = true; e.stopImmediatePropagation(); e.preventDefault(); }
+      else if (!B && nearDoor()) { tapAction = true; e.stopImmediatePropagation(); e.preventDefault(); }
+    }
+    if (B && (e.target === btn1 || e.target === btn4)) { e.stopImmediatePropagation(); e.preventDefault(); }
+  }, true);
+  function endInput() {
+    for (let i = 0; i < currentGpButtons.length; i++) prevGamepadButtons[i] = currentGpButtons[i];
+    for (let i = 0; i < currentGpAxes.length; i++) prevGamepadAxes[i] = currentGpAxes[i];
+    for (const k in keys) prevKeys[k] = keys[k];
+  }
+  function nearDoor() {
+    if (B || cabin || gameMode !== 'SURFACE' || gameOver || landingSeq || takeoffSeq) return false;
+    const s = currentSite(); if (!s) return false;
+    if (Math.hypot(playerFoot.x, playerFoot.z) < 28) return false;               // the ship's BOARD wins
+    return Math.hypot(playerFoot.x - s.door[0], playerFoot.z - s.door[1]) < 13;
+  }
+  function updateBunker(dt) {
+    pollGamepadState();
+    B.t += dt;
+    if (activePopup) { activePopup.life -= dt * 0.9; activePopup.y -= 8 * dt; if (activePopup.life <= 0) activePopup = null; }
+    if (!activePopup && popupQueue.length > 0) { activePopup = popupQueue.shift(); if (popupQueue.length >= 2 && !activePopup.keep) activePopup.life = activePopup.maxLife = 0.6; }
+    if (screenShake > 0) screenShake = Math.max(0, screenShake - dt);
+    B.fade = Math.max(0, B.fade - dt * 1.4);
+    B.hurtFlash = Math.max(0, B.hurtFlash - dt);
+    const cluster = document.getElementById("flight-cluster");
+    if (cluster) cluster.style.display = window.showTouchControls ? 'grid' : 'none';
+    // fx
+    for (let i = B.fx.length - 1; i >= 0; i--) { const f = B.fx[i]; f.life -= dt; if (!f.boom) { f.vy += (f.g === undefined ? 30 : f.g) * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt; } if (f.life <= 0 || (!f.boom && !f.flame && f.y > 0)) B.fx.splice(i, 1); }
+    if (B.fx.length > 400) B.fx.splice(0, B.fx.length - 400);
+    if (B.phase !== 'in' || gameOver) { miningLaserState.active = false; endInput(); return; }
+    const paused = (typeof isMapOpen !== 'undefined' && isMapOpen) || isControlsModalOpen || (typeof isMenuOpen === 'function' && isMenuOpen());
+    if (paused) { endInput(); return; }
+    // look + walk
+    let walkX = 0, walkZ = 0;
+    if (joy.active) { walkX = joy.dx / joy.radius; walkZ = -joy.dy / joy.radius; }
+    walkX += currentGpAxes[0]; walkZ -= currentGpAxes[1];
+    if (currentGpButtons[14]) walkX -= 1; if (currentGpButtons[15]) walkX += 1;
+    if (currentGpButtons[12]) walkZ += 1; if (currentGpButtons[13]) walkZ -= 1;
+    if (kA('left')) walkX -= 1; if (kA('right')) walkX += 1; if (kA('up')) walkZ += 1; if (kA('down')) walkZ -= 1;
+    if (Math.abs(walkX) < 0.12) walkX = 0; if (Math.abs(walkZ) < 0.12) walkZ = 0;
+    playerFoot.yaw += currentGpAxes[2] * 2.4 * dt;
+    playerFoot.pitch = Math.max(-1.3, Math.min(1.3, playerFoot.pitch + currentGpAxes[3] * 2.4 * dt));
+    if (keys["ArrowLeft"]) playerFoot.yaw -= 1.8 * dt; if (keys["ArrowRight"]) playerFoot.yaw += 1.8 * dt;
+    if (keys["ArrowUp"]) playerFoot.pitch = Math.max(-1.3, playerFoot.pitch - 1.8 * dt); if (keys["ArrowDown"]) playerFoot.pitch = Math.min(1.3, playerFoot.pitch + 1.8 * dt);
+    if (mouseDeltaX || mouseDeltaY) { playerFoot.yaw += mouseDeltaX * 0.0025; playerFoot.pitch = Math.max(-1.3, Math.min(1.3, playerFoot.pitch + mouseDeltaY * 0.0025)); mouseDeltaX = 0; mouseDeltaY = 0; }
+    const mag = Math.hypot(walkX, walkZ); if (mag > 1) { walkX /= mag; walkZ /= mag; }
+    const sp = 30, sY = Math.sin(playerFoot.yaw), cY = Math.cos(playerFoot.yaw);
+    const nx = playerFoot.x + (sY * walkZ + cY * walkX) * sp * dt, nz = playerFoot.z + (cY * walkZ - sY * walkX) * sp * dt;
+    if (!blocked(nx, playerFoot.z)) playerFoot.x = nx;
+    if (!blocked(playerFoot.x, nz)) playerFoot.z = nz;
+    { const [c, r] = tileOf(playerFoot.x, playerFoot.z); for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) B.seen.add((r + dr) * 100 + (c + dc)); }
+    // shields recharge as normal
+    if (playerFoot.suitShieldRechargeTimer > 0) playerFoot.suitShieldRechargeTimer -= dt;
+    else if (playerFoot.suitShield < playerFoot.maxSuitShield) playerFoot.suitShield = Math.min(playerFoot.maxSuitShield, playerFoot.suitShield + 8 * dt);
+    // weapon
+    const wantsFire = touchFire || kA('fire') || isGpActive('fire') || !!currentGpButtons[5];
+    fire(dt, wantsFire);
+    stepEnemies(dt);
+    stepBolts(dt);
+    stepGore(dt);
+    try { updateVisorDrips(dt); } catch (e) {}
+    stepTraps(dt);
+    if (B.alarm > 0) { B.alarm -= dt; if (B.alarm <= 0) stopSiren(); }
+    if (!B || B.phase !== 'in') { endInput(); return; }
+    B.action = getAction();
+    const wants = tapAction || kJ('action') || kJ('board') || isGpJustPressed('action') || isGpJustPressed('board');
+    tapAction = false;
+    if (wants && B.action) B.action.run();
+    if (!B) { endInput(); return; }
+    // HUD
+    const nb = document.getElementById("nav-banner");
+    if (nb) { nb.style.display = ''; nb.innerText = B.action ? B.action.banner : `PIRATE BUNKER · ${B.L.name}${B.p.cleared ? " · CLEARED" : ""}`; }
+    btn3.innerText = B.action ? B.action.label : "—";
+    btn3.className = B.action ? "cockpit-btn action active" : "cockpit-btn action";
+    try {
+      const sh = playerFoot.suitShield || 0, msh = playerFoot.maxSuitShield || 40, hp = playerFoot.suitHp || 0, mhp = playerFoot.maxSuitHp || 100;
+      document.getElementById("shield-bar").style.width = `${Math.max(0, sh / msh * 100)}%`;
+      document.getElementById("shield-pct").innerText = `${Math.ceil(Math.max(0, sh / msh * 100))}%`;
+      document.getElementById("hull-bar").style.width = `${Math.max(0, hp / mhp * 100)}%`;
+      document.getElementById("hull-pct").innerText = `${Math.ceil(Math.max(0, hp / mhp * 100))}%`;
+      document.getElementById("stat-cred").innerText = `$${ship.credits.toLocaleString()}`;
+      if (window.__pilotFace && window.__pilotFace.step) window.__pilotFace.step(dt);
+    } catch (e) {}
+    endInput();
+  }
+
+  // ======================================================================
+  // RENDERING
+  // ======================================================================
+  function face(F, pts, col, o) {
+    let cx = 0, cy = 0, cz = 0; for (const p of pts) { cx += p[0]; cy += p[1]; cz += p[2]; }
+    F.push(Object.assign({ pts, rgb: typeof col === 'string' ? hexRgb(col) : col, c: [cx / pts.length, cy / pts.length, cz / pts.length] }, o || {}));
+  }
+  function rect(F, plane, k, u0, u1, v0, v1, n, col, o) {
+    let pts;
+    if (plane === 'x') pts = [[k, v0, u0], [k, v0, u1], [k, v1, u1], [k, v1, u0]];
+    else if (plane === 'y') pts = [[u0, k, v0], [u1, k, v0], [u1, k, v1], [u0, k, v1]];
+    else pts = [[u0, v0, k], [u1, v0, k], [u1, v1, k], [u0, v1, k]];
+    face(F, pts, col, Object.assign({ n }, o || {}));
+  }
+  function rectT(F, plane, k, u0, u1, v0, v1, n, col, o) {
+    const nu = Math.max(1, Math.ceil(Math.abs(u1 - u0) / 6.5)), nv = Math.max(1, Math.ceil(Math.abs(v1 - v0) / 6.5));
+    for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++)
+      rect(F, plane, k, u0 + (u1 - u0) * i / nu, u0 + (u1 - u0) * (i + 1) / nu, v0 + (v1 - v0) * j / nv, v0 + (v1 - v0) * (j + 1) / nv, n, col, o);
+  }
+  function box(F, x0, x1, y0, y1, z0, z1, col, o) {
+    o = o || {};
+    const top = Math.min(y0, y1), bot = Math.max(y0, y1), thin = Math.min(Math.abs(x1 - x0), bot - top, Math.abs(z1 - z0)) < 1.5, R = (o.emis || thin) ? rect : rectT;
+    R(F, 'y', top, x0, x1, z0, z1, [0, -1, 0], o.top || col, o);
+    R(F, 'z', z0, x0, x1, top, bot, [0, 0, -1], o.side || col, o);
+    R(F, 'z', z1, x0, x1, top, bot, [0, 0, 1], o.front || o.side || col, o);
+    R(F, 'x', x0, z0, z1, top, bot, [-1, 0, 0], o.side || col, o);
+    R(F, 'x', x1, z0, z1, top, bot, [1, 0, 0], o.side || col, o);
+  }
+  // concrete walls with a rusty kick plate and a painted stripe
+  function wallEdge(F, plane, k, u0, u1, n, alt) {
+    rect(F, plane, k, u0, u1, -2.2, 0, n, "#3a2a1c");
+    rect(F, plane, k, u0, u1, -2.8, -2.2, n, alt ? "#a16207" : "#854d0e");
+    rect(F, plane, k, u0, u1, CEIL, CEIL + 1.5, n, "#1c1917");
+    rectT(F, plane, k, u0, u1, CEIL + 1.5, -9, n, alt ? "#57534e" : "#52504a");
+    rectT(F, plane, k, u0, u1, -9, -2.8, n, alt ? "#4a4743" : "#46423d");
+  }
+  function buildStatic() {
+    const F = [], m = B.map;
+    for (let r = 0; r < B.ROWS; r++) for (let c = 0; c < B.COLS; c++) {
+      const ch = m[r][c];
+      if (ch === '#') continue;
+      const x0 = c * T, x1 = x0 + T, z0 = r * T, z1 = z0 + T, alt = (c + r) % 2 === 1;
+      const W = (cc, rr) => cellAt(cc, rr) === '#';
+      if (ch === 'U') {        // the lift up to the surface: doors in the wall at the head of the entry tile
+        const k = z1, n = [0, 0, 1], mx = (x0 + x1) / 2;
+        wallEdge(F, 'z', k, x0, x1, n, alt);
+        rect(F, 'z', k + 0.05, mx - 4.6, mx + 4.6, -12.6, 0, n, "#18181b", { bias: 1.2 });                       // frame
+        for (let i = 0; i < 6; i++) rect(F, 'z', k + 0.08, mx - 4.6 + i * 1.53, mx - 3.07 + i * 1.53, -12.6, -11.6, n, i % 2 ? "#111827" : "#eab308", { bias: 1.6 });
+        rect(F, 'z', k + 0.08, mx - 3.9, mx - 0.06, -11.4, 0, n, "#52525b", { bias: 1.5 });                    // door halves
+        rect(F, 'z', k + 0.08, mx + 0.06, mx + 3.9, -11.4, 0, n, "#4b5563", { bias: 1.5 });
+        rect(F, 'z', k + 0.1, mx - 2.4, mx - 1.6, -8.5, -5, n, "#0b0f19", { bias: 1.9 }); rect(F, 'z', k + 0.1, mx + 1.6, mx + 2.4, -8.5, -5, n, "#0b0f19", { bias: 1.9 });   // window slits
+        rect(F, 'z', k + 0.1, mx - 1.2, mx + 1.2, -14.4, -13.1, n, "#7f1d1d", { emis: true, dimEmis: 0.9, bias: 0.6 });   // floor readout
+        rect(F, 'z', k + 0.1, mx + 5.2, mx + 6.2, -6.4, -5.2, n, "#22c55e", { emis: true, blink: { rate: 0.8, phase: 1 }, bias: 0.6 });   // call button
+        continue;
+      }
+      rect(F, 'y', 0, x0, x1, z0, z1, [0, -1, 0], alt ? "#3b3631" : "#34302b", { floor: true });
+      rect(F, 'y', CEIL, x0, x1, z0, z1, [0, 1, 0], alt ? "#1f1c19" : "#191715", { floor: true });
+      if (W(c - 1, r)) wallEdge(F, 'x', x0, z0, z1, [1, 0, 0], alt);
+      if (W(c + 1, r)) wallEdge(F, 'x', x1, z0, z1, [-1, 0, 0], alt);
+      if (W(c, r - 1)) wallEdge(F, 'z', z0, x0, x1, [0, 0, 1], alt);
+      if (W(c, r + 1)) wallEdge(F, 'z', z1, x0, x1, [0, 0, -1], alt);
+      // overhead conduit in corridors
+      const corrZ = W(c - 1, r) && W(c + 1, r), corrX = W(c, r - 1) && W(c, r + 1);
+      if (corrZ) box(F, x0 + 1, x0 + 2, CEIL + 1.5, CEIL + 2.5, z0, z1, "#3f3f46", { top: "#52525b" });
+      if (corrX) box(F, x0, x1, CEIL + 1.5, CEIL + 2.5, z0 + 1, z0 + 2, "#3f3f46", { top: "#52525b" });
+      if (ch === 'F') {        // floor nozzle grate
+        rect(F, 'y', -0.05, x0 + 2, x1 - 2, z0 + 2, z1 - 2, [0, -1, 0], "#1c1917", { floorDecal: true });
+        for (let i = 0; i < 4; i++) rect(F, 'y', -0.08, x0 + 2.5, x1 - 2.5, z0 + 3 + i * 2, z0 + 3.8 + i * 2, [0, -1, 0], "#7c2d12", { floorDecal: true });
+      }
+    }
+    for (const L of B.lamps) {         // caged bulbs
+      const [x, y, z] = L.p;
+      box(F, x - 0.8, x + 0.8, CEIL, y + 0.4, z - 0.8, z + 0.8, L.trap ? "#ef4444" : "#fde68a", { emis: true, dimEmis: 0.9 });
+      box(F, x - 1.1, x + 1.1, CEIL, CEIL + 0.4, z - 1.1, z + 1.1, "#27272a");
+    }
+    for (const t of B.trips) {         // tripwire emitters on both walls
+      if (t.axis === 'z') { box(F, t.x - T / 2, t.x - T / 2 + 0.9, -4, -1.2, t.z - 0.8, t.z + 0.8, "#27272a"); box(F, t.x + T / 2 - 0.9, t.x + T / 2, -4, -1.2, t.z - 0.8, t.z + 0.8, "#27272a"); }
+      else { box(F, t.x - 0.8, t.x + 0.8, -4, -1.2, t.z - T / 2, t.z - T / 2 + 0.9, "#27272a"); box(F, t.x - 0.8, t.x + 0.8, -4, -1.2, t.z + T / 2 - 0.9, t.z + T / 2, "#27272a"); }
+    }
+    for (const d of B.decor || []) {
+      if (d.kind === 'drum') { for (const [ox, oz] of [[-1.3, -1.2], [1.3, 1.1]]) { box(F, d.x + ox - 1.2, d.x + ox + 1.2, -4.2, 0, d.z + oz - 1.2, d.z + oz + 1.2, "#7f1d1d", { top: "#991b1b" }); box(F, d.x + ox - 1.25, d.x + ox + 1.25, -2.6, -2.2, d.z + oz - 1.25, d.z + oz + 1.25, "#b91c1c"); } }
+      else { box(F, d.x - 2.4, d.x + 2.4, -3, 0, d.z - 2.4, d.z + 2.4, "#3f6212", { top: "#4d7c0f" }); box(F, d.x - 1.8, d.x + 1.8, -5.2, -3, d.z - 1.8, d.z + 1.8, "#365314", { top: "#4d7c0f" }); }
+    }
+    return F;
+  }
+
+  // graffiti on the long walls
+  function makeGraffiti(txt, col) {
+    const cv = document.createElement("canvas"); cv.width = 150; cv.height = 32; const g = cv.getContext("2d");
+    g.font = "bold 20px monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.globalAlpha = 0.5; g.fillStyle = col; g.fillText(txt, 76, 17); g.globalAlpha = 1; g.fillText(txt, 75, 16);
+    const r = rngFrom(hashStr(txt)); for (let i = 0; i < 14; i++) g.fillRect(r() * 150, 16 + r() * 8, 1, 3 + r() * 8);
+    return cv;
+  }
+  const GRAF = ["NO SURVIVORS", "KEEP OUT", "B-3 STAFF ONLY", "WARLORD RULES", "DON'T TRIP"].map((t, i) => ({ tex: makeGraffiti(t, ["#f97316", "#ef4444", "#e5e7eb", "#facc15", "#ff2bd6"][i]) }));
+  function placeGraffiti() {
+    const out = [], m = B.map; let k = 0;
+    for (let r = 1; r < B.ROWS - 1 && out.length < 4; r++) for (let c = 1; c < B.COLS - 2 && out.length < 4; c++) {
+      if (m[r][c] === '#' || m[r][c + 1] === '#' || m[r - 1][c] !== '#' || m[r - 1][c + 1] !== '#') continue;
+      if (((r * 7 + c * 11) % 5) !== 0) continue;
+      const z = r * T + 0.06, x0 = c * T + 2, x1 = c * T + 2 * T - 2;
+      out.push({ tex: GRAF[(k++ + B.site.layout) % GRAF.length].tex, pts: [[x1, -12, z], [x0, -12, z], [x0, -5, z], [x1, -5, z]], n: [0, 0, 1], grid: [6, 3] });
+    }
+    return out;
+  }
+
+  let vign = null;
+  function vignette() {
+    if (vign && vign.width === V_WIDTH && vign.height === V_HEIGHT) return vign;
+    vign = document.createElement("canvas"); vign.width = V_WIDTH; vign.height = V_HEIGHT;
+    const g = vign.getContext("2d");
+    const gr = g.createRadialGradient(V_WIDTH / 2, V_HEIGHT / 2, V_HEIGHT * 0.36, V_WIDTH / 2, V_HEIGHT / 2, V_WIDTH * 0.62);
+    gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,0.75)");
+    g.fillStyle = gr; g.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+    return vign;
+  }
+  function smooth(a, b, x) { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); }
+
+  function drawSentinel(e, x, y, s) {
+    const boss = e.boss, px = Math.max(1, Math.round((boss ? 1.15 : 0.95) * s));
+    const frames = boss ? BERZERK_SPRITES : SENTINEL_SPRITES, spr = frames[Math.floor(B.t * (e.alert ? 5 : 3.3)) % 2];
+    const rows = spr.length, cols = 8, w = cols * px, h = rows * px, ox = Math.round(x - w / 2), oy = Math.round(y - h / 2);
+    const hit = e.hitT > 0;
+    const col = hit ? "#ffffff" : (boss ? (e.alert ? "#f43f5e" : "#facc15") : (e.alert ? "#ef4444" : "#c084fc"));
+    if (e.warp > 0) ctx.globalAlpha *= Math.max(0.2, 1 - e.warp / 0.6);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const ch = spr[r][c];
+      if (ch === '#') { ctx.fillStyle = col; ctx.fillRect(ox + c * px, oy + r * px, px, px); }
+      else if (ch === '.') { ctx.fillStyle = "#ffffff"; ctx.fillRect(ox + c * px, oy + r * px, px, px); }
+    }
+    if (boss && s > 2) {   // the Warlord's crown of spikes
+      ctx.fillStyle = "#facc15"; for (let i = 0; i < 3; i++) ctx.fillRect(ox + (1.5 + i * 2.2) * px, oy - px * 1.4, px, px * 1.4);
+    }
+    if (e.hp < e.max) {
+      const bw = Math.max(16, w);
+      ctx.fillStyle = "#1e293b"; ctx.fillRect(Math.round(x - bw / 2), oy - 6, bw, 3);
+      ctx.fillStyle = boss ? "#f43f5e" : "#ef4444"; ctx.fillRect(Math.round(x - bw / 2), oy - 6, Math.round(bw * Math.max(0, e.hp) / e.max), 3);
+    }
+  }
+  function drawLoot(l, now, D) {
+    const x = l.x, z = l.z, open = l.gone;
+    if (l.kind === 'V') {
+      box(D, x - 4, x + 4, -10, 0, z - 4, z + 4, "#3f3f46", { top: "#52525b", side: "#27272a" });
+      rect(D, 'z', z - 4.05, x - 2.6, x + 2.6, -8, -2, [0, 0, -1], open ? "#0a0a0a" : "#a1a1aa", { bias: 0.4 });
+      rect(D, 'z', z + 4.05, x - 2.6, x + 2.6, -8, -2, [0, 0, 1], open ? "#0a0a0a" : "#a1a1aa", { bias: 0.4 });
+      if (!open) { const locked = B.enemies.some(e => e.boss); for (const zz of [z - 4.1, z + 4.1]) rect(D, 'z', zz, x - 0.6, x + 0.6, -5.6, -4.4, [0, 0, zz < z ? -1 : 1], locked ? "#ef4444" : "#22c55e", { emis: true, blink: { rate: 1.1, phase: 2 }, bias: 0.6 }); }
+      else box(D, x - 2.4, x + 2.4, -2.2, -2, z - 3.5, z + 3.5, "#facc15", { emis: true, dimEmis: 0.4 });
+      return;
+    }
+    if (l.kind === 'H') {
+      box(D, x - 2.6, x + 2.6, -3.4, 0, z - 2, z + 2, "#e5e7eb", { top: open ? "#18181b" : "#f3f4f6" });
+      if (!open) { rect(D, 'y', -3.45, x - 0.5, x + 0.5, z - 1.5, z + 1.5, [0, -1, 0], "#dc2626", { bias: 0.4 }); rect(D, 'y', -3.45, x - 1.5, x + 1.5, z - 0.5, z + 0.5, [0, -1, 0], "#dc2626", { bias: 0.4 }); }
+      return;
+    }
+    if (l.kind === 'K') {
+      box(D, x - 1.6, x + 1.6, -4.5, 0, z - 1.6, z + 1.6, "#334155", { top: "#475569" });
+      if (!open) box(D, x - 1.1, x + 1.1, -5.3, -4.5, z - 0.6, z + 0.6, "#22d3ee", { emis: true, blink: { rate: 1.5, phase: 1 } });
+      return;
+    }
+    const col = l.kind === 'A' ? "#3f6212" : "#a16207";
+    box(D, x - 3.2, x + 3.2, -5, 0, z - 3.2, z + 3.2, col, { top: open ? "#0a0a0a" : (l.kind === 'A' ? "#4d7c0f" : "#ca8a04") });
+    if (!open) { rect(D, 'z', z - 3.25, x - 3.2, x + 3.2, -3.4, -2.7, [0, 0, -1], l.kind === 'A' ? "#a3e635" : "#facc15", { bias: 0.3 }); box(D, x - 0.7, x + 0.7, -5.3, -5, z - 3.3, z - 2.8, "#22c55e", { emis: true, blink: { rate: 1.2, phase: l.x } }); }
+    else box(D, x - 3.2, x + 3.2, -5, -4.6, z + 3.2, z + 4.4, col);
+  }
+
+  function renderBunker() {
+    if (!B.STATIC) { B.STATIC = buildStatic(); B.graf = placeGraffiti(); }
+    const now = B.t;
+    ctx.save();
+    if (screenShake > 0) ctx.translate((Math.random() - 0.5) * screenShake * 14, (Math.random() - 0.5) * screenShake * 14);
+    ctx.fillStyle = "#050403"; ctx.fillRect(-20, -20, V_WIDTH + 40, V_HEIGHT + 40);
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch;
+    const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const fov = V_HEIGHT * 0.9, NEAR = 0.4;
+    const bobY = Math.sin((playerFoot.x + playerFoot.z) * 0.32) * 0.25;
+    const ex = playerFoot.x, ey = EYE + bobY, ez = playerFoot.z;
+    const tx = (p) => { const dx = p[0] - ex, dy = p[1] - ey, dz = p[2] - ez; const x1 = dx * cyw - dz * syw, z1 = dx * syw + dz * cyw; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    const Fw = [syw * cp, sp, cyw * cp];
+    // dynamic faces
+    const D = [];
+    for (const d of B.doors) {
+      if (d.open >= 0.999) continue;
+      const bot = 0 + (CEIL - 0) * d.open;
+      const strip = (k0) => { for (let i = 0; i < 5; i++) { const xa = -T / 2 + i * (T / 5); if (d.axis === 'z') rect(D, 'z', k0, d.x + xa, d.x + xa + T / 5, bot - 1.6, bot, [0, 0, k0 < d.z ? -1 : 1], i % 2 ? "#111827" : "#eab308", { bias: 0.4 }); else rect(D, 'x', k0, d.z + xa, d.z + xa + T / 5, bot - 1.6, bot, [k0 < d.x ? -1 : 1, 0, 0], i % 2 ? "#111827" : "#eab308", { bias: 0.4 }); } };
+      const ribs = (k0, n) => { for (let i = 1; i < 4; i++) { const xa = -T / 2 + i * (T / 4); if (bot - CEIL < 2) break; if (d.axis === 'z') rect(D, 'z', k0, d.x + xa - 0.35, d.x + xa + 0.35, CEIL + 1, bot - 2, n, "#1f1f23", { bias: 0.35 }); else rect(D, 'x', k0, d.z + xa - 0.35, d.z + xa + 0.35, CEIL + 1, bot - 2, n, "#1f1f23", { bias: 0.35 }); } };
+      if (d.axis === 'z') { box(D, d.x - T / 2, d.x + T / 2, CEIL, bot, d.z - 1.4, d.z + 1.4, "#3f3f46", { side: "#27272a" }); strip(d.z - 1.45); strip(d.z + 1.45); ribs(d.z - 1.47, [0, 0, -1]); ribs(d.z + 1.47, [0, 0, 1]); }
+      else { box(D, d.x - 1.4, d.x + 1.4, CEIL, bot, d.z - T / 2, d.z + T / 2, "#3f3f46", { side: "#27272a" }); strip(d.x - 1.45); strip(d.x + 1.45); ribs(d.x - 1.47, [-1, 0, 0]); ribs(d.x + 1.47, [1, 0, 0]); }
+    }
+    for (const t of B.trips) {
+      if (!t.live) continue;
+      const on = Math.sin(now * 20) > -0.6;
+      for (const y of [-1.8, -3.2]) {
+        if (t.axis === 'z') face(D, [[t.x - T / 2 + 0.9, y - 0.12, t.z], [t.x + T / 2 - 0.9, y - 0.12, t.z], [t.x + T / 2 - 0.9, y + 0.12, t.z], [t.x - T / 2 + 0.9, y + 0.12, t.z]], on ? "#ff3b3b" : "#7f1d1d", { emis: true, glow: on });
+        else face(D, [[t.x, y - 0.12, t.z - T / 2 + 0.9], [t.x, y - 0.12, t.z + T / 2 - 0.9], [t.x, y + 0.12, t.z + T / 2 - 0.9], [t.x, y + 0.12, t.z - T / 2 + 0.9]], on ? "#ff3b3b" : "#7f1d1d", { emis: true, glow: on });
+      }
+    }
+    for (const m of B.mines) {
+      if (m.state === 'gone') continue;
+      box(D, m.x - 1.4, m.x + 1.4, -0.7, 0, m.z - 1.4, m.z + 1.4, "#57534e", { top: "#78716c" });
+      const lit = m.state === 'beep' ? Math.floor(now * 12) % 2 : Math.sin(now * 4 + m.x) > 0.3;
+      box(D, m.x - 0.35, m.x + 0.35, -1.05, -0.7, m.z - 0.35, m.z + 0.35, lit ? "#ef4444" : "#450a0a", { emis: lit });
+    }
+    for (const l of B.loot) if (Math.hypot(ex - l.x, ez - l.z) < 130) drawLoot(l, now, D);
+    const faces = B.STATIC.concat(D);
+    const alarmK = B.alarm > 0 ? 0.5 + 0.5 * Math.sin(now * 9) : 0;
+    const lampK = B.lamps.map(L => (L.flick && Math.random() < 0.1) ? 0.15 : 1);
+    const flameStates = B.flames.map(flameState);
+    const list = [];
+    for (const f of faces) {
+      const vx = ex - f.c[0], vy = ey - f.c[1], vz = ez - f.c[2];
+      if (f.n && f.n[0] * vx + f.n[1] * vy + f.n[2] * vz <= 0) continue;
+      const d = Math.hypot(vx, vy, vz);
+      if (d > 140) continue;
+      if (d > 14 && -(vx * Fw[0] + vy * Fw[1] + vz * Fw[2]) < -10) continue;   // well behind the camera
+      const cam = f.pts.map(tx), clipped = [];
+      for (let i = 0; i < cam.length; i++) {
+        const a = cam[i], b = cam[(i + 1) % cam.length], ain = a[2] > NEAR, bin = b[2] > NEAR;
+        if (ain) clipped.push(a);
+        if (ain !== bin) { const t = (NEAR - a[2]) / (b[2] - a[2]); clipped.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]); }
+      }
+      if (clipped.length < 3) continue;
+      let r = f.rgb[0], g = f.rgb[1], b = f.rgb[2];
+      if (f.emis) {
+        let k = f.dimEmis || 1;
+        if (f.blink && Math.sin(now * f.blink.rate * 6 + f.blink.phase * 2) < -0.2) k *= 0.2;
+        const fog = Math.max(0.3, 1 - d / 170); r *= k * fog; g *= k * fog; b *= k * fog;
+      } else {
+        const n = f.n || [0, 0, 0], shade = 0.85 - n[1] * 0.25 + n[0] * 0.05 + n[2] * 0.03;
+        const ux = -vx / d, uy = -vy / d, uz = -vz / d, cosA = ux * Fw[0] + uy * Fw[1] + uz * Fw[2];
+        const facing = f.n ? Math.max(0.3, n[0] * vx / d + n[1] * vy / d + n[2] * vz / d) : 1;
+        let L = 0.2 + (smooth(0.72, 0.95, cosA) * 0.8 + smooth(0.3, 0.72, cosA) * 0.35) * Math.max(0, 1 - d / 140) * 1.9 * facing + Math.max(0, 1 - d / 18) * 0.35;
+        L = Math.min(L, 1.6);
+        const fog = Math.max(0, 1 - d / 150);
+        let ar = 0, ag = 0, ab = 0;
+        if (!f.lc) {   // which lamps / flame jets reach this face (cached: none of them move)
+          f.lc = []; f.fc = [];
+          for (let i = 0; i < B.lamps.length; i++) { const Lp = B.lamps[i], dd = Math.hypot(f.c[0] - Lp.p[0], f.c[1] - Lp.p[1], f.c[2] - Lp.p[2]); if (dd < Lp.rad) f.lc.push(i, Math.pow(1 - dd / Lp.rad, 2) * 0.6); }
+          for (let i = 0; i < B.flames.length; i++) { const fl = B.flames[i], dd = Math.hypot(f.c[0] - fl.x, f.c[1] + 5, f.c[2] - fl.z); if (dd < 30) f.fc.push(i, Math.pow(1 - dd / 30, 2)); }
+        }
+        for (let j = 0; j < f.lc.length; j += 2) {
+          const i = f.lc[j], Lp = B.lamps[i], kk = f.lc[j + 1] * lampK[i];
+          if (alarmK) { ar += 255 * kk * (0.4 + alarmK); ag += 30 * kk; ab += 20 * kk; }
+          else { ar += Lp.col[0] * kk; ag += Lp.col[1] * kk; ab += Lp.col[2] * kk; }
+        }
+        for (let j = 0; j < f.fc.length; j += 2) {
+          const st = flameStates[f.fc[j]]; if (st === 'off') continue;
+          const kk = f.fc[j + 1] * (st === 'on' ? 1.1 : 0.3); ar += 255 * kk; ag += 120 * kk; ab += 20 * kk;
+        }
+        r = (r * L + ar * (r / 255 * 0.7 + 0.3)) * shade * fog;
+        g = (g * L + ag * (g / 255 * 0.7 + 0.3)) * shade * fog;
+        b = (b * L + ab * (b / 255 * 0.7 + 0.3)) * shade * fog;
+      }
+      const scr = clipped.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+      let depth = d - (f.bias || 0);
+      if (f.bias) {
+        let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const q of f.pts) { if (q[0] < mnx) mnx = q[0]; if (q[0] > mxx) mxx = q[0]; if (q[1] < mny) mny = q[1]; if (q[1] > mxy) mxy = q[1]; if (q[2] < mnz) mnz = q[2]; if (q[2] > mxz) mxz = q[2]; }
+        depth = Math.hypot(ex - Math.max(mnx, Math.min(ex, mxx)), ey - Math.max(mny, Math.min(ey, mxy)), ez - Math.max(mnz, Math.min(ez, mxz))) - 0.35 - Math.max(0, f.bias - 1);
+      }
+      const grp = f.floor ? 1 : (f.floorDecal ? 1.5 : 3);
+      list.push({ scr, depth, grp, col: `rgb(${Math.min(255, r) | 0},${Math.min(255, g) | 0},${Math.min(255, b) | 0})`, glow: f.glow });
+    }
+    for (const dc of B.graf) {
+      let cx = 0, cy = 0, cz = 0; for (const p of dc.pts) { cx += p[0]; cy += p[1]; cz += p[2]; } cx /= 4; cy /= 4; cz /= 4;
+      const vx = ex - cx, vy = ey - cy, vz = ez - cz, d = Math.hypot(vx, vy, vz);
+      if (dc.n[0] * vx + dc.n[1] * vy + dc.n[2] * vz <= 0 || d > 90) continue;
+      const cosA = (-vx * Fw[0] - vy * Fw[1] - vz * Fw[2]) / d;
+      list.push({ decal: dc, depth: Math.hypot(ex - Math.max(Math.min(dc.pts[0][0], dc.pts[1][0]), Math.min(ex, Math.max(dc.pts[0][0], dc.pts[1][0]))), 0, ez - cz) - 0.4, alpha: Math.min(0.9, 0.35 + smooth(0.68, 0.94, cosA) * Math.max(0, 1 - d / 95) * 1.2) });
+    }
+    const sprite = (x, y, z, draw, bias) => {
+      const p = tx([x, y, z]); if (p[2] <= NEAR) return;
+      const d = Math.hypot(ex - x, ey - y, ez - z); if (d > 130) return;
+      const cosA = ((x - ex) * Fw[0] + (y - ey) * Fw[1] + (z - ez) * Fw[2]) / (d || 1);
+      const lit = Math.min(1, 0.55 + smooth(0.7, 0.94, cosA) * Math.max(0, 1 - d / 130) * 1.4 + Math.max(0, 1 - d / 18) * 0.45);
+      list.push({ sprite: draw, sx: V_WIDTH / 2 + p[0] / p[2] * fov, sy: V_HEIGHT / 2 + p[1] / p[2] * fov, s: fov / p[2], depth: d - (bias || 0), lit, grp: 3 });
+    };
+    for (const e of B.enemies) {
+      if (e.warp > 0) e.warp = Math.max(0, e.warp - 1 / 60);
+      const yy = e.y + Math.sin(now * 2.6 + e.ph) * 0.6;
+      sprite(e.x, 0, e.z, (x, y, s) => { ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.beginPath(); ctx.ellipse(x, y, Math.max(2, s * (e.boss ? 5 : 3.6)), Math.max(1, s * 1.1), 0, 0, Math.PI * 2); ctx.fill(); }, -0.5);
+      sprite(e.x, yy, e.z, (x, y, s) => drawSentinel(e, x, y, s), 0);
+    }
+    for (const p of B.gore) {
+      if (p.wall && p.wall[0] * (ex - p.x) + p.wall[2] * (ez - p.z) <= 0) continue;
+      if (Math.abs(p.x - ex) > 120 || Math.abs(p.z - ez) > 120) continue;
+      sprite(p.x, p.y, p.z, (x, y, s) => drawGore(p, x, y, s, ex, ez), p.wall ? 2.2 : (p.floor ? 0.3 : 0.5));
+    }
+    for (const b of B.bolts) {
+      // same look as the surface: sentinels spit a fluoro-green acid glob with a trail, the Warlord a flashing berzerk bolt
+      const sp2 = Math.hypot(b.vx, b.vy, b.vz) || 1, tp = tx([b.x - b.vx / sp2 * 4, b.y - b.vy / sp2 * 4 + 0.8, b.z - b.vz / sp2 * 4]);
+      const tail = tp[2] > NEAR ? [V_WIDTH / 2 + tp[0] / tp[2] * fov, V_HEIGHT / 2 + tp[1] / tp[2] * fov] : null;
+      sprite(b.x, b.y, b.z, (x, y, s) => {
+        if (b.boss) {
+          const p = Math.max(1, Math.round(0.9 * s)), flash = Math.floor(Date.now() / 60) % 2 === 0;
+          ctx.fillStyle = flash ? "rgba(250, 204, 21, 0.4)" : "rgba(244, 63, 94, 0.4)"; ctx.fillRect(x - 3 * p, y - 3 * p, 6 * p, 6 * p);
+          ctx.fillStyle = flash ? "#facc15" : "#f43f5e"; ctx.fillRect(x - 2 * p, y - p, 4 * p, 2 * p); ctx.fillRect(x - p, y - 2 * p, 2 * p, 4 * p);
+          ctx.fillStyle = "#ffffff"; ctx.fillRect(x - Math.max(1, p / 2), y - Math.max(1, p / 2), Math.max(1, p), Math.max(1, p));
+          return;
+        }
+        const r = Math.min(9, Math.max(2, 1.1 * s));
+        if (tail) { ctx.lineCap = "round"; ctx.strokeStyle = "rgba(57, 255, 20, 0.35)"; ctx.lineWidth = r * 1.6; ctx.beginPath(); ctx.moveTo(tail[0], tail[1]); ctx.lineTo(x, y); ctx.stroke(); }
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
+        g.addColorStop(0, "rgba(190, 255, 120, 0.9)"); g.addColorStop(0.45, "rgba(57, 255, 20, 0.55)"); g.addColorStop(1, "rgba(57, 255, 20, 0)");
+        ctx.fillStyle = g; ctx.fillRect(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
+        ctx.fillStyle = "#39ff14"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#eaffd0"; ctx.fillRect(x - r * 0.45, y - r * 0.45, Math.max(1, r * 0.45), Math.max(1, r * 0.45));
+      }, 0.5);
+    }
+    for (const f of B.fx) {
+      if (f.boom) { sprite(f.x, f.y, f.z, (x, y, s) => { const k = 1 - f.life / f.max, R = s * f.r * (0.4 + k * 0.8); ctx.globalAlpha *= (1 - k); ctx.fillStyle = "#f97316"; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#fde047"; ctx.beginPath(); ctx.arc(x, y, R * 0.55, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, R * 0.22, 0, Math.PI * 2); ctx.fill(); }, 1); continue; }
+      sprite(f.x, f.y, f.z, (x, y, s) => {
+        const k = f.life / f.max;
+        if (f.flame) { const q = Math.min(9, Math.max(2, s * (0.45 + (1 - k) * 0.9))); ctx.fillStyle = k > 0.6 ? "#fde047" : (k > 0.3 ? "#f97316" : "#b91c1c"); ctx.fillRect(Math.round(x - q / 2), Math.round(y - q / 2), q, q); return; }
+        ctx.fillStyle = f.col || "#fde68a"; const q = Math.max(1, Math.min(3, s * 0.3)); ctx.fillRect(Math.round(x), Math.round(y), q, q);
+      }, 0.2);
+    }
+    list.sort((a, b) => ((a.grp === undefined ? 3 : a.grp) - (b.grp === undefined ? 3 : b.grp)) || (b.depth - a.depth));
+    ctx.lineJoin = "round";
+    for (const it of list) {
+      if (it.sprite) { ctx.globalAlpha = it.lit; try { it.sprite(it.sx, it.sy, it.s); } catch (e) {} ctx.globalAlpha = 1; continue; }
+      if (it.decal) { ctx.globalAlpha = it.alpha; try { drawTexturedQuad({ tex: it.decal.tex, pts: it.decal.pts, grid: it.decal.grid }, tx, NEAR, fov); } catch (e) {} ctx.globalAlpha = 1; continue; }
+      ctx.fillStyle = it.col; ctx.strokeStyle = it.col; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(it.scr[0][0], it.scr[0][1]);
+      for (let i = 1; i < it.scr.length; i++) ctx.lineTo(it.scr[i][0], it.scr[i][1]);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (it.glow) { ctx.globalAlpha = 0.35; ctx.lineWidth = 4; ctx.stroke(); ctx.globalAlpha = 1; }
+    }
+    // mining laser beam from the emitter to whatever it's touching
+    if (B.beam && window.__laserTip && window.__laserTip.ok) {
+      const p = tx([B.beam[0], B.beam[1], B.beam[2]]);
+      if (p[2] > NEAR) try { drawMiningLaserBeam(window.__laserTip.x, window.__laserTip.y, V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov, B.beam[3]); } catch (e) {}
+    }
+    ctx.restore();
+    if (B.bare) return;
+    // the gun in your hands (same rig as the surface)
+    try { if (B.phase === 'in') drawHandheldRig(); } catch (e) {}
+    try { drawVisorDrips(); } catch (e) {}
+    if (alarmK) { ctx.fillStyle = `rgba(239, 68, 68, ${0.12 * alarmK})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    if (B.hurtFlash > 0) { ctx.fillStyle = `rgba(220, 38, 38, ${0.45 * B.hurtFlash})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    if (B.burnT > 0) { ctx.fillStyle = "rgba(249, 115, 22, 0.18)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    ctx.drawImage(vignette(), 0, 0);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)"; ctx.fillRect(Math.round(V_WIDTH / 2) - 2, Math.round(V_HEIGHT / 2) - 2, 4, 4);
+    ctx.fillStyle = "#facc15"; ctx.fillRect(Math.round(V_WIDTH / 2) - 1, Math.round(V_HEIGHT / 2) - 1, 2, 2);
+    // bunker readout + automap (top right, under the HUD)
+    ctx.save(); ctx.font = "bold 7px monospace"; ctx.textAlign = "left";
+    const foes = B.enemies.length, lootLeft = B.loot.filter(l => !l.gone).length;
+    const lines = [[B.p.cleared ? "CLEARED" : `FOES ${foes}`, B.p.cleared ? "#4ade80" : "#fca5a5"], [`LOOT ${lootLeft}`, "#facc15"]];
+    if (B.L.keys) lines.push([`KEYS ${B.p.keys}/${B.L.keys}`, "#22d3ee"]);
+    ctx.font = "bold 6px monospace";
+    const PW = B.COLS * 3, mx = V_WIDTH - 8 - PW, my = 34;
+    ctx.fillStyle = "rgba(2, 6, 23, 0.6)"; ctx.fillRect(mx - 3, my - 3, PW + 6, B.ROWS * 3 + 6 + lines.length * 7);
+    for (let r = 0; r < B.ROWS; r++) for (let c = 0; c < B.COLS; c++) {
+      if (!B.seen.has(r * 100 + c)) continue;
+      const ch = B.map[r][c]; if (ch === '#') continue;
+      ctx.fillStyle = ch === 'U' || ch === 'E' ? "#38bdf8" : (ch === '=' ? "#eab308" : "#57534e");
+      ctx.fillRect(mx + c * 3, my + r * 3, 3, 3);
+    }
+    ctx.fillStyle = "#4ade80"; ctx.fillRect(Math.round(mx + playerFoot.x / T * 3) - 1, Math.round(my + playerFoot.z / T * 3) - 1, 2, 2);
+    lines.forEach(([t, c], i) => { ctx.fillStyle = c; ctx.fillText(t, mx - 1, my + B.ROWS * 3 + 8 + i * 7); });
+    ctx.restore();
+    if (activePopup) {
+      const alpha = Math.min(1.0, activePopup.life / 0.3, (1.8 - activePopup.life) / 0.2);
+      ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, alpha)); ctx.fillStyle = activePopup.color || "#fff";
+      ctx.font = "bold 9.5px monospace"; ctx.textAlign = "center"; ctx.fillText(activePopup.txt, Math.round(V_WIDTH / 2), Math.round(activePopup.y)); ctx.restore();
+    }
+    if (window.showTouchControls !== false) {
+      const jX = Math.round(joy.active ? joy.baseX : Math.floor(V_WIDTH * 0.12)), jY = Math.round(joy.active ? joy.baseY : V_HEIGHT - 55);
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.22)"; ctx.lineWidth = 1.5; ctx.strokeRect(jX - joy.radius, jY - joy.radius, joy.radius * 2, joy.radius * 2);
+      ctx.fillStyle = "rgba(56, 189, 248, 0.35)"; ctx.fillRect(jX + Math.round(joy.dx) - 4, jY + Math.round(joy.dy) - 4, 8, 8);
+    }
+    if (B.phase === 'dead') { ctx.fillStyle = "rgba(127, 29, 29, 0.45)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+    if (B.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, B.fade)})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT); }
+  }
+
+  // ======================================================================
+  // LIFT CUTSCENES: walk in, doors shut behind you, the cab drops to B3,
+  // doors open on the bunker. Reverse on the way out. First person, like the airlock.
+  // ======================================================================
+  let CUT = null;
+  const sm = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const ENTER_T = { walk: 1.5, turn: [1.5, 2.15], close: [2.2, 3.05], ride: 3.1, move: [3.2, 5.8], arrive: 5.95, open: [6.1, 7.0], end: 7.2 };
+  const EXIT_T = { close: [0.25, 1.25], move: [1.4, 4.0], arrive: 4.1, open: [4.25, 5.15], walk: [5.15, 6.15], end: 6.2 };
+  function startEnterCut(s) {
+    CUT = { type: 'in', site: s, t: 0, style: s.style, p0: [playerFoot.x, playerFoot.z], yaw0: playerFoot.yaw, pitch0: playerFoot.pitch, doorOpen: 0, flags: {} };
+    miningLaserState.active = false; touchFire = false; touchJetpack = false;
+    try { cabinSfx('servo'); } catch (e) {}
+    cutButtons(true);
+  }
+  function startExitCut() {
+    const s = B.site;
+    CUT = { type: 'out', site: s, t: 0, style: s.style, doorOpen: 1, flags: {} };
+    B.bare = true; stopSiren();
+    playerFoot.x = B.exit[0]; playerFoot.z = B.exit[1] - 3.5; playerFoot.yaw = 0; playerFoot.pitch = 0.02;   // in the cab, looking back out into the bunker
+    miningLaserState.active = false; touchFire = false;
+    cutButtons(true);
+  }
+  function cutButtons(on) {
+    [btn1, btn2, btn3, btn4].forEach(b => { b.style.opacity = on ? "0.3" : ""; if (on) b.innerText = "—"; });
+    if (on) btn3.className = "cockpit-btn action";
+    ['threat-banner', 'btn-msl'].forEach(i => { const el = document.getElementById(i); if (el) el.style.display = on ? 'none' : ''; });
+  }
+  function rumble(on) {
+    try {
+      ensureAudio(); if (!actx) return;
+      if (on && !CUT.rum) {
+        const o = actx.createOscillator(), l = actx.createOscillator(), lg = actx.createGain(), g = actx.createGain(), f = actx.createBiquadFilter();
+        o.type = 'sawtooth'; o.frequency.value = 46; l.frequency.value = 7; lg.gain.value = 6; f.type = 'lowpass'; f.frequency.value = 180;
+        l.connect(lg); lg.connect(o.frequency); o.connect(f); f.connect(g); g.connect(audioOut());
+        g.gain.setValueAtTime(0, actx.currentTime); g.gain.linearRampToValueAtTime(0.09, actx.currentTime + 0.4);
+        o.start(); l.start(); CUT.rum = { o, l, g };
+      } else if (!on && CUT.rum) {
+        const t = actx.currentTime, r = CUT.rum; r.g.gain.cancelScheduledValues(t); r.g.gain.setValueAtTime(r.g.gain.value, t); r.g.gain.linearRampToValueAtTime(0, t + 0.35); r.o.stop(t + 0.4); r.l.stop(t + 0.4); CUT.rum = null;
+      }
+    } catch (e) {}
+  }
+  const ding = () => { tone('sine', 1318, 1318, 0.45, 0.06); tone('sine', 988, 988, 0.7, 0.06, 0.2); };
+  function cabCam(s, k) {   // standing in the 3D lift cab looking out (k: 0 in the cab .. 1 out on the apron)
+    const d = 23 + (DOOR_V + 4 - 23) * (k || 0), w = L2W(s, 0, -10, d);
+    return { x: w[0], y: -10, z: w[2], yaw: Math.atan2(s.fx, s.fz), pitch: 0.02 };
+  }
+  function stepCut(dt) {
+    pollGamepadState();
+    const c = CUT, s = c.site, once = (k, at, fn) => { if (!c.flags[k] && c.t >= at) { c.flags[k] = true; fn(); } };
+    c.t += dt;
+    if (screenShake > 0) screenShake = Math.max(0, screenShake - dt);
+    const nb = document.getElementById("nav-banner");
+    if (c.type === 'in') {
+      const E = ENTER_T;
+      if (c.t < E.walk) {   // walk up to the door and step into the lit cab while it opens
+        const k = sm(0, E.walk, c.t), door = s.door, inside = L2W(s, 0, 0, 23.5);
+        const a = sm(0, 0.6, c.t), b2 = sm(0.6, E.walk, c.t);
+        const mx = c.p0[0] + (door[0] - c.p0[0]) * a, mz = c.p0[1] + (door[1] - c.p0[1]) * a;
+        playerFoot.x = mx + (inside[0] - mx) * b2; playerFoot.z = mz + (inside[2] - mz) * b2;
+        let dy = Math.atan2(-s.fx, -s.fz) - c.yaw0; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+        playerFoot.yaw = c.yaw0 + dy * sm(0, 0.55, c.t); playerFoot.pitch = c.pitch0 + (0.02 - c.pitch0) * k;
+        c.doorOpen = sm(0.05, 0.65, c.t);
+        once('step1', 0.35, () => { try { cabinSfx('step'); } catch (e) {} }); once('step2', 0.8, () => { try { cabinSfx('step'); } catch (e) {} }); once('step3', 1.2, () => { try { cabinSfx('step'); } catch (e) {} });
+      } else if (c.t < E.ride) {   // turn round in the cab and watch the doors shut on the planet
+        const inside = L2W(s, 0, 0, 23.5); playerFoot.x = inside[0]; playerFoot.z = inside[2];
+        playerFoot.yaw = Math.atan2(-s.fx, -s.fz) + Math.PI * sm(E.turn[0], E.turn[1], c.t); playerFoot.pitch = 0.02;
+        c.doorOpen = 1 - sm(E.close[0], E.close[1], c.t);
+      }
+      once('closeS', E.close[0], () => { try { cabinSfx('servo'); } catch (e) {} });
+      once('clang', E.close[1], () => { try { playSfx('hullClang'); } catch (e) {} screenShake = 0.15; });
+      once('go', E.move[0], () => { rumble(true); screenShake = 0.25; });
+      once('stop', E.move[1], () => { rumble(false); try { playSfx('hullClang'); } catch (e) {} screenShake = 0.3; ding(); });
+      once('arrive', E.arrive, () => { enter(s, true); B.bare = true; B.fade = 0; popupQueue.length = 0; activePopup = null; });
+      once('openS', E.open[0], () => { try { cabinSfx('servo'); cabinSfx('hiss'); } catch (e) {} });
+      if (nb) { nb.style.display = ''; nb.innerText = c.t < E.close[1] ? ">> PIRATE BUNKER LIFT <<" : (c.t < E.move[1] ? ">> LIFT DESCENDING... <<" : ">> LEVEL B3 <<"); }
+      if (c.t >= E.end) {
+        CUT = null; if (B) { B.bare = false; ui(true); }
+        const left = B ? B.enemies.length : 0, loot = B ? B.loot.filter(l => !l.gone).length : 0;
+        if (B) {
+          addPopup(`PIRATE BUNKER: ${B.L.name}`, "#f59e0b");
+          addPopup(B.p.cleared ? "ALREADY CLEARED - NOTHING LEFT DOWN HERE" : `${left} HOSTILE${left === 1 ? '' : 'S'} · ${loot} STASH${loot === 1 ? '' : 'ES'} TO LOOT`, B.p.cleared ? "#4ade80" : "#fca5a5");
+        }
+      }
+    } else {
+      const E = EXIT_T;
+      once('closeS', E.close[0], () => { try { cabinSfx('servo'); } catch (e) {} });
+      once('clang', E.close[1], () => { try { playSfx('hullClang'); } catch (e) {} screenShake = 0.15; });
+      once('go', E.move[0], () => { rumble(true); screenShake = 0.25; });
+      once('stop', E.move[1], () => { rumble(false); try { playSfx('hullClang'); } catch (e) {} screenShake = 0.3; ding(); });
+      once('arrive', E.arrive, () => { if (B) exitBunker(true); popupQueue.length = 0; activePopup = null; cutButtons(true); const cam = cabCam(s, 0); playerFoot.x = cam.x; playerFoot.z = cam.z; playerFoot.yaw = cam.yaw; playerFoot.pitch = cam.pitch; c.doorOpen = 0; });
+      if (c.t >= E.arrive && c.t < E.walk[0]) c.doorOpen = sm(E.open[0], E.open[1], c.t);
+      once('openS', E.open[0], () => { try { cabinSfx('servo'); } catch (e) {} });
+      if (c.t >= E.walk[0]) {
+        const k = sm(E.walk[0], E.walk[1], c.t), cam = cabCam(s, k);
+        playerFoot.x = cam.x; playerFoot.z = cam.z; playerFoot.yaw = cam.yaw; playerFoot.pitch = cam.pitch;
+        c.doorOpen = 1;
+        once('step1', E.walk[0] + 0.3, () => { try { cabinSfx('step'); } catch (e) {} }); once('step2', E.walk[0] + 0.75, () => { try { cabinSfx('step'); } catch (e) {} });
+      }
+      if (nb) { nb.style.display = ''; nb.innerText = c.t < E.move[1] ? (c.t < E.close[1] ? ">> PIRATE BUNKER LIFT <<" : ">> LIFT ASCENDING... <<") : ">> SURFACE <<"; }
+      if (c.t >= E.end) {
+        c.doorOpen = 0;
+        const sx = s.door[0] + s.fx * 4, sz = s.door[1] + s.fz * 4;
+        playerFoot.x = sx; playerFoot.z = sz; playerFoot.yaw = Math.atan2(s.fx, s.fz); playerFoot.pitch = 0.05;
+        CUT = null; cutButtons(false); updateButtonLayout();
+      }
+    }
+    endInput();
+  }
+
+  // the cab, drawn in screen space around a doorway; whatever's outside is rendered behind it
+  function drawCab(st, close, moving, dir, floorTxt, light, zoom) {
+    const W = V_WIDTH, H = V_HEIGHT, t = performance.now() / 1000;
+    ctx.save();
+    if (zoom > 0) { const z = 1 + zoom * zoom * 2.6; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }
+    const dx0 = Math.round(W / 2 - H * 0.34), dx1 = Math.round(W / 2 + H * 0.34), dy0 = Math.round(H * 0.13), dy1 = Math.round(H * 0.9), fr = 7;
+    const P = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); ctx.fill(); };
+    const Rr = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
+    const pal = st === 0 ? { wallL: "#3f3f46", wallR: "#36363c", ceil: "#232327", floor: "#4b4b52", plate: "#5f5f68", frame: "#18181b", door: ["#52525b", "#4b5563"] }
+                         : { wallL: "#57493c", wallR: "#4a3f35", ceil: "#2a231d", floor: "#463b31", plate: "#5c4e41", frame: "#1c1917", door: ["#57534e", "#4a4540"] };
+    const X0 = dx0 - fr, X1 = dx1 + fr, Y0 = dy0 - fr, Y1 = dy1 + fr, E = 40;
+    // walls / ceiling / floor of the cab
+    P([[-E, -E], [W + E, -E], [X1, Y0], [X0, Y0]], pal.ceil);
+    P([[-E, H + E], [W + E, H + E], [X1, Y1], [X0, Y1]], pal.floor);
+    P([[-E, -E], [X0, Y0], [X0, Y1], [-E, H + E]], pal.wallL);
+    P([[W + E, -E], [X1, Y0], [X1, Y1], [W + E, H + E]], pal.wallR);
+    // floor tread plate lines + wall ribs
+    ctx.strokeStyle = pal.plate; ctx.lineWidth = 1;
+    for (let i = 1; i < 6; i++) { const k = i / 6, y = Y1 + (H + E - Y1) * k * k; ctx.beginPath(); ctx.moveTo(X0 - (X0 + E) * k * k, y); ctx.lineTo(X1 + (W + E - X1) * k * k, y); ctx.stroke(); }
+    for (let i = 1; i < 4; i++) { const k = i / 4; ctx.beginPath(); ctx.moveTo(X0 * (1 - k) - E * k, Y0 * (1 - k) - E * k); ctx.lineTo(X0 * (1 - k) - E * k, Y1 * (1 - k) + (H + E) * k); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X1 + (W + E - X1) * k, Y0 * (1 - k) - E * k); ctx.lineTo(X1 + (W + E - X1) * k, Y1 * (1 - k) + (H + E) * k); ctx.stroke(); }
+    if (st === 1) { ctx.fillStyle = "rgba(0,0,0,0.18)"; for (let i = 0; i < 9; i++) { const y = Y0 + (Y1 - Y0) * (i / 9); ctx.fillRect(0, y, X0 * 0.8, 2); ctx.fillRect(X1 + (W - X1) * 0.2, y, W, 2); } }   // corrugated walls
+    // ceiling light tube
+    const lc = light === 'move' ? (Math.random() < 0.06 ? "#78350f" : "#f59e0b") : (light === 'arrive' ? "#22c55e" : "#fef9c3");
+    P([[W / 2 - 40, Y0 * 0.3], [W / 2 + 40, Y0 * 0.3], [W / 2 + 30, Y0 * 0.62], [W / 2 - 30, Y0 * 0.62]], lc);
+    // doorway frame
+    Rr(X0, Y0, X1 - X0, fr, pal.frame); Rr(X0, Y1 - fr, X1 - X0, fr, pal.frame); Rr(X0, Y0, fr, Y1 - Y0, pal.frame); Rr(X1 - fr, Y0, fr, Y1 - Y0, pal.frame);
+    if (st === 0) for (let i = 0; i < 12; i++) { Rr(X0 + i * (X1 - X0) / 12, Y1 - fr, (X1 - X0) / 24, fr, "#eab308"); Rr(X0 + i * (X1 - X0) / 12, Y0, (X1 - X0) / 24, fr, "#eab308"); }
+    // floor indicator over the door + control panel on the right wall
+    Rr(W / 2 - 16, Y0 - 17, 32, 12, "#0a0a0a"); ctx.font = "bold 9px monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#ef4444"; ctx.fillText(floorTxt, W / 2, Y0 - 7.5);
+    if (moving) { ctx.fillStyle = "#ef4444"; ctx.fillText(dir > 0 ? "▼" : "▲", W / 2 + 24, Y0 - 7.5); }
+    const px = X1 + 16, py = H * 0.42;
+    P([[px, py], [px + 16, py - 4], [px + 16, py + 34], [px, py + 34]], "#1f2937");
+    for (let i = 0; i < 4; i++) Rr(px + 5, py + 4 + i * 7, 6, 4, i === (moving ? (dir > 0 ? 3 : 0) : (dir > 0 ? 0 : 3)) ? "#facc15" : "#475569");
+    // the doors
+    const DW = dx1 - dx0, DH = dy1 - dy0;
+    const shaft = (x, y, w, h) => {   // light bars sliding past the window while the cab moves
+      Rr(x, y, w, h, "#050505");
+      if (!moving) return;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+      const sp = 26, off = ((t * 120 * dir) % sp + sp) % sp;
+      for (let yy = y - sp + off; yy < y + h + sp; yy += sp) Rr(x, yy, w, 3, "#fbbf24");
+      ctx.restore();
+    };
+    if (st === 0) {
+      const half = DW / 2, lw = half * close;
+      if (lw > 0.5) {
+        Rr(dx0, dy0, lw, DH, pal.door[0]); Rr(dx1 - lw, dy0, lw, DH, pal.door[1]);
+        for (let i = 1; i < 3; i++) { Rr(dx0 + lw * i / 3, dy0, 1, DH, "#3f3f46"); Rr(dx1 - lw * i / 3, dy0, 1, DH, "#3f3f46"); }
+        // hazard chevrons on the leading edges
+        ctx.save(); ctx.beginPath(); ctx.rect(dx0 + lw - 8, dy0, 8, DH); ctx.rect(dx1 - lw, dy0, 8, DH); ctx.clip();
+        for (let y = dy0 - 10; y < dy1; y += 10) { P([[dx0 + lw - 8, y], [dx0 + lw, y + 5], [dx0 + lw, y + 10], [dx0 + lw - 8, y + 5]], "#eab308"); P([[dx1 - lw + 8, y], [dx1 - lw, y + 5], [dx1 - lw, y + 10], [dx1 - lw + 8, y + 5]], "#eab308"); }
+        ctx.restore();
+        if (close > 0.95) { shaft(dx0 + half * 0.45, dy0 + DH * 0.25, 6, DH * 0.3); shaft(dx1 - half * 0.45 - 6, dy0 + DH * 0.25, 6, DH * 0.3); Rr(W / 2 - 0.5, dy0, 1, DH, "#111"); }
+      }
+    } else {
+      const hh = DH * close;
+      if (hh > 0.5) {
+        Rr(dx0, dy0, DW, hh, pal.door[0]);
+        for (let y = dy0 + 4; y < dy0 + hh - 2; y += 5) Rr(dx0, y, DW, 1.5, "#3a3632");
+        Rr(dx0, dy0 + hh - 4, DW, 4, "#eab308"); for (let i = 0; i < 8; i++) Rr(dx0 + i * DW / 8, dy0 + hh - 4, DW / 16, 4, "#111827");
+        if (close > 0.95) { shaft(W / 2 - 14, dy0 + DH * 0.3, 28, 10); for (let i = 0; i < 4; i++) Rr(W / 2 - 14 + i * 8, dy0 + DH * 0.3, 2, 10, "#27272a"); }
+      }
+    }
+    // shading: dim cab, amber while it moves
+    if (light === 'move') { ctx.fillStyle = "rgba(120, 53, 15, 0.18)"; ctx.fillRect(-E, -E, W + 2 * E, H + 2 * E); }
+    ctx.restore();
+  }
+  function renderCut() {
+    const c = CUT, s = c.site, W = V_WIDTH, H = V_HEIGHT;
+    let sx = 0, sy = 0;
+    if (c.type === 'in') {
+      const E = ENTER_T;
+      if (c.t < E.ride) { prevRender(); }
+      else {
+        const moving = c.t >= E.move[0] && c.t < E.move[1];
+        ctx.save();
+        if (moving || screenShake > 0) { sx = (Math.random() - 0.5) * (moving ? 2.2 : 0) + (Math.random() - 0.5) * screenShake * 8; sy = (Math.random() - 0.5) * (moving ? 2.2 : 0) + (Math.random() - 0.5) * screenShake * 8; ctx.translate(sx, sy); }
+        if (c.t < E.arrive) { ctx.fillStyle = "#000"; ctx.fillRect(-20, -20, W + 40, H + 40); }
+        else if (B) { try { renderBunker(); } catch (e) { try { ctx.restore(); } catch (e2) {} } }
+        const close = c.t < E.arrive ? 1 : 1 - sm(E.open[0], E.open[1], c.t);
+        const fl = c.t < E.move[0] ? "G" : (c.t < E.move[1] ? ["B1", "B2", "B3"][Math.min(2, Math.floor((c.t - E.move[0]) / (E.move[1] - E.move[0]) * 3))] : "B3");
+        drawCab(c.style, close, moving, 1, fl, moving ? 'move' : (c.t >= E.move[1] ? 'arrive' : 'idle'), c.t >= E.open[1] ? sm(E.open[1], E.end, c.t) : 0);
+        ctx.restore();
+      }
+
+    } else {
+      const E = EXIT_T, moving = c.t >= E.move[0] && c.t < E.move[1];
+      ctx.save();
+      if (moving || screenShake > 0) { sx = (Math.random() - 0.5) * (moving ? 2.2 : 0) + (Math.random() - 0.5) * screenShake * 8; sy = (Math.random() - 0.5) * (moving ? 2.2 : 0) + (Math.random() - 0.5) * screenShake * 8; ctx.translate(sx, sy); }
+      if (c.t >= E.arrive) { ctx.restore(); prevRender(); return; }   // topside: the real 3D cab, doors opening on the planet
+      if (B) { try { renderBunker(); } catch (e) { try { ctx.restore(); } catch (e2) {} } }
+      const close = sm(E.close[0], E.close[1], c.t);
+      const fl = c.t < E.move[0] ? "B3" : (c.t < E.move[1] ? ["B2", "B1", "G"][Math.min(2, Math.floor((c.t - E.move[0]) / (E.move[1] - E.move[0]) * 3))] : "G");
+      drawCab(c.style, close, moving, -1, fl, moving ? 'move' : (c.t >= E.move[1] ? 'arrive' : 'idle'), 0);
+      ctx.restore();
+    }
+    try { ctx.drawImage(vignette(), 0, 0); } catch (e) {}
+  }
+
+  // ======================================================================
+  // HOOKS
+  // ======================================================================
+  const prevExtra = window.surfaceExtraEntities;
+  window.surfaceExtraEntities = function(list) {
+    if (typeof prevExtra === 'function') { try { prevExtra(list); } catch (e) {} }
+    try {
+      const s = currentSite(); if (!s || B) return;
+      const dist = Math.hypot(playerFoot.x - s.x, playerFoot.z - s.z);
+      if (dist > 1150) {   // too far to model: just the beacon on the horizon
+        const pr = projectSurface(s.x, -20, s.z);
+        if (pr && pr.depth > 1) list.push({ type: 'custom', proj: pr, draw: (p) => { if (Math.floor(Date.now() / 450) % 2 || isCleared(s)) { ctx.fillStyle = isCleared(s) ? "#22c55e" : "#ef4444"; ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2); } } });
+      } else pushModel(s, list);
+    } catch (e) {}
+  };
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    if (CUT) { try { stepCut(dt); } catch (e) { console.warn("bunker lift", e); CUT = null; try { cutButtons(false); if (B) { B.bare = false; ui(true); } else updateButtonLayout(); } catch (e2) {} endInput(); } return; }
+    if (B) { try { updateBunker(dt); } catch (e) { console.warn("bunker update", e); endInput(); } return; }
+    // tap / key at the bunker door
+    let enterNow = false;
+    try {
+      if (nearDoor() && !gameOver) {
+        const wants = tapAction || keys[keyBindings['action']] && !prevKeys[keyBindings['action']] || keys[keyBindings['board']] && !prevKeys[keyBindings['board']] || isGpJustPressed('action') || isGpJustPressed('board');
+        if (wants) enterNow = true;
+      }
+    } catch (e) {}
+    tapAction = false;
+    if (enterNow) { try { const s = currentSite(); startEnterCut(s); } catch (e) { console.warn("bunker enter", e); CUT = null; B = null; } endInput(); return; }
+    const r = prevUpdate.apply(this, arguments);
+    try {
+      const s = currentSite();
+      if (s && gameMode === 'SURFACE' && !cabin) {
+        if (!s.announced && !landingSeq && !takeoffSeq) { s.announced = true; addPopup(isCleared(s) ? "CLEARED PIRATE BUNKER ON THIS WORLD" : "⚠ PIRATE BUNKER DETECTED ON THIS WORLD", isCleared(s) ? "#4ade80" : "#f472b6"); }
+        // solid mound
+        if (Math.hypot(playerFoot.x - s.x, playerFoot.z - s.z) < 70) collideModel(s);
+        if (nearDoor()) {
+          const banner = document.getElementById("nav-banner");
+          if (banner) banner.innerText = isCleared(s) ? ">> CLEARED PIRATE BUNKER: TAP ENTER <<" : ">> PIRATE BUNKER ENTRANCE: TAP ENTER - BRING A GUN <<";
+          btn3.innerText = "ENTER"; btn3.className = "cockpit-btn action active";
+        }
+      }
+    } catch (e) {}
+    return r;
+  };
+  const prevRender = window.render;
+  window.render = function() {
+    if (surfacePassActive) return prevRender.apply(this, arguments);
+    if (CUT) { try { renderCut(); } catch (e) { console.warn("bunker lift render", e); try { ctx.restore(); } catch (e2) {} } return; }
+    if (B) { try { renderBunker(); } catch (e) { console.warn("bunker render", e); try { ctx.restore(); } catch (e2) {} } return; }
+    return prevRender.apply(this, arguments);
+  };
+  ['handleContextAction', 'firePrimaryWeapon', 'fireHomingMissile', 'triggerWarp', 'boardShip'].forEach(fn => {
+    const orig = window[fn]; if (typeof orig !== 'function') return;
+    window[fn] = function() { if (B || CUT) return; return orig.apply(this, arguments); };
+  });
+  const prevInit = window.initGame;
+  window.initGame = function() {
+    if (CUT) { try { rumble(false); } catch (e) {} CUT = null; try { cutButtons(false); } catch (e) {} }
+    if (B) { stopHum(); stopSiren(); B = null; try { ui(false); } catch (e) {} }
+    if (typeof galaxyLoop === 'undefined' || galaxyLoop === 0) PROG.clear();     // new run: every bunker restocks
+    site = null; siteFor = "";
+    return prevInit.apply(this, arguments);
+  };
+  window.__bunker = {
+    get state() { return B; }, get cut() { return CUT; }, get site() { return currentSite(); }, cleared: (x) => isCleared(x), cutIn: () => { const s = currentSite(); if (s) startEnterCut(s); }, cutOut: () => { if (B) startExitCut(); }, LAYOUTS, PROG, enter: () => { const s = currentSite(); if (s) enter(s); }, exit: () => { if (B) exitBunker(); },
+    forceSite(layout, style) { const pl = landedPlanet; if (!pl) return null; siteFor = planetKey(pl) + ":" + galaxySeed; const r = rngFrom(7); site = { key: siteFor + ":forced" + layout, x: 0, z: 0, fx: 0, fz: -1, layout, style, announced: true }; site.x = 0; site.z = 160; site.fx = 0; site.fz = -1; site.door = [0, 160 - 38]; return site; },
+    teleport(x, z, yaw) { if (B) { playerFoot.x = x; playerFoot.z = z; if (yaw !== undefined) playerFoot.yaw = yaw; } },
+    T
+  };
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   LANDED CHIMERA IN 3D: the surface ship sprite rebuilt as real geometry from
+   drawPixelSpaceship's own pixel art, so you can walk right round it (and
+   under its belly). Airlock + boarding ramp on the starboard (+x) side, where
+   you step out of the cabin. Cutscenes that call drawPixelSpaceship directly
+   (dist 99999) and the landing/take-off sequences still use the sprite.
+   ========================================================================== */
+// Art x = length (nose +), art y = height (0 = ground, negative up). World: x = across (starboard +), z = length, y = height.
+(function() {
+  const K = 1.0;                         // world units per art pixel
+  const SUN = (() => { const v = [0.35, 1, 0.25], l = Math.hypot(...v); return v.map(c => c / l); })();
+  const W = (w, h, l) => [w * K, h * K, l * K];
+  function faceN(pts, ctr) {
+    const a = pts[0], b = pts[1], c = pts[2];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; const l = Math.hypot(...n) || 1; n = n.map(q => q / l);
+    if (ctr) { let fx = 0, fy = 0, fz = 0; for (const p of pts) { fx += p[0]; fy += p[1]; fz += p[2]; } fx /= pts.length; fy /= pts.length; fz /= pts.length; if (n[0] * (fx - ctr[0]) + n[1] * (fy - ctr[1]) + n[2] * (fz - ctr[2]) < 0) n = n.map(q => -q); }
+    return n;
+  }
+  const F = [];
+  let PART = 0;                          // convex part id: faces of one box / prism / wedge share it
+  function poly(lpts, col, o) {   // lpts: [w, h, l] art coords
+    o = o || {};
+    const pts = lpts.map(p => W(p[0], p[1], p[2]));
+    let n = null;
+    if (o.n) n = o.n; else if (!o.two) n = faceN(pts, o.ctr ? W(...o.ctr) : null);
+    F.push({ pts, n, rgb: hexRgb(col), emis: o.emis, pulse: o.pulse, blink: o.blink, chase: o.chase, bias: o.bias || 0, alpha: o.alpha, deep: o.deep || 0, dim: o.dim, part: o.ground ? -1 : PART });
+  }
+  // box: w across, h height, l length (art coords)
+  function box(w0, w1, h0, h1, l0, l1, col, o) {
+    o = o || {}; PART++; const top = Math.min(h0, h1), bot = Math.max(h0, h1), ctr = [(w0 + w1) / 2, (top + bot) / 2, (l0 + l1) / 2];
+    const q = (p, c) => poly(p, c, Object.assign({}, o, { ctr }));
+    q([[w0, top, l0], [w1, top, l0], [w1, top, l1], [w0, top, l1]], o.top || col);
+    if (!o.noBottom) q([[w0, bot, l0], [w1, bot, l0], [w1, bot, l1], [w0, bot, l1]], o.bottom || col);
+    q([[w0, top, l1], [w1, top, l1], [w1, bot, l1], [w0, bot, l1]], o.front || col);
+    q([[w0, top, l0], [w1, top, l0], [w1, bot, l0], [w0, bot, l0]], o.back || col);
+    q([[w0, top, l0], [w0, top, l1], [w0, bot, l1], [w0, bot, l0]], o.side || col);
+    q([[w1, top, l0], [w1, top, l1], [w1, bot, l1], [w1, bot, l0]], o.side || col);
+  }
+  // prism: a side-profile polygon (l, h) extruded across w0..w1
+  function prism(prof, w0, w1, col, o) {
+    o = o || {}; PART++; let cl = 0, ch = 0; for (const p of prof) { cl += p[0]; ch += p[1]; } cl /= prof.length; ch /= prof.length;
+    const ctr = [(w0 + w1) / 2, ch, cl], q = (p, c) => poly(p, c, Object.assign({}, o, { ctr }));
+    q(prof.map(p => [w0, p[1], p[0]]), o.side || col);
+    q(prof.map(p => [w1, p[1], p[0]]), o.side || col);
+    for (let i = 0; i < prof.length; i++) { const a = prof[i], b = prof[(i + 1) % prof.length]; const up = (a[1] + b[1]) / 2 < ch - 3; q([[w0, a[1], a[0]], [w1, a[1], a[0]], [w1, b[1], b[0]], [w0, b[1], b[0]]], up ? (o.top || col) : col); }
+  }
+  // a decal on a side face (w = side plane), art rect sx,sy,w,h like fillRect
+  function side(wPlane, sx, sy, w, h, col, o) {
+    const s = wPlane > 0 ? 1 : -1;
+    poly([[wPlane, sy, sx], [wPlane, sy, sx + w], [wPlane, sy + h, sx + w], [wPlane, sy + h, sx]], col, Object.assign({ n: [s, 0, 0], bias: 1 }, o || {}));
+  }
+
+  const HULL = "#1e293b", DARK = "#0f172a", EDGE = "#475569", FW = 9, NW = 13, BW = 8;
+  // ground shadow
+  poly([[-30, -0.05, -56], [30, -0.05, -56], [30, -0.05, 52], [-30, -0.05, 52]], "#000000", { n: [0, -1, 0], alpha: 0.55, deep: 80, ground: true });
+  poly([[-22, -0.06, -48], [22, -0.06, -48], [22, -0.06, 44], [-22, -0.06, 44]], "#000000", { n: [0, -1, 0], alpha: 0.35, deep: 79, ground: true });
+  // landing gear: strut housing, chrome piston, footpad, cyan grip teeth (both sides)
+  for (const lx of [-36, -16, 12, 32]) for (const s of [-1, 1]) {
+    const w = s * 7, nose = lx > 20, hullBot = nose ? -14 : -12, hullW = nose ? BW : FW;
+    const z0 = lx - 2.5, z1 = lx === 12 ? 14 : lx + 2.5;                       // the mid-front pair stops where the nose section starts
+    box(s > 0 ? w - 2.5 : -hullW, s > 0 ? hullW : w + 2.5, hullBot, -7, z0, z1, DARK);   // strut housing, flush under the hull
+    box(w - 1.5, w + 1.5, -7, -2, lx - 1.5, lx + 1.5, "#64748b", { top: "#94a3b8" });
+    box(w - 5, w + 5, -2, 0, lx - 5, lx + 5, DARK);
+    // cyan grip strip round the foot pad (decals on the pad's four sides)
+    poly([[w - 4, -1.6, lx + 5.02], [w + 4, -1.6, lx + 5.02], [w + 4, -0.4, lx + 5.02], [w - 4, -0.4, lx + 5.02]], "#38bdf8", { n: [0, 0, 1], emis: true, bias: 1 });
+    poly([[w - 4, -1.6, lx - 5.02], [w + 4, -1.6, lx - 5.02], [w + 4, -0.4, lx - 5.02], [w - 4, -0.4, lx - 5.02]], "#38bdf8", { n: [0, 0, -1], emis: true, bias: 1 });
+    for (const e of [-1, 1]) poly([[w + e * 5.02, -1.6, lx - 4], [w + e * 5.02, -1.6, lx + 4], [w + e * 5.02, -0.4, lx + 4], [w + e * 5.02, -0.4, lx - 4]], "#38bdf8", { n: [e, 0, 0], emis: true, bias: 1 });
+  }
+  // engine nacelle (wide), with radiator louvers + glowing slots on both flanks
+  box(-NW, NW, -28, -12, -46, -20, DARK, { top: "#1e293b" });
+  for (const s of [-1, 1]) {
+    side(s * NW, -44, -26, 23, 12, HULL);
+    for (let rx = -41; rx <= -26; rx += 3.5) { side(s * (NW + 0.02), rx, -24, 2, 8, DARK, { bias: 1.4 }); side(s * (NW + 0.04), rx + 0.5, -23, 1, 6, "#f43f5e", { bias: 1.8, emis: true, pulse: true }); }
+    side(s * (NW + 0.06), -46, -28, 2, 2, "#ef4444", { bias: 2, emis: true, blink: 0.4 });
+  }
+  // twin exhausts out the back (two per side)
+  for (const ey of [-24, -17.5]) for (const s of [-1, 1]) {
+    const w = s * 6.5;
+    box(w - 3, w + 3, ey - 2.5, ey + 2.5, -51, -46, DARK, { back: "#334155" });
+    poly([[w - 2, ey - 1.5, -51.05], [w + 2, ey - 1.5, -51.05], [w + 2, ey + 1.5, -51.05], [w - 2, ey + 1.5, -51.05]], "#38bdf8", { n: [0, 0, -1], emis: true, pulse: true, bias: 1.5 });
+  }
+  // armoured collar + conduits
+  box(-NW + 1, NW - 1, -27, -13, -20, -18, DARK);
+  for (const s of [-1, 1]) { side(s * (NW - 0.98), -20, -24, 2, 2, EDGE, { bias: 1.2 }); side(s * (NW - 0.98), -20, -16, 2, 2, EDGE, { bias: 1.2 }); }
+  // central fuselage
+  box(-FW, FW, -25, -12, -18, 14, HULL, { top: "#273449" });
+  for (const s of [-1, 1]) {
+    side(s * FW, -18, -25, 32, 0.7, EDGE); side(s * FW, -18, -12.7, 32, 0.7, EDGE);
+    side(s * FW, -18, -17, 30, 2, "#0284c7", { bias: 1.1 });                 // Confed livery band
+  }
+  // dorsal spine + turret
+  box(-4, 4, -27, -25, -18, 8, DARK);
+  box(-4, 4, -31, -27, -5, 5, DARK);
+  for (const w of [-2, 2]) { box(w - 0.9, w + 0.9, -35, -31, -1, 1, "#64748b"); box(w - 0.9, w + 0.9, -36, -35, -1, 1, "#94a3b8"); }
+  poly([[-1, -30, 5.05], [1, -30, 5.05], [1, -28.5, 5.05], [-1, -28.5, 5.05]], "#38bdf8", { n: [0, 0, 1], emis: true, bias: 1 });
+  // starboard airlock (open, lit) + hazard sill + status lamp
+  side(FW + 0.02, -5, -25, 10, 11, EDGE, { bias: 1.3 });
+  side(FW + 0.05, -3.5, -25, 7, 5.5, "#e0f2fe", { bias: 1.6, emis: true });
+  side(FW + 0.05, -3.5, -19.5, 7, 5.5, "#7dd3fc", { bias: 1.6, emis: true });
+  side(FW + 0.07, -2.5, -24, 5, 1, "#38bdf8", { bias: 1.8, emis: true });
+  side(FW + 0.06, -6.5, -25, 1.5, 11, "#64748b", { bias: 1.7 }); side(FW + 0.06, 5, -25, 1.5, 11, "#64748b", { bias: 1.7 });
+  for (let q = 0; q < 5; q++) side(FW + 0.08, -5 + q * 2, -14, 2, 1, q % 2 ? "#111827" : "#eab308", { bias: 1.9 });
+  side(FW + 0.08, 5.25, -24.5, 1, 1.5, "#4ade80", { bias: 1.9, emis: true, blink: 0.55 });
+  // boarding ramp: from the airlock sill down to the ground, flaring wider at the foot, rungs + chasing LEDs
+  {
+    PART++; const top = FW, foot = FW + 15, RC = [top + 2, 2, 0];     // RC: a point under the ramp, so its normal faces up and out
+    poly([[top, -14, -5.5], [top, -14, 5.5], [foot, 0, 10.5], [foot, 0, -10.5]], DARK, { ctr: RC });
+    for (const s of [-1, 1]) poly([[top, -14, s * 5.5], [foot, 0, s * 10.5], [top, 0, s * 5.5]], HULL, { ctr: [top + 4, -3, 0] });
+    poly([[top, -14, -5.5], [top, -14, 5.5], [top, 0, 5.5], [top, 0, -5.5]], HULL, { ctr: [top + 4, -3, 0] });
+    const onRamp = (k, z, lift) => [top + k * 15 - 0.04 * lift, -14 + k * 14 - 0.12 * lift, z];
+    for (let i = 0; i < 5; i++) {
+      const k0 = (i + 0.3) / 5.4, k1 = k0 + 0.07, hw0 = 5.5 + k0 * 5 - 0.4, hw1 = 5.5 + k1 * 5 - 0.4;
+      poly([onRamp(k0, -hw0, 1), onRamp(k0, hw0, 1), onRamp(k1, hw1, 1), onRamp(k1, -hw1, 1)], "#334155", { ctr: RC, bias: 0.6 });
+    }
+    for (let st = 0; st < 4; st++) for (const s of [-1, 1]) {
+      const k0 = 0.1 + st * 0.22, k1 = k0 + 0.12, e0 = 5.5 + k0 * 5, e1 = 5.5 + k1 * 5;
+      poly([onRamp(k0, s * (e0 - 1.1), 2), onRamp(k0, s * (e0 - 0.3), 2), onRamp(k1, s * (e1 - 0.3), 2), onRamp(k1, s * (e1 - 1.1), 2)], "#4ade80", { ctr: RC, bias: 0.8, emis: true, chase: st });
+    }
+  }
+  // command bridge: the stepped nose prism, armoured brow, wraparound visor
+  prism([[14, -14], [14, -26], [33, -26], [43, -18], [43, -14]], -BW, BW, DARK, { side: HULL, top: "#273449" });
+  box(-BW - 0.3, BW + 0.3, -26.7, -26, 20, 33.3, DARK);   // armoured brow lip (kept off the glass)
+  for (const s of [-1, 1]) {
+    poly([[s * (BW + 0.35), -24, 22], [s * (BW + 0.35), -24, 32], [s * (BW + 0.35), -19.5, 39], [s * (BW + 0.35), -19.5, 22]], "#0369a1", { n: [s, 0, 0], bias: 2.5, emis: true, dim: 0.85 });
+    side(s * (BW + 0.4), 23, -23, 7, 2, "#38bdf8", { bias: 2, emis: true }); side(s * (BW + 0.405), 25, -22.5, 3, 1, "#ffffff", { bias: 2.05, emis: true });   // glint: over the glass, under the frame posts
+    side(s * (BW + 0.41), 27, -24, 1.5, 4.5, DARK, { bias: 2.1 }); side(s * (BW + 0.41), 32, -24, 1.5, 4.5, DARK, { bias: 2.1 });
+  }
+  // front windscreen on the sloped nose
+  { const a = [33.5, -25.4], b = [42, -18.6], sl = 0.25; poly([[-BW + 1.5, a[1] - sl, a[0]], [BW - 1.5, a[1] - sl, a[0]], [BW - 1.5, b[1] - sl, b[0]], [-BW + 1.5, b[1] - sl, b[0]]], "#0369a1", { emis: true, dim: 0.85, bias: 1.5, ctr: [0, -14, 28] }); }
+  // sensor mast + nav beacons
+  box(-1, 1, -17, -15, 43, 48, "#64748b");
+  box(-1.05, 1.05, -17.05, -14.95, 48, 50, "#22c55e", { emis: true, blink: 0.4 });
+
+  // ---------- decals: every detail panel (windows, vents, livery, rungs...) rides on the hull face it sits on ----------
+  {
+    const ctrOf = (pts) => { let x = 0, y = 0, z = 0; for (const p of pts) { x += p[0]; y += p[1]; z += p[2]; } return [x / pts.length, y / pts.length, z / pts.length]; };
+    const base = F.filter(f => !(f.bias > 0) && f.n);
+    for (const d of F) {
+      if (!(d.bias > 0) || !d.n) continue;
+      const c = ctrOf(d.pts); let best = null, bd = 1e9;
+      for (const b of base) {
+        if (b.n[0] * d.n[0] + b.n[1] * d.n[1] + b.n[2] * d.n[2] < 0.97) continue;
+        const p0 = b.pts[0], pd = Math.abs((c[0] - p0[0]) * b.n[0] + (c[1] - p0[1]) * b.n[1] + (c[2] - p0[2]) * b.n[2]);
+        if (pd > 0.6) continue;
+        let ok = true;
+        for (let ax = 0; ax < 3 && ok; ax++) { let lo = 1e9, hi = -1e9; for (const p of b.pts) { lo = Math.min(lo, p[ax]); hi = Math.max(hi, p[ax]); } if (c[ax] < lo - 0.7 || c[ax] > hi + 0.7) ok = false; }
+        if (ok && pd < bd) { bd = pd; best = b; }
+      }
+      if (best) { (best.kids || (best.kids = [])).push(d); d.child = true; d.off = bd; }
+    }
+    for (const b of F) if (b.kids) b.kids.sort((p, q) => (p.off - q.off) || (p.bias - q.bias));   // innermost layer first: panel, then the details standing proud of it
+    for (let i = F.length - 1; i >= 0; i--) if (F[i].child) F.splice(i, 1);
+  }
+  // ---------- parts + occlusion order ----------
+  // Painter's sorting by face centres gets adjoining boxes wrong (windows over legs, thrusters through the hull).
+  // Instead: each part is convex, and for every pair we find (once) a face plane of one part with the other part
+  // entirely outside it. Each frame the side of that plane the camera is on says which part must be drawn first.
+  const GROUND = F.filter(f => f.part < 0);
+  const PARTS = [];
+  {
+    const byId = new Map();
+    for (const f of F) { if (f.part < 0) continue; let P = byId.get(f.part); if (!P) { P = { faces: [], verts: [] }; byId.set(f.part, P); PARTS.push(P); } P.faces.push(f); for (const v of f.pts) P.verts.push(v); }
+    for (const P of PARTS) { let x = 0, y = 0, z = 0; for (const v of P.verts) { x += v[0]; y += v[1]; z += v[2]; } P.c = [x / P.verts.length, y / P.verts.length, z / P.verts.length]; }
+    const sep = (A, Bp) => {           // a face plane of A with all of B on its outside
+      for (const f of A.faces) {
+        if (!f.n) continue; const n = f.n, d = n[0] * f.pts[0][0] + n[1] * f.pts[0][1] + n[2] * f.pts[0][2];
+        let ok = true; for (const v of Bp.verts) if (n[0] * v[0] + n[1] * v[1] + n[2] * v[2] - d < -0.05) { ok = false; break; }
+        if (ok) return { n, d };
+      }
+      return null;
+    };
+    for (let i = 0; i < PARTS.length; i++) { PARTS[i].i = i; PARTS[i].sep = []; }
+    for (let i = 0; i < PARTS.length; i++) for (let j = i + 1; j < PARTS.length; j++) {
+      let pl = sep(PARTS[i], PARTS[j]), outer = j;
+      if (!pl) { pl = sep(PARTS[j], PARTS[i]); outer = i; }
+      if (pl) PARTS[i].sep.push({ j, n: pl.n, d: pl.d, outer });
+    }
+  }
+
+  // ---------- rendering (same camera maths as projectSurface) ----------
+  function push(list) {
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const ex = playerFoot.x, ey = playerFoot.y, ez = playerFoot.z, fov = V_HEIGHT * 0.9, NEAR = 0.5, t = Date.now();
+    const tx = (p) => { const dx = p[0] - ex, dy = p[1] - ey, dz = p[2] - ez, x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    const pulse = 0.5 + Math.sin(t * 0.007) * 0.35, chaseStep = Math.floor(t / 140) % 4;
+    const proj = (pts) => {
+      const cam = pts.map(tx), out = [];
+      for (let i = 0; i < cam.length; i++) { const a = cam[i], b = cam[(i + 1) % cam.length], ain = a[2] > NEAR, bin = b[2] > NEAR; if (ain) out.push(a); if (ain !== bin) { const tt = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * tt, a[1] + (b[1] - a[1]) * tt, NEAR]); } }
+      return out.length < 3 ? null : out.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+    };
+    const shade = (f, n) => {
+      let k = 1; n = n || f.n;
+      if (f.emis) { k = f.dim || 1; if (f.pulse) k *= 0.45 + pulse * 0.7; if (f.blink && Math.floor(t / (1000 * f.blink)) % 2) k *= 0.25; if (f.chase !== undefined && f.chase !== chaseStep) k *= 0.3; }
+      else if (n) k = 0.72 + 0.48 * Math.max(0, -(n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]));
+      return `rgb(${Math.min(255, f.rgb[0] * k) | 0},${Math.min(255, f.rgb[1] * k) | 0},${Math.min(255, f.rgb[2] * k) | 0})`;
+    };
+    const drawPoly = (scr, col, alpha, stroke) => {
+      if (alpha !== undefined) ctx.globalAlpha = alpha;
+      ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = stroke;
+      ctx.beginPath(); ctx.moveTo(scr[0][0], scr[0][1]); for (let i = 1; i < scr.length; i++) ctx.lineTo(scr[i][0], scr[i][1]); ctx.closePath(); ctx.fill();
+      if (alpha === undefined) ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+    // ground shadows first, under everything
+    for (const f of GROUND) {
+      const scr = proj(f.pts); if (!scr) continue; const col = shade(f), zc = tx(f.pts[0])[2];
+      list.push({ type: 'custom', proj: { x: scr[0][0], y: scr[0][1], scale: 1, dist: zc, depth: zc + f.deep }, draw: () => drawPoly(scr, col, f.alpha, 0.6) });
+    }
+    // visible faces of each part
+    const vis = [];
+    for (const P of PARTS) {
+      const fs = [];
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const f of P.faces) {
+        const c = f.c || (f.c = (() => { let x = 0, y = 0, z = 0; for (const p of f.pts) { x += p[0]; y += p[1]; z += p[2]; } return [x / f.pts.length, y / f.pts.length, z / f.pts.length]; })());
+        if (f.n && f.n[0] * (ex - c[0]) + f.n[1] * (ey - c[1]) + f.n[2] * (ez - c[2]) <= 0) continue;
+        const scr = proj(f.pts); if (!scr) continue;
+        for (const q of scr) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+        fs.push({ scr, col: shade(f), kids: f.kids ? f.kids.map(k => ({ scr: proj(k.pts), col: shade(k, f.n) })) : null });
+      }
+      if (!fs.length) { P.v = false; continue; }
+      P.v = true; P.fs = fs; P.bb = [x0, y0, x1, y1]; P.z = tx(P.c)[2]; P.dist = Math.hypot(P.c[0] - ex, P.c[1] - ey, P.c[2] - ez);
+      vis.push(P);
+    }
+    // occlusion graph between overlapping visible parts -> topological order (farthest-first tie break)
+    for (const P of vis) { P.out = []; P.indeg = 0; }
+    const ov = (a, b) => a.bb[0] < b.bb[2] && b.bb[0] < a.bb[2] && a.bb[1] < b.bb[3] && b.bb[1] < a.bb[3];
+    for (const P of vis) for (const sp of P.sep) {
+      const Q = PARTS[sp.j]; if (!Q.v || !ov(P, Q)) continue;
+      const camOut = sp.n[0] * ex + sp.n[1] * ey + sp.n[2] * ez - sp.d > 0;    // camera on the outer side of the plane?
+      const outerP = PARTS[sp.outer], innerP = outerP === P ? Q : P;
+      const first = camOut ? innerP : outerP, second = camOut ? outerP : innerP;
+      first.out.push(second); second.indeg++;
+    }
+    const order = [], ready = vis.filter(P => P.indeg === 0);
+    const left = new Set(vis);
+    while (left.size) {
+      let P;
+      if (ready.length) { let bi = 0; for (let i = 1; i < ready.length; i++) if (ready[i].dist > ready[bi].dist) bi = i; P = ready.splice(bi, 1)[0]; if (!left.has(P)) continue; }
+      else { for (const Q of left) if (!P || Q.dist > P.dist) P = Q; }        // cycle: break it at the farthest part
+      left.delete(P); order.push(P);
+      for (const Q of P.out) if (left.has(Q) && --Q.indeg === 0) ready.push(Q);
+    }
+    // push in that order with strictly decreasing depth so the global sort keeps it, while staying close to true distance
+    let last = Infinity;
+    for (const P of order) {
+      const depth = Math.min(P.z, last - 0.0005); last = depth;
+      const fs = P.fs;
+      list.push({ type: 'custom', proj: { x: fs[0].scr[0][0], y: fs[0].scr[0][1], scale: 1, dist: P.z, depth }, draw: () => {
+        for (const f of fs) {
+          drawPoly(f.scr, f.col, undefined, 0.6);
+          if (f.kids) for (const q of f.kids) if (q.scr) drawPoly(q.scr, q.col, undefined, 0.5);
+        }
+      } });
+    }
+    // light spilling out of the airlock onto the ramp
+    const a = tx(W(FW + 1, -14, 0)); if (a[2] > NEAR) { const X = V_WIDTH / 2 + a[0] / a[2] * fov, Y = V_HEIGHT / 2 + a[1] / a[2] * fov, r = 60 / a[2] * fov / 10;
+      list.push({ type: 'custom', proj: { x: X, y: Y, scale: 1, dist: a[2], depth: a[2] - 3 }, draw: () => { ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(X, Y, 0, X, Y, r); g.addColorStop(0, "rgba(186,230,253,0.35)"); g.addColorStop(1, "rgba(186,230,253,0)"); ctx.fillStyle = g; ctx.fillRect(X - r, Y - r, r * 2, r * 2); ctx.restore(); } }); }
+  }
+  const live = () => gameMode === 'SURFACE' && !cabin && !landingSeq && !takeoffSeq && !(typeof surfacePassActive !== 'undefined' && surfacePassActive) && !(window.__bunker && (window.__bunker.state || window.__bunker.cut));
+  const prevDraw = window.drawPixelSpaceship;
+  window.drawPixelSpaceship = function(proj) {
+    if (proj && proj.dist !== 99999 && live()) return;          // the 3D model takes over on the surface
+    return prevDraw.apply(this, arguments);
+  };
+  const prevExtra = window.surfaceExtraEntities;
+  window.surfaceExtraEntities = function(list) { if (prevExtra) prevExtra(list); try { if (live()) push(list); } catch (e) {} };
+  // solid hull (you can land on top of it with the jetpack), solid legs, and a ramp you actually walk up
+  const LEGS = []; for (const lx of [-36, -16, 12, 32]) for (const s of [-1, 1]) LEGS.push([s * 7 * K, lx * K]);
+  const HULLBOX = [  // x0, x1, z0, z1, top (up = negative), bottom
+    [-FW, FW, -20, 14, -25, -12], [-NW, NW, -46, -18, -28, -12], [-9.5, 9.5, -51, -46, -26.5, -15], [-BW, BW, 14, 43, -26, -14],
+    [-4, 4, -18, 8, -27, -25], [-4, 4, -5, 5, -31, -27], [-1, 1, 42, 50, -17, -15]
+  ].map(b => b.map(v => v * K));
+  const PR = 1.5, HEAD = 1, BODY = 10;
+  function collideShip() {
+    const P = playerFoot;
+    for (const [x0, x1, z0, z1, top, bot] of HULLBOX) {
+      if (P.x < x0 - PR || P.x > x1 + PR || P.z < z0 - PR || P.z > z1 + PR) continue;
+      if (!(P.y - HEAD < bot && P.y + BODY > top)) continue;
+      const pen = [P.x - (x0 - PR), (x1 + PR) - P.x, P.z - (z0 - PR), (z1 + PR) - P.z, (P.y + BODY) - top, bot - (P.y - HEAD)];
+      let m = 0; for (let i = 1; i < 6; i++) if (pen[i] < pen[m]) m = i;
+      if (m === 0) P.x = x0 - PR; else if (m === 1) P.x = x1 + PR; else if (m === 2) P.z = z0 - PR; else if (m === 3) P.z = z1 + PR;
+      else if (m === 4) { P.y = top - BODY; if (P.vy > 0) P.vy = 0; P.isGrounded = true; }
+      else { P.y = bot + HEAD; if (P.vy < 0) P.vy = 0; }
+    }
+    // boarding ramp: a wedge from the airlock sill (x = FW, 14 up) down to the ground 15 further out
+    const rk = (P.x - FW * K) / (15 * K);
+    if (rk > -0.04 && rk < 1.02) {
+      const k = Math.max(0, Math.min(1, rk)), h = (-14 + 14 * k) * K, hw = (5.5 + 5 * k) * K, foot = P.y + BODY;
+      if (Math.abs(P.z) < hw + 0.6) {
+        const below = foot - h;                                   // + = feet sunk into the ramp
+        if (below >= 0 && below < 4) { P.y = h - BODY; if (P.vy > 0) P.vy = 0; P.isGrounded = true; }
+        else if (below < 0 && below > -1.5 && P.vy >= 0) { P.y = h - BODY; P.vy = 0; P.isGrounded = true; }   // stay on it walking down
+        else if (below >= 4) {                                     // bumped into the side / back of the wedge
+          const sidePen = hw + 0.6 - Math.abs(P.z), backPen = (P.x - FW * K) + 0.6;
+          if (backPen < sidePen) P.x = FW * K - 0.6; else P.z = Math.sign(P.z || 1) * (hw + 0.6);
+        }
+      }
+    }
+    if (P.y > -16) for (const [lx, lz] of LEGS) {
+      const dx = P.x - lx, dz = P.z - lz, d = Math.hypot(dx, dz), R = 5.4;
+      if (d < R && d > 0.001) { P.x = lx + dx / d * R; P.z = lz + dz / d * R; }
+    }
+  }
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    const r = prevUpdate.apply(this, arguments);
+    try { if (live()) collideShip(); } catch (e) {}
+    return r;
+  };
+  // stepping out of the airlock puts you on the ground at the foot of the ramp, facing away from the ship
+  const prevExit = window.exitCabinToSurface;
+  window.exitCabinToSurface = function() {
+    const wasWreck = !!(cabin && cabin.wreck);
+    const r = prevExit.apply(this, arguments);
+    try { if (!wasWreck && gameMode === 'SURFACE' && !cabin) { playerFoot.x = (FW + 18) * K; playerFoot.z = 0; playerFoot.y = -10; playerFoot.vy = 0; playerFoot.isGrounded = true; playerFoot.yaw = Math.PI / 2; playerFoot.pitch = 0; } } catch (e) {}
+    return r;
+  };
+  window.__ship3d = { faces: F.length, F, PARTS };
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   SURFACE OUTPOST IN 3D: the ore refinery sprite rebuilt as real geometry from
+   drawPixelOutpost's own art - stepped plinth, twin smoking cooling stacks,
+   slag hopper, CRT upgrade terminal, crane with a swinging cargo pod and the
+   amber sky beacon. The model is placed so surfaceOutpost (the point every
+   shop / HUD check measures to) sits on the deck right in front of the
+   terminal desk. Solid walls, and plinth steps you can walk up.
+   ========================================================================== */
+// Local frame: u = across (art x, right +), y = height (art y, negative up), v = depth (front +, faces the landing site).
+(function() {
+  const K = 1.4;
+  const SUN = (() => { const v = [0.35, 1, 0.25], l = Math.hypot(...v); return v.map(c => c / l); })();
+  // sink the tall foundation so the plinth is a low step and the terminal desk sits at chest height
+  const Y = (y) => (y >= -11 ? y * 0.5 : y + 5.5) * K;
+  const F = [];            // static faces (local, scaled)
+  let last = null;
+  function rgbOf(c) { return hexRgb(c); }
+  function nrm(pts, ctr) {
+    const a = pts[0], b = pts[1], c = pts[2];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; const l = Math.hypot(...n) || 1; n = n.map(q => q / l);
+    if (ctr) { let fx = 0, fy = 0, fz = 0; for (const p of pts) { fx += p[0]; fy += p[1]; fz += p[2]; } const k = pts.length; if (n[0] * (fx / k - ctr[0]) + n[1] * (fy / k - ctr[1]) + n[2] * (fz / k - ctr[2]) < 0) n = n.map(q => -q); }
+    return n;
+  }
+  const L = (u, y, v) => [u * K, Y(y), v * K];
+  function poly(pts, col, o) {
+    o = o || {};
+    const f = { pts, n: o.n || (o.two ? null : nrm(pts, o.ctr)), rgb: rgbOf(col), emis: o.emis, dim: o.dim, pulse: o.pulse, blink: o.blink, alpha: o.alpha, deep: o.deep || 0, kids: [] };
+    F.push(f); last = f; return f;
+  }
+  function box(u0, u1, y0, y1, v0, v1, col, o) {
+    o = o || {}; const t = Math.min(y0, y1), b = Math.max(y0, y1);
+    const P = (u, y, v) => L(u, y, v), ctr = L((u0 + u1) / 2, (t + b) / 2, (v0 + v1) / 2);
+    const q = (p, c, k) => { const f = poly(p, c, Object.assign({}, o, { ctr })); f.side = k; return f; };
+    const r = {};
+    r.top = q([P(u0, t, v0), P(u1, t, v0), P(u1, t, v1), P(u0, t, v1)], o.top || col, 'top');
+    if (!o.noBottom) q([P(u0, b, v0), P(u1, b, v0), P(u1, b, v1), P(u0, b, v1)], col, 'bot');
+    r.front = q([P(u0, t, v1), P(u1, t, v1), P(u1, b, v1), P(u0, b, v1)], o.front || col, 'front');
+    r.back = q([P(u0, t, v0), P(u1, t, v0), P(u1, b, v0), P(u0, b, v0)], o.back || col, 'back');
+    r.left = q([P(u0, t, v0), P(u0, t, v1), P(u0, b, v1), P(u0, b, v0)], o.side || col, 'left');
+    r.right = q([P(u1, t, v0), P(u1, t, v1), P(u1, b, v1), P(u1, b, v0)], o.side || col, 'right');
+    return r;
+  }
+  function cyl(cu, cv, r, y0, y1, n, col, o) {
+    o = o || {}; const t = Math.min(y0, y1), b = Math.max(y0, y1), ctr = L(cu, (t + b) / 2, cv), ring = [];
+    for (let i = 0; i < n; i++) { const a = (i + 0.5) / n * Math.PI * 2; ring.push([cu + Math.cos(a) * r, cv + Math.sin(a) * r]); }
+    for (let i = 0; i < n; i++) { const a = ring[i], c = ring[(i + 1) % n]; poly([L(a[0], t, a[1]), L(c[0], t, c[1]), L(c[0], b, c[1]), L(a[0], b, a[1])], (o.light && i % 2) ? o.light : col, Object.assign({}, o, { ctr })); }
+    if (!o.noTop) poly(ring.map(p => L(p[0], t, p[1])).reverse(), o.top || col, Object.assign({}, o, { ctr }));
+    return ring;
+  }
+  // decal on a face of a box; drawn with (and right after) its parent, so it never pokes through or hides
+  function decal(parent, pts, col, o) { parent.kids.push({ pts, rgb: rgbOf(col), emis: (o || {}).emis, dim: (o || {}).dim, pulse: (o || {}).pulse, blink: (o || {}).blink, dyn: (o || {}).dyn }); }
+  function front(parent, v, x, y, w, h, col, o) { decal(parent, [L(x, y, v), L(x + w, y, v), L(x + w, y + h, v), L(x, y + h, v)], col, o); }
+  function sideU(parent, u, v0, y, w, h, col, o) { decal(parent, [L(u, y, v0), L(u, y, v0 + w), L(u, y + h, v0 + w), L(u, y + h, v0)], col, o); }
+  function topD(parent, y, u, v, w, d, col, o) { decal(parent, [L(u, y, v), L(u + w, y, v), L(u + w, y, v + d), L(u, y, v + d)], col, o); }
+
+  const DARK = "#0f172a", HULL = "#1e293b", MID = "#334155", EDGE = "#475569";
+  // ground shadow
+  poly([L(-62, 0.02, -40), L(62, 0.02, -40), L(62, 0.02, 40), L(-62, 0.02, 40)].map(p => [p[0], 0.05, p[2]]), "#000000", { n: [0, -1, 0], alpha: 0.45, deep: 400 });
+  // 1. stepped foundation platform (three tiers) with bolt rows
+  const t1 = box(-50, 50, 0, -4, -32, 32, DARK, { deep: 300, noBottom: true });
+  const t2 = box(-46, 46, -4, -8, -29, 29, HULL, { deep: 250, noBottom: true });
+  const t3 = box(-42, 42, -8, -11, -26, 26, MID, { deep: 200, noBottom: true, top: "#2b3a50" });
+  for (let bx = -40; bx <= 40; bx += 8) { front(t3.front, 26.02, bx - 0.6, -10.2, 1.2, 1.2, EDGE); front(t3.back, -26.02, bx - 0.6, -10.2, 1.2, 1.2, EDGE); }
+  for (let bv = -22; bv <= 22; bv += 8) { sideU(t3.left, -42.02, bv - 0.6, -10.2, 1.2, 1.2, EDGE); sideU(t3.right, 42.02, bv - 0.6, -10.2, 1.2, 1.2, EDGE); }
+  // hazard stripes along the front lip
+  for (let i = 0; i < 20; i++) front(t2.front, 29.02, -44 + i * 4.4, -8, 2.2, 1.3, i % 2 ? "#111827" : "#eab308");
+  // walkway deck plates on the top tier
+  for (let du = -36; du <= 36; du += 12) topD(t3.top, -11.01, du, -24, 0.5, 48, "#1e293b");
+
+  // 2+3. twin cooling stacks (round), glowing rims
+  const STACKS = [{ u: -26, v: -10, r: 4.2, top: -58 }, { u: -14, v: -14, r: 4.2, top: -54 }];
+  for (const s of STACKS) {
+    cyl(s.u, s.v, s.r + 1.2, -11, -14, 10, DARK, { noTop: true });                         // footing collar
+    cyl(s.u, s.v, s.r, -14, s.top, 10, MID, { light: "#3b4b63", noTop: true });
+    for (const by of [-24, -36, s.top + 8]) cyl(s.u, s.v, s.r + 0.35, by, by - 1.2, 10, EDGE, { noTop: true });
+    cyl(s.u, s.v, s.r + 1, s.top, s.top - 3, 10, DARK, { top: "#020617" });                // rim
+    cyl(s.u, s.v, s.r + 1.06, s.top - 0.9, s.top - 1.6, 10, "#f97316", { emis: true, pulse: true, noTop: true });
+    s.mouth = last;                                                                         // inner throat glow
+    last.rgb = rgbOf("#7c2d12"); last.emis = true; last.pulse = true;
+  }
+  // truss band joining the stacks with warning dots
+  { const b = box(-24, -16, -40, -43, -13, -11, DARK); for (let i = 0; i < 3; i++) front(b.front, -10.98, -23 + i * 3, -42, 1, 1, "#facc15", { emis: true }); }
+
+  // 4. slag hopper with molten viewport and heat fins
+  const hop = box(-42, -6, -11, -27, 2, 20, DARK, { top: HULL });
+  box(-40, -8, -27, -29, 4, 18, HULL, { top: MID });                                         // hopper lid
+  front(hop.front, 20.02, -40, -25, 32, 13, HULL);
+  front(hop.front, 20.04, -36, -23, 24, 9, "#030712");
+  front(hop.front, 20.06, -35, -21.5, 22, 6, "#c2410c", { emis: true, pulse: true });     // molten slag behind the glass
+  front(hop.front, 20.08, -33, -19.5, 6, 2, "#fde047", { emis: true, dyn: 'bubble0' });
+  front(hop.front, 20.08, -24, -18.5, 5, 2, "#fbbf24", { emis: true, dyn: 'bubble1' });
+  for (let fx = -34; fx <= -10; fx += 3.5) front(hop.front, 20.07, fx, -26, 1.4, 3, "#f97316", { emis: true, pulse: true });
+  for (let i = 0; i < 9; i++) front(hop.front, 20.05, -40 + i * 3.6, -13, 1.8, 1.4, i % 2 ? "#111827" : "#eab308");
+  for (let fv = 4; fv <= 16; fv += 3) { sideU(hop.left, -42.02, fv, -24, 1.2, 9, MID); }
+  // discharge chute
+  const chute = box(-30, -20, -11, -14, 20, 25, MID, { top: EDGE });
+  topD(chute.top, -14.02, -29, 20.5, 8, 4, "#ea580c", { emis: true, pulse: true });     // glowing slag in the chute mouth
+
+  // 5. conduit junction + pipes running into the terminal block
+  const cj = box(-6, 4, -11, -21, -2, 8, MID, { top: EDGE });
+  for (const by of [-14, -18]) front(cj.front, 8.02, -6, by, 10, 1, EDGE);
+  front(cj.front, 8.04, -2, -16.5, 2, 2, "#22d3ee", { emis: true, blink: 0.5 });
+  for (const py of [-15, -18.5]) box(-6, 4.5, py - 0.9, py + 0.9, 9.5, 11.3, EDGE, { top: "#64748b" });   // pipes
+  box(-14, -6, -12.4, -14.2, -6, -4.2, EDGE, { top: "#64748b" });                                           // stack feed pipe
+
+  // 6. terminal bunker (right block), roof crest
+  const tb = box(4, 44, -11, -32, -16, 16, DARK, { top: HULL });
+  front(tb.front, 16.02, 6, -30, 36, 19, HULL);
+  box(8, 40, -32, -34, -13, 13, DARK, { top: "#1e293b" });
+  for (let rv = -12; rv <= 12; rv += 4) { sideU(tb.right, 44.02, rv, -28, 2, 14, HULL); sideU(tb.right, 44.04, rv + 0.5, -27, 1, 12, "#0f172a"); }
+  sideU(tb.left, 3.98, -12, -29, 12, 14, HULL);
+  front(tb.back, -16.02, 8, -29, 32, 3, HULL);
+  for (let i = 0; i < 4; i++) front(tb.back, -16.04, 10 + i * 8, -22, 5, 8, MID);
+  // side + rear detail so it reads from every angle: lit window strip, vents, cargo hatch, ladder
+  for (let rv = -10; rv <= 8; rv += 6) sideU(tb.right, 44.06, rv, -30, 4, 1.4, "#38bdf8", { emis: true, dim: 0.8 });
+  front(tb.back, -16.06, 8, -26, 32, 1.2, "#38bdf8", { emis: true, dim: 0.7 });
+  front(tb.back, -16.06, 30, -21, 10, 10, MID); front(tb.back, -16.08, 31, -20, 8, 9, HULL);
+  for (let i = 0; i < 4; i++) front(tb.back, -16.1, 31 + i * 2, -12.6, 1, 1.2, i % 2 ? "#111827" : "#eab308");
+  front(tb.back, -16.1, 34.5, -22.5, 1.5, 1, "#ef4444", { emis: true, blink: 0.7 });
+  for (let ly = -30; ly <= -12; ly += 2) front(tb.back, -16.06, 6, ly, 3, 0.5, "#64748b");
+  sideU(tb.left, 3.96, -11, -27, 10, 1, "#38bdf8", { emis: true, dim: 0.7 });
+  sideU(tb.left, 3.96, 6, -22, 7, 11, MID); sideU(tb.left, 3.94, 7, -21, 5, 10, HULL);
+  for (let fv = 4; fv <= 16; fv += 3) sideU(hop.left, -42.04, fv + 0.2, -23, 0.8, 7, "#f97316", { emis: true, pulse: true });
+  front(hop.back, 1.98, -38, -24, 28, 10, HULL);
+  for (let i = 0; i < 6; i++) front(hop.back, 1.96, -36 + i * 4.6, -22, 2, 6, "#ea580c", { emis: true, pulse: true, dim: 0.8 });
+  sideU(hop.right, -5.98, 4, -25, 14, 1, EDGE);
+  // 9. CRT upgrade terminal
+  front(tb.front, 16.04, 14, -31, 23, 17, DARK);
+  front(tb.front, 16.06, 15, -30, 21, 15, MID);
+  front(tb.front, 16.08, 16, -29, 19, 13, "#052e16", { emis: true });
+  for (let sy = -28; sy <= -17; sy += 2) front(tb.front, 16.09, 16, sy, 19, 0.6, "#03210f", { emis: true });
+  front(tb.front, 16.10, 18, -27, 7, 1.5, "#22c55e", { emis: true });
+  front(tb.front, 16.10, 27, -27, 6, 1.5, "#22c55e", { emis: true });
+  front(tb.front, 16.10, 18, -24, 13, 1.2, "#4ade80", { emis: true, dyn: 'data0' });
+  front(tb.front, 16.10, 18, -21, 10, 1.2, "#4ade80", { emis: true, dyn: 'data1' });
+  front(tb.front, 16.10, 18, -18, 5, 1.2, "#86efac", { emis: true });
+  front(tb.front, 16.11, 24, -18, 2, 1.5, "#ffffff", { emis: true, blink: 0.25 });
+  front(tb.front, 16.12, 16, -28, 19, 1.4, "#86efac", { emis: true, dim: 0.45, dyn: 'sweep' });
+  // console desk: a sloped panel jutting out under the screen with lit keys
+  { const d0 = 16, d1 = 21;
+    const desk = poly([L(14, -14, d0), L(37, -14, d0), L(37, -12.4, d1), L(14, -12.4, d1)], MID, { ctr: L(25, -11, 18) });
+    for (const [kx, kw, kc] of [[17, 2, "#4ade80"], [21, 2, "#facc15"], [25, 3, "#38bdf8"], [30, 4, "#22c55e"]]) decal(desk, [L(kx, -13.4, 17.5), L(kx + kw, -13.4, 17.5), L(kx + kw, -13.05, 18.6), L(kx, -13.05, 18.6)], kc, { emis: true });
+    box(14, 37, -12.4, -11, 16, 21, DARK, { noBottom: true });
+    poly([L(14, -14, d0), L(14, -12.4, d1), L(14, -11, d1), L(14, -11, d0)], DARK, { n: null, two: true });
+    poly([L(37, -14, d0), L(37, -12.4, d1), L(37, -11, d1), L(37, -11, d0)], DARK, { two: true });
+  }
+  // 10. airlock door + access LED
+  front(tb.front, 16.04, 6, -22, 7, 11, DARK);
+  front(tb.front, 16.06, 7, -21, 5, 10, MID);
+  front(tb.front, 16.08, 9.3, -21, 0.4, 10, DARK);
+  front(tb.front, 16.06, 8.5, -23.5, 2, 1.5, "#22c55e", { emis: true, blink: 0.6 });
+
+  // 11. crane: yellow lattice mast on the roof + boom reaching over the yard
+  const mast = box(38, 44, -34, -58, -3, 3, "#facc15", { top: "#fde047", side: "#eab308" });
+  for (const wy of [-52, -44, -38]) { front(mast.front, 3.02, 40, wy, 2, 4, DARK); front(mast.back, -3.02, 40, wy, 2, 4, DARK); sideU(mast.left, 37.98, -1, wy, 2, 4, DARK); sideU(mast.right, 44.02, -1, wy, 2, 4, DARK); }
+  const boom = box(22, 38, -53, -58, -2, 2, "#facc15", { top: "#fde047", side: "#eab308" });
+  front(boom.front, 2.02, 25, -55.5, 13, 1, DARK); front(boom.back, -2.02, 25, -55.5, 13, 1, DARK);
+  box(43.5, 48, -54, -58, -2.5, 2.5, MID, { top: EDGE });                                  // counterweight
+  // 12. beacon collar + lens (strobe)
+  box(38, 44, -58, -59, -3, 3, DARK);
+  const lens = box(39, 43, -59, -62, -2, 2, "#f59e0b", { emis: true, blink: 0.28 });
+
+  // ---------- frame & rendering ----------
+  let site = null;
+  const OU = 25.5 * K, OV = 30 * K;          // the terminal stand point (just off the plinth steps), in model space
+  function frame() {
+    const o = surfaceOutpost; if (!o) return null;
+    if (!site || site.o !== o || site.ox !== o.x || site.oz !== o.z) {
+      const d = Math.hypot(o.x, o.z) || 1, fx = -o.x / d, fz = -o.z / d;
+      site = { o, ox: o.x, oz: o.z, fx, fz, cx: o.x - (-fz * OU + fx * OV), cz: o.z - (fx * OU + fz * OV) };
+      for (const f of F) { f.wp = null; f.wn = null; for (const k of f.kids) k.wp = null; }
+    }
+    return site;
+  }
+  function toW(s, p) { return [s.cx - s.fz * p[0] + s.fx * p[2], p[1], s.cz + s.fx * p[0] + s.fz * p[2]]; }
+  function toL(s, x, z) { const dx = x - s.cx, dz = z - s.cz; return [-s.fz * dx + s.fx * dz, s.fx * dx + s.fz * dz]; }   // world -> model (u, v)
+  function nW(s, n) { return [-s.fz * n[0] + s.fx * n[2], n[1], s.fx * n[0] + s.fz * n[2]]; }
+
+  function push(list) {
+    const s = frame(); if (!s) return;
+    const ex = playerFoot.x, ey = playerFoot.y, ez = playerFoot.z;
+    if (Math.hypot(ex - s.cx, ez - s.cz) > 1500) return;
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const fov = V_HEIGHT * 0.9, NEAR = 0.5, t = Date.now(), pulse = 0.5 + Math.sin(t * 0.008) * 0.4;
+    const tx = (p) => { const dx = p[0] - ex, dy = p[1] - ey, dz = p[2] - ez, x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    const proj = (wpts) => {
+      const cam = wpts.map(tx), out = [];
+      for (let i = 0; i < cam.length; i++) { const a = cam[i], b = cam[(i + 1) % cam.length], ai = a[2] > NEAR, bi = b[2] > NEAR; if (ai) out.push(a); if (ai !== bi) { const k = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, NEAR]); } }
+      return out.length < 3 ? null : out.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+    };
+    const shade = (f, n) => {
+      let k = 1;
+      if (f.emis) { k = f.dim || 1; if (f.pulse) k *= 0.55 + pulse * 0.6; if (f.blink && Math.floor(t / (1000 * f.blink)) % 2) k *= 0.25; }
+      else if (n) k = 0.72 + 0.48 * Math.max(0, -(n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]));
+      return `rgb(${Math.min(255, f.rgb[0] * k) | 0},${Math.min(255, f.rgb[1] * k) | 0},${Math.min(255, f.rgb[2] * k) | 0})`;
+    };
+    const dynPts = (k, w) => {           // animated decals: shift the local rect before projecting
+      if (!k.dyn) return w;
+      let du = 0, dy = 0;
+      if (k.dyn === 'sweep') dy = ((t / 1200) % 1) * 11;
+      else if (k.dyn === 'bubble0') { dy = -Math.abs(Math.sin(t * 0.004)) * 1.5; du = Math.sin(t * 0.002) * 3; }
+      else if (k.dyn === 'bubble1') { dy = -Math.abs(Math.sin(t * 0.005 + 1)) * 1.5; du = Math.sin(t * 0.0017 + 2) * 4; }
+      else if (k.dyn.startsWith('data')) { const sc = 0.55 + 0.45 * Math.abs(Math.sin(t * 0.0013 + (k.dyn === 'data1' ? 2 : 0))); const u0 = k.pts[0][0]; return k.pts.map(p => toW(s, [u0 + (p[0] - u0) * sc, p[1], p[2]])); }
+      return k.pts.map(p => toW(s, [p[0] + du * K, p[1] + dy * K, p[2]]));
+    };
+    for (const f of F) {
+      const w = f.wp || (f.wp = f.pts.map(p => toW(s, p)));
+      const n = f.n ? (f.wn || (f.wn = nW(s, f.n))) : null;
+      let cx = 0, cyy = 0, cz = 0; for (const p of w) { cx += p[0]; cyy += p[1]; cz += p[2]; } cx /= w.length; cyy /= w.length; cz /= w.length;
+      if (n && n[0] * (ex - cx) + n[1] * (ey - cyy) + n[2] * (ez - cz) <= 0) continue;
+      const scr = proj(w); if (!scr) continue;
+      const zc = tx([cx, cyy, cz])[2], col = shade(f, n);
+      const kids = f.kids.length ? f.kids : null;
+      list.push({ type: 'custom', proj: { x: scr[0][0], y: scr[0][1], scale: 1, dist: zc, depth: zc + f.deep }, draw: () => {
+        if (f.alpha !== undefined) ctx.globalAlpha = f.alpha;
+        ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 0.6;
+        ctx.beginPath(); ctx.moveTo(scr[0][0], scr[0][1]); for (let i = 1; i < scr.length; i++) ctx.lineTo(scr[i][0], scr[i][1]); ctx.closePath(); ctx.fill();
+        if (f.alpha === undefined) ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (kids) for (const k of kids) {
+          const kw = k.dyn ? dynPts(k, null) : (k.wp || (k.wp = k.pts.map(p => toW(s, p))));
+          const ks = proj(kw); if (!ks) continue;
+          ctx.fillStyle = shade(k, n);
+          ctx.beginPath(); ctx.moveTo(ks[0][0], ks[0][1]); for (let i = 1; i < ks.length; i++) ctx.lineTo(ks[i][0], ks[i][1]); ctx.closePath(); ctx.fill();
+        }
+      } });
+    }
+    // crane trolley, swaying cable and the hanging cargo pod (rebuilt each frame)
+    {
+      const sway = Math.sin(t * 0.003) * 1.5, cu = 29 + sway, cv = 0;
+      const parts = [];
+      const bx = (u0, u1, y0, y1, v0, v1, col, emis) => { const P = (u, y, v) => toW(s, L(u, y, v)); const c = toW(s, L((u0 + u1) / 2, (y0 + y1) / 2, (v0 + v1) / 2));
+        const fs = [[P(u0, y1, v0), P(u1, y1, v0), P(u1, y1, v1), P(u0, y1, v1)], [P(u0, y0, v1), P(u1, y0, v1), P(u1, y1, v1), P(u0, y1, v1)], [P(u0, y0, v0), P(u1, y0, v0), P(u1, y1, v0), P(u0, y1, v0)], [P(u0, y0, v0), P(u0, y0, v1), P(u0, y1, v1), P(u0, y1, v0)], [P(u1, y0, v0), P(u1, y0, v1), P(u1, y1, v1), P(u1, y1, v0)], [P(u0, y0, v0), P(u1, y0, v0), P(u1, y0, v1), P(u0, y0, v1)]];
+        for (const w of fs) parts.push({ w, n: nrm(w, c), rgb: rgbOf(col), emis }); };
+      bx(29 - 2, 29 + 2, -52, -53, -1.5, 1.5, "#64748b");
+      bx(cu - 4.5, cu + 4.5, -34.5, -42.5, -4, 4, "#0284c7");
+      bx(cu - 2.5, cu + 2.5, -42.5, -43.5, -1.5, 1.5, "#facc15");
+      for (const p of parts) {
+        const w = p.w; let cx = 0, cyy = 0, cz = 0; for (const q of w) { cx += q[0]; cyy += q[1]; cz += q[2]; } cx /= 4; cyy /= 4; cz /= 4;
+        if (p.n[0] * (ex - cx) + p.n[1] * (ey - cyy) + p.n[2] * (ez - cz) <= 0) continue;
+        const scr = proj(w); if (!scr) continue; const zc = tx([cx, cyy, cz])[2], col = shade(p, p.n);
+        list.push({ type: 'custom', proj: { x: scr[0][0], y: scr[0][1], scale: 1, dist: zc, depth: zc }, draw: () => { ctx.fillStyle = col; ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(scr[0][0], scr[0][1]); for (let i = 1; i < scr.length; i++) ctx.lineTo(scr[i][0], scr[i][1]); ctx.closePath(); ctx.fill(); if (p.rgb[2] > 150) ctx.stroke(); } });
+      }
+      // cable
+      const a = tx(toW(s, L(29, -52, 0))), b = tx(toW(s, L(cu, -43.5, 0)));
+      if (a[2] > NEAR && b[2] > NEAR) { const A = [V_WIDTH / 2 + a[0] / a[2] * fov, V_HEIGHT / 2 + a[1] / a[2] * fov], B = [V_WIDTH / 2 + b[0] / b[2] * fov, V_HEIGHT / 2 + b[1] / b[2] * fov];
+        list.push({ type: 'custom', proj: { x: A[0], y: A[1], scale: 1, dist: a[2], depth: (a[2] + b[2]) / 2 }, draw: () => { ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = Math.max(0.6, 0.5 * K / a[2] * fov / 10); ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); } }); }
+    }
+    // smoke puffs from both stacks + the amber sky beam
+    const ptS = (u, y, v) => { const c = tx(toW(s, [u * K, y, v * K])); return c[2] > NEAR ? [V_WIDTH / 2 + c[0] / c[2] * fov, V_HEIGHT / 2 + c[1] / c[2] * fov, c[2]] : null; };
+    for (const st of STACKS) {
+      const topY = Y(st.top - 3);
+      for (let i = 0; i < 6; i++) {
+        const ph = ((t / 2600) + i / 6 + st.u * 0.01) % 1;
+        const p = ptS(st.u + Math.sin(ph * 5 + i) * 2 + ph * 10, topY - ph * 60, st.v + ph * 4); if (!p) continue;
+        const r = (3 + ph * 9) * K / p[2] * fov, al = 0.42 * (1 - ph);
+        list.push({ type: 'custom', proj: { x: p[0], y: p[1], scale: 1, dist: p[2], depth: p[2] - 1 }, draw: () => { ctx.fillStyle = `rgba(100,116,139,${al})`; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill(); } });
+      }
+    }
+    { const b0 = ptS(41, Y(-62), 0), b1 = ptS(41, Y(-62) - 260, 0);
+      if (b0 && b1) { const w0 = 2 * K / b0[2] * fov, w1 = 2 * K / b1[2] * fov;
+        list.push({ type: 'custom', proj: { x: b0[0], y: b0[1], scale: 1, dist: b0[2], depth: b0[2] + 0.5 }, draw: () => {
+          const g = ctx.createLinearGradient(b0[0], b0[1], b1[0], b1[1]); g.addColorStop(0, "rgba(250,204,21,0.85)"); g.addColorStop(0.35, "rgba(234,88,12,0.35)"); g.addColorStop(0.75, "rgba(250,204,21,0.12)"); g.addColorStop(1, "rgba(250,204,21,0)");
+          ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(b0[0] - w0, b0[1]); ctx.lineTo(b0[0] + w0, b0[1]); ctx.lineTo(b1[0] + w1, b1[1]); ctx.lineTo(b1[0] - w1, b1[1]); ctx.closePath(); ctx.fill(); ctx.restore(); } }); } }
+    // green glow pooling under the terminal
+    { const p = ptS(25.5, Y(-11.5), 22); if (p) { const r = 16 * K / p[2] * fov;
+      list.push({ type: 'custom', proj: { x: p[0], y: p[1], scale: 1, dist: p[2], depth: p[2] - 2 }, draw: () => { ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r); g.addColorStop(0, "rgba(34,197,94,0.28)"); g.addColorStop(1, "rgba(34,197,94,0)"); ctx.fillStyle = g; ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.restore(); } }); } }
+  }
+  const live = () => gameMode === 'SURFACE' && !cabin && !(typeof surfacePassActive !== 'undefined' && surfacePassActive) && !(window.__bunker && (window.__bunker.state || window.__bunker.cut));
+
+  // the old sprite is replaced; keep its floating labels (terminal prompt up close, beacon range from afar)
+  const prevDraw = window.drawPixelOutpost;
+  window.drawPixelOutpost = function(proj) {
+    if (proj && proj.dist === 99999) return prevDraw.apply(this, arguments);
+    try {
+      const s = frame(); if (!s) return;
+      const dist = Math.hypot(playerFoot.x - s.o.x, playerFoot.z - s.o.z);
+      if (dist < 26) {
+        const w = toW(s, [25.5 * K, Y(-34) - 3, 16 * K]), p = projectSurface(w[0], w[1], w[2]); if (!p) return;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#4ade80"; ctx.font = "bold 9px monospace"; ctx.fillText("[ORE REFINERY TERMINAL - TAP UPGRADE]", p.x, p.y);
+      } else if (dist < 800) {
+        const w = toW(s, [41 * K, Y(-62) - 8, 0]), p = projectSurface(w[0], w[1], w[2]); if (!p) return;
+        ctx.textAlign = "center";
+        ctx.fillStyle = `rgba(56, 189, 248, ${Math.max(0.2, 1 - dist / 850)})`; ctx.font = "8px monospace";
+        ctx.fillText(`OUTPOST BEACON [${Math.round(dist)}m]`, p.x, p.y);
+      }
+    } catch (e) {}
+  };
+  const prevExtra = window.surfaceExtraEntities;
+  window.surfaceExtraEntities = function(list) { if (prevExtra) prevExtra(list); try { if (live()) push(list); } catch (e) { console.warn("outpost3d", e); } };
+
+  // ---------- solid walls, plinth steps you can walk up, and the deck you stand on at the terminal ----------
+  const CB = [   // u0, u1, v0, v1, top, bottom (model space, art units; top/bottom as art y), step = walk-up-able
+    [-50, 50, -32, 32, -4, 0, 1], [-46, 46, -29, 29, -8, 0, 1], [-42, 42, -26, 26, -11, 0, 1],
+    [-42, -6, 2, 20, -29, 0], [-30, -20, 20, 25, -14, 0, 1],
+    [-31.4, -20.6, -15.4, -4.6, -61, 0], [-19.4, -8.6, -19.4, -8.6, -57, 0],
+    [-6, 4.5, -2, 11.3, -21, 0], [4, 44, -16, 16, -34, 0], [14, 37, 16, 21, -14, 0],
+    [38, 44, -3, 3, -62, -34], [43.5, 48, -2.5, 2.5, -58, -54], [22, 38, -2, 2, -58, -53]
+  ].map(b => ({ u0: b[0] * K, u1: b[1] * K, v0: b[2] * K, v1: b[3] * K, top: Y(b[4]), bot: Y(b[5]), step: !!b[6] }));
+  const PR = 1.5, HEAD = 1, BODY = 10, STEP = 3.4;
+  function collide(s) {
+    const P = playerFoot;
+    let [u, v] = toL(s, P.x, P.z);
+    if (Math.abs(u) > 90 || Math.abs(v) > 60) return;
+    let moved = false;
+    for (const b of CB) {
+      if (u < b.u0 - PR || u > b.u1 + PR || v < b.v0 - PR || v > b.v1 + PR) continue;
+      if (!(P.y - HEAD < b.bot && P.y + BODY > b.top)) continue;
+      const up = (P.y + BODY) - b.top;
+      if (b.step && up <= STEP) { P.y = b.top - BODY; if (P.vy > 0) P.vy = 0; P.isGrounded = true; continue; }
+      const pen = [u - (b.u0 - PR), (b.u1 + PR) - u, v - (b.v0 - PR), (b.v1 + PR) - v, up, b.bot - (P.y - HEAD)];
+      let m = 0; for (let i = 1; i < 6; i++) if (pen[i] < pen[m]) m = i;
+      if (m === 0) { u = b.u0 - PR; moved = true; } else if (m === 1) { u = b.u1 + PR; moved = true; }
+      else if (m === 2) { v = b.v0 - PR; moved = true; } else if (m === 3) { v = b.v1 + PR; moved = true; }
+      else if (m === 4) { P.y = b.top - BODY; if (P.vy > 0) P.vy = 0; P.isGrounded = true; }
+      else { P.y = b.bot + HEAD; if (P.vy < 0) P.vy = 0; }
+    }
+    if (moved) { const w = toW(s, [u, 0, v]); P.x = w[0]; P.z = w[2]; }
+  }
+  // ore nodes were scattered around the old (point-sized) outpost: shove any that landed inside the new footprint out to the yard
+  function clearFootprint(s) {
+    const U = 60 * K, V = 40 * K;
+    for (const n of (surfaceNodes || [])) {
+      const [u, v] = toL(s, n.x, n.z);
+      if (Math.abs(u) > U || Math.abs(v) > V) continue;
+      const du = U - Math.abs(u), dv = V - Math.abs(v);
+      const nu = du < dv ? Math.sign(u || 1) * U : u, nv = du < dv ? v : Math.sign(v || 1) * V;
+      const w = toW(s, [nu, 0, nv]); n.x = w[0]; n.z = w[2];
+    }
+  }
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    const r = prevUpdate.apply(this, arguments);
+    try {
+      if (live()) {
+        const s = frame();
+        if (s) { if (s.cleared !== surfaceNodes) { clearFootprint(s); s.cleared = surfaceNodes; } collide(s); }
+      }
+    } catch (e) {}
+    return r;
+  };
+  window.__outpost3d = { faces: F.length, F, frame, toL, toW: (p) => { const s = frame(); return s ? toW(s, p) : null; } };
+})();
+
 </script>
 </body>
 </html>
