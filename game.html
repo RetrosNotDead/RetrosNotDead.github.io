@@ -7684,8 +7684,6 @@ function cabinCollide(x, z) {
   z = Math.max(-41.2 + R, Math.min(12.5, z));                                 // EVA rack + engine bulkhead aft
   if ((z > -42 && z < -27.9) || (z > -16.4 && z < 3.8)) x = Math.min(x, CAB_HW - 7 - R); // cargo crates, starboard
   if (z > -27.5 && z < -17.8) x = Math.max(x, -8.4 + CAB_PO + R);             // CRT scan terminal, port
-  if (z > SHELF.z0 - 0.4 && z < SHELF.z1 + 0.4) x = Math.max(x, SHELF.x0 + SHELF.depth + R); // trophy shelf, port
-  if (z > LAVA.z - 2 - R && z < LAVA.z + 2 + R && x < LAVA.x + 2 + R) x = LAVA.x + 2 + R;  // lava lamp table
   if (x > PDESK.x0 - R && x < PDESK.x1 + R && z > PDESK.z0 - R) z = PDESK.z0 - R;          // camera desk
   if (z > JUKEBOX.z0 - 0.3 - R && z < JUKEBOX.z1 + 0.3 + R) x = Math.max(x, JUKEBOX.x1 + 0.3 + R);   // jukebox, port
   if (z > RECORD_CRATE.z0 - R && z < RECORD_CRATE.z1 + R) x = Math.max(x, RECORD_CRATE.x1 + R);           // record crate, port
@@ -7772,21 +7770,6 @@ function getCabinAction() {
       const next = PHOTOS.find(p => !photosTaken.has(p.id));
       addPopup(`📸 CAPTAIN'S LOG: ${photosTaken.size}/${PHOTOS.length} SNAPSHOTS`, "#f472b6");
       addPopup(next ? `NEXT SNAPSHOT: ${next.hint.toUpperCase()}` : "EVERY SNAPSHOT TAKEN. WHAT A TRIP.", next ? "#38bdf8" : "#facc15");
-    } };
-  }
-  if (Math.hypot(c.x - LAVA.x, c.z - LAVA.z) < 7.5) {
-    return { label: "LAVA LAMP", banner: `>> LAVA LAMP: TAP TO SWITCH ${lavaLampOn ? 'OFF' : 'ON'} <<`, enabled: true, run: () => {
-      lavaLampOn = !lavaLampOn; playSfx('targetLock'); vibrateGamepad(60, 0.2, 0.2);
-      addPopup(lavaLampOn ? "GROOVY. LAVA LAMP ON" : "LAVA LAMP OFF", lavaLampOn ? "#ff2bd6" : "#94a3b8");
-    } };
-  }
-  if (c.x < SHELF.x0 + 8 && c.z > SHELF.z0 - 1.5 && c.z < SHELF.z1 + 1.5) {
-    return { label: "TROPHIES", banner: `>> TROPHY SHELF: ${trophiesEarned.size}/${TROPHIES.length} EARNED - TAP TO INSPECT <<`, enabled: true, run: () => {
-      playSfx('commChirp');
-      const got = TROPHIES.filter(t => trophiesEarned.has(t.id));
-      addPopup(got.length ? `🏆 ${got.map(t => t.name).join(' · ')}` : "NO TROPHIES YET - GET OUT THERE, PILOT", "#facc15");
-      const next = TROPHIES.find(t => !trophiesEarned.has(t.id));
-      addPopup(next ? `NEXT TROPHY: ${next.desc.toUpperCase()}` : "EVERY TROPHY EARNED. LEGEND.", next ? "#38bdf8" : "#f472b6");
     } };
   }
   if (nearSeat) {
@@ -8011,7 +7994,7 @@ function awardTrophy(id) {
   if (!t) return;
   trophiesEarned.add(id);
   try { localStorage.setItem('vp3d_trophies', JSON.stringify([...trophiesEarned])); } catch (e) {}
-  addPopup(`🏆 TROPHY UNLOCKED: ${t.name} - ON DISPLAY IN YOUR CARGO ROOM`, "#facc15");
+  addPopup(`🏆 TROPHY UNLOCKED: ${t.name} - ON DISPLAY IN YOUR HOME`, "#facc15");
   playSfx('upgrade');
 }
 function checkTrophies() {
@@ -8329,7 +8312,7 @@ function toggleCabinLights() {
   playSfx('hullClang'); vibrateGamepad(70, 0.3, 0.2);
   if (cabinLightMode === 'rgb') { try { playSfx('upgrade'); } catch (e) {} addPopup("GROOVY BABY... VERY GROOVY... YEAH!", "#ff2bd6"); }
   else if (cabinLightMode === 'on') addPopup("CABIN LIGHTS ON", "#e0f2fe");
-  else addPopup(lavaLampOn ? "LIGHTS OFF. MOOD: LAVA LAMP" : "LIGHTS OFF", "#94a3b8");
+  else addPopup("LIGHTS OFF", "#94a3b8");
 }
 function stepCabinLights(dt) {
   const evac = cabin && !cabin.wreck && planetEvacState.active;
@@ -10178,9 +10161,7 @@ function renderCabinView() {
   } else c.aimSuitBtn = false;
   addSprite(0, -16.3, -41.1, drawRackSign);
   addSprite(-9.0 + CAB_PO, -14.9, -22.7, drawCrtLabel);
-  TROPHY_SLOTS.forEach((sl, i) => { const t = TROPHIES[i]; if (t) addSprite(sl.x, sl.y, sl.z, dimSprite((x, y, s) => drawTrophy(t, trophiesEarned.has(t.id), x, y, s, c.time, i))); });
-  addSprite(SHELF.x0 + 0.6, -15.9, (SHELF.z0 + SHELF.z1) / 2, (x, y, s) => drawTrophySign(x, y, s, c.time));
-  addSprite(LAVA.x, LAVA.tableTop - 0.5 - 3.0, LAVA.z, (x, y, s) => drawLavaLamp(x, y, s, c.time));
+  /* (trophy shelf + lava lamp moved to your house on the Home World) */
   addSprite(PDESK.x0 + 2.4, PDESK.top - 0.5 - 1.0, (PDESK.z0 + PDESK.z1) / 2, dimSprite((x, y, s) => drawInstantCamera(x, y, s, c.time)));
   addSprite((LPANEL.x0 + LPANEL.x1) / 2 - 0.4, LPANEL.yTop - 0.5, LPANEL.z - 0.3, drawLightPanelLabel);
   {   // ON / OFF / RGB printed next to the lever, matching its three positions
@@ -32081,6 +32062,1055 @@ window.drawDashGauges = function(l0, l1, r0, r1, dashTopY, dashH) {
     return r;
   };
 })();
+</script>
+<script>
+/* ==========================================================================
+   HOME WORLD: landing pad, the player's house (bed, windows, lava lamp, trophy
+   shelf, SPACE RAIDERS arcade cabinet) and no sentinels / monoliths at home.
+   The house interior reuses the ship-cabin plumbing: `cabin` is set to an
+   object with `home: true`, and updateCabin / renderCabinView / cabinInteract
+   hand off to the home versions here.
+   ========================================================================== */
+(function() {
+  const isHomeP = p => !!(p && (p.isHomeWorld || p.name === 'Home World'));
+  const onHomeSurface = () => gameMode === 'SURFACE' && isHomeP(landedPlanet) && !(window.__bunker && (window.__bunker.state || window.__bunker.cut));
+  const inHome = () => !!(cabin && cabin.home);
+
+  // ---------- house placement (world space, axis aligned; front door faces the ship) ----------
+  const HX0 = 126, HX1 = 174, HZ0 = -20, HZ1 = 20, WALL_TOP = -20.4, RIDGE = -32;
+  const DOOR = { z0: -4.5, z1: 4.5, top: -15 };
+  const WIN_Y0 = -14, WIN_Y1 = -6;
+  const WINS = {
+    west:  [{ u0: -15, u1: -8 }, { u0: 8, u1: 15 }],          // u = z
+    north: [{ u0: 133, u1: 143 }, { u0: 152, u1: 160 }],       // u = x (bed sits under the east end)
+    south: [{ u0: 133, u1: 143 }]
+  };
+  const OUT_SPOT = { x: 117, z: 0 };
+
+  /* ======================= no enemies / monolith at home ======================= */
+  const prevPreview = window.buildSurfacePreview;
+  if (prevPreview) window.buildSurfacePreview = function(planet) {
+    const r = prevPreview.apply(this, arguments);
+    try { if (isHomeP(planet)) { if (r) r.monoliths = []; planet.pendingMonoliths = []; } } catch (e) {}
+    return r;
+  };
+  const prevLand = window.landOnPlanet;
+  window.landOnPlanet = function(planet) {
+    const r = prevLand.apply(this, arguments);
+    try {
+      if (isHomeP(planet)) {
+        surfaceSentinels.length = 0;
+        window.surfaceMonoliths = [];
+        if (planet) delete planet.pendingMonoliths;
+      }
+    } catch (e) {}
+    return r;
+  };
+
+  /* ======================= small helpers ======================= */
+  const SUN = (() => { const v = [0.35, 1, 0.25], l = Math.hypot(...v); return v.map(c => c / l); })();
+  function nrm(pts, ctr) {
+    const a = pts[0], b = pts[1], c = pts[2];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; const l = Math.hypot(...n) || 1; n = n.map(q => q / l);
+    if (ctr) { let fx = 0, fy = 0, fz = 0; for (const p of pts) { fx += p[0]; fy += p[1]; fz += p[2]; } const k = pts.length; if (n[0] * (fx / k - ctr[0]) + n[1] * (fy / k - ctr[1]) + n[2] * (fz / k - ctr[2]) < 0) n = n.map(q => -q); }
+    return n;
+  }
+  function beep(f0, f1, dur, type, vol) {
+    try {
+      ensureAudio(); if (!actx) return;
+      const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || 'square'; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+      g.gain.setValueAtTime(vol || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+      o.connect(g); g.connect(sfxBus || audioOut()); o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function noise(dur, vol, freq) {
+    try {
+      ensureAudio(); if (!actx) return;
+      const t = actx.currentTime, n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const s = actx.createBufferSource(); s.buffer = buf;
+      const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(freq || 1200, t);
+      const g = actx.createGain(); g.gain.setValueAtTime(vol || 0.1, t);
+      s.connect(f); f.connect(g); g.connect(sfxBus || audioOut()); s.start(t);
+    } catch (e) {}
+  }
+  const doorSfx = () => { noise(0.25, 0.14, 500); beep(140, 70, 0.18, 'triangle', 0.08); };
+
+  /* ======================= exterior: pad + house (surface entities) ======================= */
+  const GROUND = [], XF = [];
+  function poly(arr, pts, col, o) {
+    o = o || {};
+    const f = { pts, n: o.two ? null : (o.n || nrm(pts, o.ctr)), rgb: hexRgb(col), emis: o.emis, dim: o.dim, blink: o.blink, alpha: o.alpha, deep: o.deep || 0, kids: [] };
+    f.c = (() => { let x = 0, y = 0, z = 0; for (const p of pts) { x += p[0]; y += p[1]; z += p[2]; } return [x / pts.length, y / pts.length, z / pts.length]; })();
+    arr.push(f); return f;
+  }
+  function xbox(x0, x1, y0, y1, z0, z1, col, o) {
+    o = o || {}; const t = Math.min(y0, y1), b = Math.max(y0, y1), ctr = [(x0 + x1) / 2, (t + b) / 2, (z0 + z1) / 2];
+    const q = (p, c) => poly(XF, p, c, Object.assign({}, o, { ctr }));
+    const r = {};
+    if (!o.noTop) r.top = q([[x0, t, z0], [x1, t, z0], [x1, t, z1], [x0, t, z1]], o.top || col);
+    r.south = q([[x0, t, z1], [x1, t, z1], [x1, b, z1], [x0, b, z1]], o.front || col);
+    r.north = q([[x0, t, z0], [x1, t, z0], [x1, b, z0], [x0, b, z0]], o.back || col);
+    r.west = q([[x0, t, z0], [x0, t, z1], [x0, b, z1], [x0, b, z0]], o.west || o.side || col);
+    r.east = q([[x1, t, z0], [x1, t, z1], [x1, b, z1], [x1, b, z0]], o.side || col);
+    return r;
+  }
+  const kid = (parent, pts, col, o) => { parent.kids.push({ pts, rgb: hexRgb(col), emis: (o || {}).emis, dim: (o || {}).dim, blink: (o || {}).blink }); };
+  // decal rectangles on each wall plane (a = along-wall start, b = end, y0 top, y1 bottom)
+  const onX = (parent, x, z0, z1, y0, y1, col, o) => kid(parent, [[x, y0, z0], [x, y0, z1], [x, y1, z1], [x, y1, z0]], col, o);
+  const onZ = (parent, z, x0, x1, y0, y1, col, o) => kid(parent, [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], col, o);
+
+  // --- landing pad: octagon slab, yellow ring, hazard edge, blinking edge lights ---
+  {
+    const CX = 0, CZ = -2, R0 = 60, R1 = 52, R2 = 44, R3 = 40;
+    const ring = (r, k) => { const out = []; for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI * 2; out.push([CX + Math.cos(a) * r, -0.04 - k * 0.01, CZ + Math.sin(a) * r]); } return out; };
+    const o0 = ring(R0, 0), o1 = ring(R1, 1), o2 = ring(R2, 2), o3 = ring(R3, 3);
+    const base = poly(GROUND, o0, "#3f4654", { n: [0, -1, 0], deep: 3000 });
+    // hazard-striped rim (between R0 and R1), yellow ring (R2..R3), inner pad
+    for (let i = 0; i < 8; i++) {
+      const j = (i + 1) % 8;
+      for (let s = 0; s < 4; s++) {
+        const t0 = s / 4, t1 = (s + 1) / 4, L = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1], A[2] + (B[2] - A[2]) * t];
+        kid(base, [L(o0[i], o0[j], t0), L(o0[i], o0[j], t1), L(o1[i], o1[j], t1), L(o1[i], o1[j], t0)], (i * 4 + s) % 2 ? "#111827" : "#eab308");
+      }
+      kid(base, [o2[i], o2[j], o3[j], o3[i]], "#facc15");
+    }
+    kid(base, o3, "#4b5563");
+    // H marking (mostly under the ship, peeks out front and back)
+    const hk = (x0, x1, z0, z1) => kid(base, [[CX + x0, -0.09, CZ + z0], [CX + x1, -0.09, CZ + z0], [CX + x1, -0.09, CZ + z1], [CX + x0, -0.09, CZ + z1]], "#e5e7eb");
+    hk(-16, -11, -22, 22); hk(11, 16, -22, 22); hk(-11, 11, -2.5, 2.5);
+    for (let i = 0; i < 8; i++) {
+      const a = (i + 0.5) / 8 * Math.PI * 2, r = (R0 + R1) / 2 + 0.1, x = CX + Math.cos(a) * r, z = CZ + Math.sin(a) * r;
+      kid(base, [[x - 1.2, -0.1, z - 1.2], [x + 1.2, -0.1, z - 1.2], [x + 1.2, -0.1, z + 1.2], [x - 1.2, -0.1, z + 1.2]], i % 2 ? "#22c55e" : "#38bdf8", { emis: true, blink: 0.6 + (i % 2) * 0.25 });
+    }
+    // stone path from the pad to the porch
+    const path = poly(GROUND, [[R0 - 4, -0.03, -3.5], [HX0 - 5, -0.03, -3.5], [HX0 - 5, -0.03, 3.5], [R0 - 4, -0.03, 3.5]], "#78716c", { n: [0, -1, 0], deep: 2900 });
+    for (let x = R0; x < HX0 - 6; x += 6) kid(path, [[x, -0.06, -3], [x + 4.5, -0.06, -3], [x + 4.5, -0.06, 3], [x, -0.06, 3]], "#a8a29e");
+  }
+
+  // --- the house ---
+  {
+    const WALL = "#f5e6c8", ROOF = "#b91c1c", TRIM = "#f8fafc", SHUT = "#166534", GLASS = "#fde68a", BRICK = "#9a3412";
+    xbox(HX0 - 1, HX1 + 1, 0, -1.2, HZ0 - 1, HZ1 + 1, "#57534e", { top: "#6b6560" });                       // stone foundation
+    const w = xbox(HX0, HX1, -1.2, WALL_TOP, HZ0, HZ1, WALL, { noTop: true, side: "#efdcb8" });
+    // weatherboard lines
+    for (let y = -4; y > WALL_TOP + 1; y -= 3) {
+      onX(w.west, HX0 - 0.02, HZ0, HZ1, y, y + 0.35, "#dcc69c"); onX(w.east, HX1 + 0.02, HZ0, HZ1, y, y + 0.35, "#dcc69c");
+      onZ(w.north, HZ0 - 0.02, HX0, HX1, y, y + 0.35, "#dcc69c"); onZ(w.south, HZ1 + 0.02, HX0, HX1, y, y + 0.35, "#dcc69c");
+    }
+    // windows: white frame, warm glass, cross mullions, green shutters
+    const winX = (face, x, s, z0, z1) => {
+      onX(face, x + s * 0.03, z0 - 0.8, z1 + 0.8, WIN_Y0 - 0.8, WIN_Y1 + 0.8, TRIM);
+      onX(face, x + s * 0.06, z0, z1, WIN_Y0, WIN_Y1, GLASS, { emis: true, dim: 0.85 });
+      onX(face, x + s * 0.09, (z0 + z1) / 2 - 0.3, (z0 + z1) / 2 + 0.3, WIN_Y0, WIN_Y1, TRIM);
+      onX(face, x + s * 0.09, z0, z1, (WIN_Y0 + WIN_Y1) / 2 - 0.3, (WIN_Y0 + WIN_Y1) / 2 + 0.3, TRIM);
+      onX(face, x + s * 0.04, z0 - 3.4, z0 - 0.9, WIN_Y0 - 0.5, WIN_Y1 + 0.5, SHUT); onX(face, x + s * 0.04, z1 + 0.9, z1 + 3.4, WIN_Y0 - 0.5, WIN_Y1 + 0.5, SHUT);
+    };
+    const winZ = (face, z, s, x0, x1) => {
+      onZ(face, z + s * 0.03, x0 - 0.8, x1 + 0.8, WIN_Y0 - 0.8, WIN_Y1 + 0.8, TRIM);
+      onZ(face, z + s * 0.06, x0, x1, WIN_Y0, WIN_Y1, GLASS, { emis: true, dim: 0.85 });
+      onZ(face, z + s * 0.09, (x0 + x1) / 2 - 0.3, (x0 + x1) / 2 + 0.3, WIN_Y0, WIN_Y1, TRIM);
+      onZ(face, z + s * 0.09, x0, x1, (WIN_Y0 + WIN_Y1) / 2 - 0.3, (WIN_Y0 + WIN_Y1) / 2 + 0.3, TRIM);
+      onZ(face, z + s * 0.04, x0 - 3.4, x0 - 0.9, WIN_Y0 - 0.5, WIN_Y1 + 0.5, SHUT); onZ(face, z + s * 0.04, x1 + 0.9, x1 + 3.4, WIN_Y0 - 0.5, WIN_Y1 + 0.5, SHUT);
+    };
+    WINS.west.forEach(h => winX(w.west, HX0, -1, h.u0, h.u1));
+    WINS.north.forEach(h => winZ(w.north, HZ0, -1, h.u0, h.u1));
+    WINS.south.forEach(h => winZ(w.south, HZ1, 1, h.u0, h.u1));
+    winX(w.east, HX1, 1, -4, 4);
+    // front door
+    onX(w.west, HX0 - 0.03, DOOR.z0 - 0.9, DOOR.z1 + 0.9, DOOR.top - 0.9, -1.2, TRIM);
+    onX(w.west, HX0 - 0.06, DOOR.z0, DOOR.z1, DOOR.top, -1.2, "#7c2d12");
+    onX(w.west, HX0 - 0.09, DOOR.z0 + 1, -0.5, DOOR.top + 1.2, -8.5, "#92400e"); onX(w.west, HX0 - 0.09, 0.5, DOOR.z1 - 1, DOOR.top + 1.2, -8.5, "#92400e");
+    onX(w.west, HX0 - 0.09, DOOR.z0 + 1, -0.5, -7.5, -2.5, "#92400e"); onX(w.west, HX0 - 0.09, 0.5, DOOR.z1 - 1, -7.5, -2.5, "#92400e");
+    onX(w.west, HX0 - 0.12, 2.7, 3.6, -8.6, -7.6, "#facc15", { emis: true });
+    onX(w.west, HX0 - 0.05, -1.3, 1.3, DOOR.top - 2.6, DOOR.top - 1.2, "#fef3c7", { emis: true });   // porch light
+    // roof: two slopes, gables, ridge cap, shingle rows
+    const EZ = 22.6, EY = -19.2, X0 = HX0 - 2.2, X1 = HX1 + 2.2, ctr = [150, -18, 0];
+    const rn = poly(XF, [[X0, EY, -EZ], [X1, EY, -EZ], [X1, RIDGE, 0], [X0, RIDGE, 0]], ROOF, { ctr });
+    const rs = poly(XF, [[X0, EY, EZ], [X1, EY, EZ], [X1, RIDGE, 0], [X0, RIDGE, 0]], ROOF, { ctr });
+    for (let k = 1; k < 6; k++) {
+      const t = k / 6, y = EY + (RIDGE - EY) * t, z = EZ * (1 - t), y2 = y - 0.35, z2 = z - 0.6;
+      kid(rn, [[X0, y, -z], [X1, y, -z], [X1, y2, -z2], [X0, y2, -z2]], "#7f1d1d");
+      kid(rs, [[X0, y, z], [X1, y, z], [X1, y2, z2], [X0, y2, z2]], "#7f1d1d");
+    }
+    const gw = poly(XF, [[HX0, WALL_TOP, HZ0], [HX0, RIDGE + 0.5, 0], [HX0, WALL_TOP, HZ1]], WALL, { n: [-1, 0, 0] });
+    poly(XF, [[HX1, WALL_TOP, HZ0], [HX1, RIDGE + 0.5, 0], [HX1, WALL_TOP, HZ1]], "#efdcb8", { n: [1, 0, 0] });
+    { const a = []; for (let i = 0; i < 8; i++) { const an = (i + 0.5) / 8 * Math.PI * 2; a.push([HX0 - 0.05, -25 + Math.sin(an) * 2.4, Math.cos(an) * 2.4]); } kid(gw, a, GLASS, { emis: true, dim: 0.8 }); }
+    xbox(X0 - 0.2, X1 + 0.2, RIDGE - 0.7, RIDGE + 0.6, -0.8, 0.8, "#7f1d1d");
+    // chimney
+    const ch = xbox(160, 165, -22, -37, 6, 11, BRICK, { top: "#1c1917" });
+    for (const y of [-25, -29, -33]) { onX(ch.west, 159.97, 6, 11, y, y + 0.3, "#7c2d12"); onZ(ch.south, 11.03, 160, 165, y, y + 0.3, "#7c2d12"); }
+    xbox(159.6, 165.4, -37, -38.2, 5.6, 11.4, "#57534e");
+    // porch: step, posts, little roof
+    xbox(HX0 - 6, HX0 - 1, 0, -1.4, -6.5, 6.5, "#a8a29e", { top: "#d6d3d1" });
+    for (const pz of [-6.2, 5.4]) xbox(HX0 - 5.8, HX0 - 5, -1.4, -16.8, pz, pz + 0.8, TRIM);
+    xbox(HX0 - 6.6, HX0, -16.8, -17.8, -7.2, 7.2, ROOF, { top: "#991b1b" });
+    // flower boxes under the front windows
+    for (const h of WINS.west) {
+      const fb = xbox(HX0 - 1.4, HX0, -4.8, -6.2, h.u0 - 0.4, h.u1 + 0.4, "#7c2d12");
+      for (let z = h.u0; z < h.u1; z += 1.6) kid(fb.top, [[HX0 - 1.2, -6.25, z], [HX0 - 0.2, -6.25, z], [HX0 - 0.2, -6.25, z + 0.9], [HX0 - 1.2, -6.25, z + 0.9]], ["#f472b6", "#facc15", "#f87171", "#c084fc"][Math.round(z) & 3]);
+    }
+    // mailbox by the path
+    xbox(HX0 - 12.4, HX0 - 11.8, 0, -6, -6.4, -5.8, "#e5e7eb");
+    const mb = xbox(HX0 - 13.4, HX0 - 10.8, -6, -8, -7.2, -5, "#1d4ed8", { top: "#2563eb" });
+    kid(mb.south, [[HX0 - 11.4, -7.8, -4.98], [HX0 - 11.1, -7.8, -4.98], [HX0 - 11.1, -9.6, -4.98], [HX0 - 11.4, -9.6, -4.98]], "#ef4444");
+  }
+
+  function pushFaces(arr, list, always) {
+    const ex = playerFoot.x, ey = playerFoot.y, ez = playerFoot.z;
+    const yaw = playerFoot.yaw, pitch = playerFoot.pitch, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const fov = V_HEIGHT * 0.9, NEAR = 0.5, t = Date.now();
+    const tx = (p) => { const dx = p[0] - ex, dy = p[1] - ey, dz = p[2] - ez, x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    const proj = (wpts) => {
+      const cam = wpts.map(tx), out = [];
+      for (let i = 0; i < cam.length; i++) { const a = cam[i], b = cam[(i + 1) % cam.length], ai = a[2] > NEAR, bi = b[2] > NEAR; if (ai) out.push(a); if (ai !== bi) { const k = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, NEAR]); } }
+      return out.length < 3 ? null : out.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+    };
+    const shade = (f, n) => {
+      let k = 1;
+      if (f.emis) { k = f.dim || 1; if (f.blink && Math.floor(t / (1000 * f.blink)) % 2) k *= 0.25; }
+      else if (n) k = 0.72 + 0.48 * Math.max(0, -(n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]));
+      return `rgb(${Math.min(255, f.rgb[0] * k) | 0},${Math.min(255, f.rgb[1] * k) | 0},${Math.min(255, f.rgb[2] * k) | 0})`;
+    };
+    for (const f of arr) {
+      const n = f.n, c = f.c;
+      if (n && n[0] * (ex - c[0]) + n[1] * (ey - c[1]) + n[2] * (ez - c[2]) <= 0) continue;
+      const scr = proj(f.pts); if (!scr) continue;
+      const zc = tx(c)[2], col = shade(f, n), kids = f.kids.length ? f.kids : null;
+      list.push({ type: 'custom', proj: { x: scr[0][0], y: scr[0][1], scale: 1, dist: zc, depth: zc + f.deep }, draw: () => {
+        ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 0.6;
+        ctx.beginPath(); ctx.moveTo(scr[0][0], scr[0][1]); for (let i = 1; i < scr.length; i++) ctx.lineTo(scr[i][0], scr[i][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+        if (kids) for (const k of kids) {
+          const ks = proj(k.pts); if (!ks) continue;
+          ctx.fillStyle = shade(k, n);
+          ctx.beginPath(); ctx.moveTo(ks[0][0], ks[0][1]); for (let i = 1; i < ks.length; i++) ctx.lineTo(ks[i][0], ks[i][1]); ctx.closePath(); ctx.fill();
+        }
+      } });
+    }
+  }
+  const nearDoorOutside = () => playerFoot.x > HX0 - 14 && playerFoot.x < HX0 + 0.5 && Math.abs(playerFoot.z) < 8 && playerFoot.y > -16;
+  const prevExtra = window.surfaceExtraEntities;
+  window.surfaceExtraEntities = function(list) {
+    if (prevExtra) prevExtra(list);
+    try {
+      if (!onHomeSurface()) return;
+      pushFaces(GROUND, list);
+      if (!inHome() && Math.hypot(playerFoot.x - 150, playerFoot.z) < 1600) pushFaces(XF, list);
+      if (!cabin && !surfacePassActive) {
+        const d = Math.hypot(playerFoot.x - HX0, playerFoot.z);
+        if (d > 40 && d < 700) {
+          const p = projectSurface(150, RIDGE - 8, 0);
+          if (p) list.push({ type: 'custom', proj: { x: p.x, y: p.y, scale: 1, dist: p.dist, depth: -1 }, draw: () => {
+            ctx.textAlign = "center"; ctx.font = "8px monospace"; ctx.fillStyle = `rgba(250, 204, 21, ${Math.max(0.25, 1 - d / 750)})`;
+            ctx.fillText(`HOME [${Math.round(d)}m]`, p.x, p.y);
+          } });
+        }
+      }
+    } catch (e) { console.warn('home exterior', e); }
+  };
+
+  // keep the player (and ore veins) out of the house footprint
+  function collideOutside() {
+    const P = playerFoot, R = 2, x0 = HX0 - 1 - R, x1 = HX1 + 1 + R, z0 = HZ0 - 1 - R, z1 = HZ1 + 1 + R;
+    if (P.y < RIDGE - 8) return;
+    if (P.x > x0 && P.x < x1 && P.z > z0 && P.z < z1) {
+      const pen = [P.x - x0, x1 - P.x, P.z - z0, z1 - P.z]; let m = 0; for (let i = 1; i < 4; i++) if (pen[i] < pen[m]) m = i;
+      if (m === 0) P.x = x0; else if (m === 1) P.x = x1; else if (m === 2) P.z = z0; else P.z = z1;
+    }
+  }
+  let clearedFor = null;
+  function clearYard() {
+    if (clearedFor === surfaceNodes) return; clearedFor = surfaceNodes;
+    for (const n of (surfaceNodes || [])) {
+      if (n.x > HX0 - 30 && n.x < HX1 + 20 && n.z > HZ0 - 20 && n.z < HZ1 + 20) n.z = n.z < 0 ? HZ0 - 30 : HZ1 + 30;
+      if (Math.hypot(n.x, n.z + 2) < 66) { const a = Math.atan2(n.z + 2, n.x) || 1; n.x = Math.cos(a) * 80; n.z = Math.sin(a) * 80 - 2; }
+    }
+  }
+
+  /* ======================= interior geometry ======================= */
+  const IN = {
+    BED: { x0: 161.5, x1: 172.6, z0: -19.8, z1: -5.6 },
+    NIGHT: { x0: 154.6, x1: 159.6, z0: -19.8, z1: -15.2, top: -5 },
+    ARC: { x0: 158.8, x1: 164.4, z0: 15.4, z1: 20 },
+    SHELF: { x: HX1, z0: -0.5, z1: 17.5, ys: [-5.4, -11.3], depth: 2.0 },
+    SOFA: { x0: 129.5, x1: 134, z0: 9, z1: 18.5 }
+  };
+  const LAMP_P = [(IN.NIGHT.x0 + IN.NIGHT.x1) / 2, IN.NIGHT.top - 0.5 - 3.0, (IN.NIGHT.z0 + IN.NIGHT.z1) / 2];
+  const TSLOTS = []; IN.SHELF.ys.forEach((y, row) => [2.5, 6.5, 10.5, 14.5].forEach(z => TSLOTS.push({ x: HX1 - 1.3, y: y - 0.45 - 1.45, z, row })));
+
+  // arcade screen + marquee textures
+  const AW = 160, AH = 144;
+  const arcCv = document.createElement('canvas'); arcCv.width = AW; arcCv.height = AH;
+  const ag = arcCv.getContext('2d'); ag.imageSmoothingEnabled = false;
+  const marqCv = document.createElement('canvas'); marqCv.width = 128; marqCv.height = 32;
+  {
+    const g = marqCv.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 128, 0); gr.addColorStop(0, '#7e22ce'); gr.addColorStop(0.5, '#db2777'); gr.addColorStop(1, '#7e22ce');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 32);
+    g.fillStyle = '#0f0518'; g.fillRect(3, 3, 122, 26);
+    g.font = 'bold 13px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#f0abfc'; g.fillText('SPACE RAIDERS', 65, 17); g.fillStyle = '#fef08a'; g.fillText('SPACE RAIDERS', 64, 16);
+  }
+
+  function holedWall(F, plane, k, u0, u1, v0, v1, holes, n, col, alt) {
+    let cuts = [u0, u1]; holes.forEach(h => cuts.push(h.u0, h.u1));
+    cuts = [...new Set(cuts)].sort((a, b) => a - b);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const a = cuts[i], b = cuts[i + 1], mid = (a + b) / 2;
+      const h = holes.find(q => mid > q.u0 && mid < q.u1);
+      if (!h) cabRect(F, plane, k, a, b, v0, v1, n, col, 6, { alt, layer: 0 });
+      else {
+        if (h.v0 > v0) cabRect(F, plane, k, a, b, v0, h.v0, n, col, 6, { alt, layer: 0 });
+        if (h.v1 < v1) cabRect(F, plane, k, a, b, h.v1, v1, n, col, 6, { alt, layer: 0 });
+      }
+    }
+  }
+  // window dressing on the inside: trim boxes, mullions, sill, glass tint, curtains
+  function windowIn(F, plane, k, s, u0, u1) {
+    const T = "#f8fafc", d = 0.35;
+    const B = (a0, a1, y0, y1, depth) => {   // box sticking out of the wall into the room by depth
+      if (plane === 'x') cabBox(F, s > 0 ? k : k - depth, s > 0 ? k + depth : k, y0, y1, a0, a1, T, { layer: 1, edge: "#cbd5e1" });
+      else cabBox(F, a0, a1, y0, y1, s > 0 ? k : k - depth, s > 0 ? k + depth : k, T, { layer: 1, edge: "#cbd5e1" });
+    };
+    B(u0 - 0.6, u1 + 0.6, WIN_Y0 - 0.6, WIN_Y0, d); B(u0 - 0.6, u0, WIN_Y0, WIN_Y1, d); B(u1, u1 + 0.6, WIN_Y0, WIN_Y1, d);
+    B(u0 - 1.0, u1 + 1.0, WIN_Y1, WIN_Y1 + 0.6, d + 0.6);                   // sill
+    B((u0 + u1) / 2 - 0.2, (u0 + u1) / 2 + 0.2, WIN_Y0, WIN_Y1, 0.2);       // mullions
+    B(u0, u1, (WIN_Y0 + WIN_Y1) / 2 - 0.2, (WIN_Y0 + WIN_Y1) / 2 + 0.2, 0.2);
+    const n = plane === 'x' ? [s, 0, 0] : [0, 0, s];
+    cabRect(F, plane, k, u0, u1, WIN_Y0, WIN_Y1, n, "#bae6fd", null, { layer: 1, alpha: 0.13 });
+    // curtains (deep red), gathered either side
+    const C = "#9f1239", cd = 0.6;
+    for (const [a0, a1] of [[u0 - 2.6, u0 - 0.7], [u1 + 0.7, u1 + 2.6]]) {
+      if (plane === 'x') cabBox(F, s > 0 ? k + 0.1 : k - 0.1 - cd, s > 0 ? k + 0.1 + cd : k - 0.1, WIN_Y0 - 1.6, WIN_Y1 + 1.2, a0, a1, C, { layer: 1, side: "#881337" });
+      else cabBox(F, a0, a1, WIN_Y0 - 1.6, WIN_Y1 + 1.2, s > 0 ? k + 0.1 : k - 0.1 - cd, s > 0 ? k + 0.1 + cd : k - 0.1, C, { layer: 1, side: "#881337" });
+    }
+    if (plane === 'x') cabBox(F, s > 0 ? k : k - 0.9, s > 0 ? k + 0.9 : k, WIN_Y0 - 1.9, WIN_Y0 - 1.6, u0 - 3, u1 + 3, "#a16207", { layer: 1 });
+    else cabBox(F, u0 - 3, u1 + 3, WIN_Y0 - 1.9, WIN_Y0 - 1.6, s > 0 ? k : k - 0.9, s > 0 ? k + 0.9 : k, "#a16207", { layer: 1 });
+  }
+
+  let homeFaces = null;
+  function buildHomeStatic() {
+    const F = [];
+    const UP = "#d9c49a", UP2 = "#d0b98c", WAIN = "#6b3f1d", WAIN2 = "#5c3518";
+    // floor boards + ceiling with beams
+    for (let z = HZ0, i = 0; z < HZ1; z += 2.5, i++) cabRect(F, 'y', 0, HX0, HX1, z, Math.min(HZ1, z + 2.5), [0, -1, 0], i % 2 ? "#8b5a2b" : "#7a4e25", 12, { layer: 0 });
+    cabRect(F, 'y', -20, HX0, HX1, HZ0, HZ1, [0, 1, 0], "#efe3c6", 10, { layer: 0 });
+    for (let x = HX0 + 6; x < HX1; x += 9) cabBox(F, x, x + 1.2, -20, -19, HZ0, HZ1, "#5c3518", { layer: 1 });
+    // walls: upper (with window holes) + wood wainscot + chair rail
+    const hz = WINS.west.map(h => ({ u0: h.u0, u1: h.u1, v0: WIN_Y0, v1: WIN_Y1 }));
+    holedWall(F, 'x', HX0, HZ0, HZ1, -20, -5, hz, [1, 0, 0], UP, UP2);
+    holedWall(F, 'x', HX1, HZ0, HZ1, -20, -5, [], [-1, 0, 0], UP, UP2);
+    holedWall(F, 'z', HZ0, HX0, HX1, -20, -5, WINS.north.map(h => ({ u0: h.u0, u1: h.u1, v0: WIN_Y0, v1: WIN_Y1 })), [0, 0, 1], UP, UP2);
+    holedWall(F, 'z', HZ1, HX0, HX1, -20, -5, WINS.south.map(h => ({ u0: h.u0, u1: h.u1, v0: WIN_Y0, v1: WIN_Y1 })), [0, 0, -1], UP, UP2);
+    cabRect(F, 'x', HX0, HZ0, HZ1, -5, 0, [1, 0, 0], WAIN, 6, { alt: WAIN2, layer: 0 });
+    cabRect(F, 'x', HX1, HZ0, HZ1, -5, 0, [-1, 0, 0], WAIN, 6, { alt: WAIN2, layer: 0 });
+    cabRect(F, 'z', HZ0, HX0, HX1, -5, 0, [0, 0, 1], WAIN, 6, { alt: WAIN2, layer: 0 });
+    cabRect(F, 'z', HZ1, HX0, HX1, -5, 0, [0, 0, -1], WAIN, 6, { alt: WAIN2, layer: 0 });
+    cabBox(F, HX0, HX0 + 0.3, -5, -5.5, HZ0, HZ1, "#a16207", { layer: 1 }); cabBox(F, HX1 - 0.3, HX1, -5, -5.5, HZ0, HZ1, "#a16207", { layer: 1 });
+    cabBox(F, HX0, HX1, -5, -5.5, HZ0, HZ0 + 0.3, "#a16207", { layer: 1 }); cabBox(F, HX0, HX1, -5, -5.5, HZ1 - 0.3, HZ1, "#a16207", { layer: 1 });
+    // windows
+    WINS.west.forEach(h => windowIn(F, 'x', HX0, 1, h.u0, h.u1));
+    WINS.north.forEach(h => windowIn(F, 'z', HZ0, 1, h.u0, h.u1));
+    WINS.south.forEach(h => windowIn(F, 'z', HZ1, -1, h.u0, h.u1));
+    // front door (inside face) + frame + knob + doormat
+    cabRect(F, 'x', HX0 + 0.06, DOOR.z0, DOOR.z1, DOOR.top, 0, [1, 0, 0], "#7c2d12", null, { layer: 1, bias: 0.2 });
+    for (const [z0, z1, y0, y1] of [[DOOR.z0 + 1, -0.5, DOOR.top + 1.2, -8.5], [0.5, DOOR.z1 - 1, DOOR.top + 1.2, -8.5], [DOOR.z0 + 1, -0.5, -7.5, -1.5], [0.5, DOOR.z1 - 1, -7.5, -1.5]])
+      cabRect(F, 'x', HX0 + 0.1, z0, z1, y0, y1, [1, 0, 0], "#92400e", null, { layer: 1, bias: 0.3 });
+    cabBox(F, HX0, HX0 + 0.5, DOOR.top - 0.8, 0, DOOR.z0 - 0.8, DOOR.z0, "#f8fafc", { layer: 1 });
+    cabBox(F, HX0, HX0 + 0.5, DOOR.top - 0.8, 0, DOOR.z1, DOOR.z1 + 0.8, "#f8fafc", { layer: 1 });
+    cabBox(F, HX0, HX0 + 0.5, DOOR.top - 0.8, DOOR.top, DOOR.z0, DOOR.z1, "#f8fafc", { layer: 1 });
+    cabBox(F, HX0 + 0.1, HX0 + 0.7, -7.6, -8.4, -3.4, -2.6, "#facc15", { emissive: true });
+    cabRect(F, 'y', -0.04, HX0 + 1, HX0 + 5, -3.5, 3.5, [0, -1, 0], "#a16207", null, { layer: 1 });
+    cabRect(F, 'y', -0.06, HX0 + 1.5, HX0 + 4.5, -3, 3, [0, -1, 0], "#ca8a04", null, { layer: 1 });
+    // rug
+    cabRect(F, 'y', -0.04, 139, 157, -6, 6, [0, -1, 0], "#facc15", null, { layer: 1 });
+    cabRect(F, 'y', -0.06, 140, 156, -5, 5, [0, -1, 0], "#9f1239", 4, { layer: 1, alt: "#be123c" });
+    // ceiling lamp
+    cabBox(F, 148.5, 151.5, -19, -18.2, -1.5, 1.5, "#fef3c7", { emissive: true });
+    // BED: headboard on the north wall, wooden frame, mattress, pillow, patchwork quilt
+    const B = IN.BED, WOOD = "#7c4a21";
+    cabBox(F, B.x0, B.x1, 0, -9.5, B.z0, B.z0 + 0.8, WOOD, { top: "#92582a", edge: "#a16207" });
+    cabBox(F, B.x0, B.x1, -0.6, -3.4, B.z0 + 0.8, B.z1, WOOD, { edge: "#a16207" });
+    cabBox(F, B.x0, B.x1, 0, -5.2, B.z1 - 0.7, B.z1, WOOD, { top: "#92582a", edge: "#a16207" });
+    cabBox(F, B.x0 + 0.3, B.x1 - 0.3, -3.4, -5.4, B.z0 + 0.8, B.z1 - 0.7, "#e2e8f0", { top: "#f1f5f9" });
+    cabBox(F, B.x0 + 1.3, B.x1 - 1.3, -5.4, -6.6, B.z0 + 1.2, B.z0 + 4.2, "#f8fafc", { edge: "#cbd5e1" });
+    const QZ0 = B.z0 + 5.2, QZ1 = B.z1 - 0.6;
+    cabBox(F, B.x0 + 0.1, B.x1 - 0.1, -5.4, -5.9, QZ0, QZ1, "#1d4ed8", { top: "#2563eb" });
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if ((i + j) % 2 === 0)
+      cabRect(F, 'y', -5.95, B.x0 + 0.4 + i * (B.x1 - B.x0 - 0.8) / 3, B.x0 + 0.4 + (i + 1) * (B.x1 - B.x0 - 0.8) / 3, QZ0 + 0.3 + j * (QZ1 - QZ0 - 0.6) / 3, QZ0 + 0.3 + (j + 1) * (QZ1 - QZ0 - 0.6) / 3, [0, -1, 0], ["#f59e0b", "#dc2626", "#16a34a"][(i + j * 2) % 3], null, { bias: 0.4 });
+    cabRect(F, 'x', B.x0 + 0.05, QZ0, QZ1, -5.9, -3.2, [-1, 0, 0], "#1e40af", null, { bias: 0.3 });   // quilt drape
+    // NIGHTSTAND (lava lamp lives here)
+    const N = IN.NIGHT;
+    cabBox(F, N.x0, N.x1, 0, N.top, N.z0, N.z1, "#0d9488", { top: "#14b8a6", edge: "#facc15" });
+    cabRect(F, 'z', N.z1 + 0.02, N.x0 + 0.6, N.x1 - 0.6, N.top + 0.8, N.top + 2.4, [0, 0, 1], "#0f766e", null, { bias: 0.2 });
+    cabBox(F, (N.x0 + N.x1) / 2 - 0.5, (N.x0 + N.x1) / 2 + 0.5, N.top + 1.4, N.top + 1.8, N.z1, N.z1 + 0.3, "#facc15");
+    // TROPHY SHELF on the east wall
+    const S = IN.SHELF, sx0 = S.x - S.depth;
+    cabBox(F, S.x - 0.35, S.x, -2.6, -16.4, S.z0 - 0.4, S.z1 + 0.4, "#4a2a12", { edge: "#7c4a21", layer: 1 });
+    for (const sy of S.ys) {
+      const bt = sy - 0.45, bb = sy + 0.15;
+      cabBox(F, sx0, S.x - 0.35, bt, bb, S.z0, S.z1, "#6b3f1d", { top: "#a8703c", edge: "#c08457" });
+      for (const bz of [S.z0 + 1, S.z1 - 1.2]) cabBox(F, S.x - 1.1, S.x - 0.35, sy + 0.9, sy + 0.15, bz, bz + 0.25, "#64748b");
+    }
+    // SOFA by the front windows + a little coffee table
+    const SO = IN.SOFA, SC = "#0e7490";
+    cabBox(F, SO.x0, SO.x1, -0.6, -3.6, SO.z0, SO.z1, SC, { top: "#0891b2" });
+    cabBox(F, SO.x0 - 0.2, SO.x0 + 1.4, -0.6, -8, SO.z0, SO.z1, SC, { top: "#0891b2" });
+    cabBox(F, SO.x0, SO.x1, -0.6, -6, SO.z1 - 1.3, SO.z1, SC, { top: "#0891b2" });
+    cabBox(F, SO.x0, SO.x1, -0.6, -6, SO.z0, SO.z0 + 1.3, SC, { top: "#0891b2" });
+    cabBox(F, SO.x0 + 1.4, SO.x1, -3.6, -4.4, SO.z0 + 1.3, SO.z1 - 1.3, "#155e75", { top: "#06b6d4" });
+    cabBox(F, 137, 141, -2.8, -3.4, 11, 16, "#a16207", { top: "#ca8a04" });
+    for (const [lx, lz] of [[137.3, 11.3], [140.3, 11.3], [137.3, 15.3], [140.3, 15.3]]) cabBox(F, lx, lx + 0.4, 0, -2.8, lz, lz + 0.4, "#78350f");
+    // ARCADE CABINET (SPACE RAIDERS) on the south wall
+    const A = IN.ARC, BODY = "#1e1b4b";
+    cabBox(F, A.x0 + 0.3, A.x1 - 0.3, 0, -5.6, A.z0 + 1.2, A.z1, BODY, { front: "#312e81" });
+    cabRect(F, 'z', A.z0 + 1.18, A.x0 + 1.0, A.x1 - 1.0, -4.8, -2.2, [0, 0, -1], "#4338ca", null, { bias: 0.2 });   // coin door
+    cabRect(F, 'z', A.z0 + 1.16, A.x0 + 1.6, A.x0 + 2.2, -4.3, -3.6, [0, 0, -1], "#f87171", null, { emissive: true, bias: 0.3 });
+    cabRect(F, 'z', A.z0 + 1.16, A.x1 - 2.2, A.x1 - 1.6, -4.3, -3.6, [0, 0, -1], "#f87171", null, { emissive: true, bias: 0.3 });
+    cabBox(F, A.x0 + 0.3, A.x1 - 0.3, -5.6, -6.3, A.z0, A.z1, "#312e81", { top: "#4338ca", edge: "#818cf8" });
+    cabBox(F, A.x0 + 0.3, A.x1 - 0.3, -6.3, -11.8, A.z0 + 2.0, A.z1, BODY);
+    cabBox(F, A.x0 + 0.3, A.x1 - 0.3, -11.8, -13.4, A.z0 + 1.3, A.z1, "#0f172a");
+    cabRect(F, 'z', A.z0 + 1.26, A.x0 + 0.5, A.x1 - 0.5, -13.2, -12.0, [0, 0, -1], "#000000", null, { emissive: true, tex: marqCv, grid: [3, 1], bias: 0.5 });
+    cabRect(F, 'z', A.z0 + 1.96, A.x0 + 0.9, A.x1 - 0.9, -10.9, -6.9, [0, 0, -1], "#000000", null, { emissive: true, tex: arcCv, grid: [4, 4], bias: 0.5, arcade: true });
+    for (const sx of [A.x0, A.x1 - 0.3]) cabBox(F, sx, sx + 0.3, 0, -13.6, A.z0 - 0.15, A.z1, "#581c87", { edge: "#e879f9" });
+    return F;
+  }
+
+  // collision inside
+  const BLOCKS = () => [
+    [IN.BED.x0, IN.BED.x1, IN.BED.z0, IN.BED.z1], [IN.NIGHT.x0, IN.NIGHT.x1, IN.NIGHT.z0, IN.NIGHT.z1],
+    [IN.ARC.x0, IN.ARC.x1, IN.ARC.z0, IN.ARC.z1], [HX1 - IN.SHELF.depth, HX1, IN.SHELF.z0 - 0.4, IN.SHELF.z1 + 0.4],
+    [IN.SOFA.x0 - 0.2, IN.SOFA.x1, IN.SOFA.z0, IN.SOFA.z1], [137, 141, 11, 16]
+  ];
+  function homeCollide(x, z) {
+    const R = 2.2;
+    x = Math.max(HX0 + R, Math.min(HX1 - R, x)); z = Math.max(HZ0 + R, Math.min(HZ1 - R, z));
+    for (const b of BLOCKS()) {
+      const x0 = b[0] - R, x1 = b[1] + R, z0 = b[2] - R, z1 = b[3] + R;
+      if (x > x0 && x < x1 && z > z0 && z < z1) {
+        const pen = [x - x0, x1 - x, z - z0, z1 - z]; let m = 0; for (let i = 1; i < 4; i++) if (pen[i] < pen[m]) m = i;
+        if (m === 0) x = x0; else if (m === 1) x = x1; else if (m === 2) z = z0; else z = z1;
+      }
+    }
+    return [Math.max(HX0 + R, Math.min(HX1 - R, x)), Math.max(HZ0 + R, Math.min(HZ1 - R, z))];
+  }
+
+  /* ======================= SPACE RAIDERS (the arcade game) ======================= */
+  const SPR = {
+    squid: [["...##...", "..####..", ".######.", "##.##.##", "########", "..#..#..", ".#.##.#.", "#.#..#.#"], ["...##...", "..####..", ".######.", "##.##.##", "########", ".#.##.#.", "#......#", ".#....#."]],
+    crab: [["..#.....#..", "...#...#...", "..#######..", ".##.###.##.", "###########", "#.#######.#", "#.#.....#.#", "...##.##..."], ["..#.....#..", "#..#...#..#", "#.#######.#", "###.###.###", "###########", ".#########.", "..#.....#..", ".#.......#."]],
+    octo: [["....####....", ".##########.", "############", "###..##..###", "############", "...##..##...", "..##.##.##..", "##........##"], ["....####....", ".##########.", "############", "###..##..###", "############", "..###..###..", ".##..##..##.", "..##....##.."]],
+    ship: [["......#......", ".....###.....", ".....###.....", ".###########.", "#############", "#############", "#############", "#############"]],
+    ufo: [[".....######.....", "...##########...", "..############..", ".##.##.##.##.##.", "################", "..###..##..###..", "...#........#..."]],
+    boom: [["#...#...#", ".#.....#.", "..#...#..", "##.....##", "..#...#..", ".#..#..#.", "#...#...#"]]
+  };
+  const SPRC = {};
+  function sprite(name, frame, col) {
+    const key = name + frame + col; if (SPRC[key]) return SPRC[key];
+    const rows = SPR[name][frame], c = document.createElement('canvas'); c.width = rows[0].length; c.height = rows.length;
+    const g = c.getContext('2d'); g.fillStyle = col;
+    rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) if (r[x] === '#') g.fillRect(x, y, 1, 1); });
+    return (SPRC[key] = c);
+  }
+  const ROWS = [['squid', 30, '#f0abfc'], ['crab', 20, '#67e8f9'], ['crab', 20, '#67e8f9'], ['octo', 10, '#4ade80'], ['octo', 10, '#4ade80']];
+  const COLS = 8, CW = 14, RH = 11;
+  let hi = 0; try { hi = parseInt(localStorage.getItem('vp3d_arcade_hi') || '0', 10) || 0; } catch (e) {}
+  const G = { mode: 'title', t: 0, score: 0, lives: 3, wave: 1 };
+  function newWave() {
+    G.inv = []; for (let r = 0; r < 5; r++) for (let c = 0; c < COLS; c++) G.inv.push({ r, c, alive: true });
+    G.gx = 16; G.gy = 22 + Math.min(G.wave - 1, 5) * 4; G.dir = 1; G.frame = 0; G.stepT = 0.5; G.note = 0;
+    G.pb = null; G.eb = []; G.shootT = 1.2; G.ufo = null; G.ufoT = 14 + Math.random() * 8; G.fx = [];
+    G.shields = [22, 58, 94, 130].map(x => {
+      const cells = []; for (let j = 0; j < 6; j++) for (let i = 0; i < 8; i++) cells.push(!((j === 0 && (i === 0 || i === 7)) || (j >= 4 && i >= 2 && i <= 5)));
+      return { x, y: 108, cells };
+    });
+  }
+  function startGame() { G.mode = 'play'; G.score = 0; G.lives = 3; G.wave = 1; G.px = AW / 2; G.dead = 0; newWave(); beep(440, 880, 0.25, 'square', 0.05); }
+  const invW = r => ROWS[r][0] === 'squid' ? 8 : (ROWS[r][0] === 'crab' ? 11 : 12);
+  const invX = v => G.gx + v.c * CW + (12 - invW(v.r)) / 2, invY = v => G.gy + v.r * RH;
+  function shieldHit(x, y, blast) {
+    for (const s of G.shields) {
+      if (x < s.x || x >= s.x + 16 || y < s.y || y >= s.y + 12) continue;
+      const i = Math.floor((x - s.x) / 2), j = Math.floor((y - s.y) / 2);
+      if (!s.cells[j * 8 + i]) continue;
+      s.cells[j * 8 + i] = false;
+      if (blast) for (let k = 0; k < 3; k++) { const ii = i + Math.floor(Math.random() * 3) - 1, jj = j + Math.floor(Math.random() * 3) - 1; if (ii >= 0 && ii < 8 && jj >= 0 && jj < 6) s.cells[jj * 8 + ii] = false; }
+      return true;
+    }
+    return false;
+  }
+  function arcadeOver() {
+    G.mode = 'over'; G.t = 0;
+    if (G.score > hi) { hi = G.score; try { localStorage.setItem('vp3d_arcade_hi', String(hi)); } catch (e) {} G.newHi = true; } else G.newHi = false;
+    beep(300, 60, 0.9, 'sawtooth', 0.06);
+  }
+  function stepGame(dt, move, fireHeld, fireTap) {
+    G.t += dt;
+    if (G.mode !== 'play') { if (fireTap && G.t > (G.mode === 'over' ? 1.2 : 0.2)) startGame(); return; }
+    if (G.dead > 0) { G.dead -= dt; if (G.dead <= 0) { if (G.lives <= 0) return arcadeOver(); G.px = AW / 2; G.eb = []; } }
+    else {
+      G.px = Math.max(8, Math.min(AW - 8, G.px + move * 80 * dt));
+      if ((fireHeld || fireTap) && !G.pb) { G.pb = { x: G.px, y: 120 }; beep(1400, 300, 0.09, 'square', 0.03); }
+    }
+    // march
+    const alive = G.inv.filter(v => v.alive);
+    if (!alive.length) { G.wave++; G.score += 100; newWave(); beep(660, 1320, 0.3, 'triangle', 0.05); return; }
+    G.stepT -= dt;
+    if (G.stepT <= 0) {
+      G.stepT = (0.03 + 0.55 * alive.length / 40) / (1 + (G.wave - 1) * 0.15);
+      G.frame ^= 1;
+      let minX = 999, maxX = -999; for (const v of alive) { const x = invX(v); minX = Math.min(minX, x); maxX = Math.max(maxX, x + invW(v.r)); }
+      if ((G.dir > 0 && maxX + 2 > AW - 3) || (G.dir < 0 && minX - 2 < 3)) { G.gy += 4; G.dir = -G.dir; } else G.gx += G.dir * 2;
+      beep([98, 87, 78, 73][G.note++ & 3], [98, 87, 78, 73][(G.note - 1) & 3] * 0.8, 0.08, 'square', 0.045);
+      for (const v of alive) { const x = invX(v), y = invY(v); for (let yy = y; yy < y + 8; yy += 2) for (let xx = x; xx < x + invW(v.r); xx += 2) shieldHit(xx, yy, false); }
+      let maxY = 0; for (const v of alive) maxY = Math.max(maxY, invY(v) + 8);
+      if (maxY >= 124) { G.lives = 0; G.dead = 1; return arcadeOver(); }
+    }
+    // invader fire
+    G.shootT -= dt;
+    if (G.shootT <= 0 && G.eb.length < 2 + Math.min(2, G.wave >> 1) && G.dead <= 0) {
+      G.shootT = Math.max(0.35, 1.1 - G.wave * 0.08) * (0.6 + Math.random() * 0.8);
+      const cols = {}; for (const v of alive) if (!cols[v.c] || cols[v.c].r < v.r) cols[v.c] = v;
+      const keys2 = Object.keys(cols); let pick = cols[keys2[Math.floor(Math.random() * keys2.length)]];
+      if (Math.random() < 0.4) { let best = null; for (const k of keys2) { const v = cols[k]; if (!best || Math.abs(invX(v) + 6 - G.px) < Math.abs(invX(best) + 6 - G.px)) best = v; } pick = best; }
+      if (pick) G.eb.push({ x: invX(pick) + invW(pick.r) / 2, y: invY(pick) + 8, z: Math.random() < 0.5 });
+    }
+    // UFO
+    G.ufoT -= dt;
+    if (!G.ufo && G.ufoT <= 0) { const d = Math.random() < 0.5 ? 1 : -1; G.ufo = { x: d > 0 ? -16 : AW, d }; }
+    if (G.ufo) {
+      G.ufo.x += G.ufo.d * 30 * dt;
+      if (Math.floor(G.t * 8) % 2 === 0) beep(700, 900, 0.05, 'sine', 0.02);
+      if (G.ufo.x < -20 || G.ufo.x > AW + 4) { G.ufo = null; G.ufoT = 16 + Math.random() * 10; }
+    }
+    // player bullet
+    if (G.pb) {
+      G.pb.y -= 190 * dt;
+      let hit = false;
+      if (G.pb.y < 12) hit = true;
+      if (!hit && shieldHit(Math.round(G.pb.x), Math.round(G.pb.y), true)) hit = true;
+      if (!hit) for (const v of alive) {
+        const x = invX(v), y = invY(v);
+        if (G.pb.x >= x && G.pb.x <= x + invW(v.r) && G.pb.y >= y && G.pb.y <= y + 8) {
+          v.alive = false; hit = true; G.score += ROWS[v.r][1]; G.fx.push({ x: x + invW(v.r) / 2, y: y + 4, t: 0.25, col: ROWS[v.r][2] });
+          noise(0.12, 0.06, 2400); break;
+        }
+      }
+      if (!hit && G.ufo && G.pb.y < 22 && G.pb.y > 13 && G.pb.x > G.ufo.x && G.pb.x < G.ufo.x + 16) {
+        const pts = [50, 100, 150, 300][Math.floor(Math.random() * 4)]; G.score += pts;
+        G.fx.push({ x: G.ufo.x + 8, y: 17, t: 1.0, col: '#f87171', txt: String(pts) }); G.ufo = null; G.ufoT = 18 + Math.random() * 10; hit = true;
+        beep(1200, 200, 0.4, 'sawtooth', 0.05);
+      }
+      if (!hit) for (let i = G.eb.length - 1; i >= 0; i--) { const b = G.eb[i]; if (Math.abs(b.x - G.pb.x) < 2 && Math.abs(b.y - G.pb.y) < 4) { G.eb.splice(i, 1); hit = true; break; } }
+      if (hit) G.pb = null;
+    }
+    // invader bullets
+    for (let i = G.eb.length - 1; i >= 0; i--) {
+      const b = G.eb[i]; b.y += (70 + G.wave * 6) * dt;
+      if (b.y > 136) { G.eb.splice(i, 1); continue; }
+      if (shieldHit(Math.round(b.x), Math.round(b.y + 3), true)) { G.eb.splice(i, 1); continue; }
+      if (G.dead <= 0 && b.y + 4 >= 120 && b.y <= 128 && Math.abs(b.x - G.px) < 6.5) {
+        G.eb.splice(i, 1); G.lives--; G.dead = 1.3; G.pb = null;
+        noise(0.6, 0.12, 900); try { vibrateGamepad(200, 0.5, 0.4); phoneBuzz([40, 30, 40]); } catch (e) {}
+      }
+    }
+    for (let i = G.fx.length - 1; i >= 0; i--) { G.fx[i].t -= dt; if (G.fx[i].t <= 0) G.fx.splice(i, 1); }
+  }
+  function drawGame(attract) {
+    const g = ag, t = G.t;
+    g.fillStyle = '#05010d'; g.fillRect(0, 0, AW, AH);
+    g.font = 'bold 8px monospace'; g.textBaseline = 'top'; g.textAlign = 'left';
+    g.fillStyle = '#e2e8f0'; g.fillText(`SCORE ${String(G.mode === 'title' && attract ? 0 : G.score).padStart(5, '0')}`, 4, 2);
+    g.textAlign = 'right'; g.fillText(`HI ${String(hi).padStart(5, '0')}`, AW - 4, 2);
+    g.textAlign = 'center';
+    if (G.mode === 'title' || attract) {
+      const tt = performance.now() / 1000;
+      g.fillStyle = '#fef08a'; g.font = 'bold 14px monospace'; g.fillText('SPACE', AW / 2, 18); g.fillStyle = '#f472b6'; g.fillText('RAIDERS', AW / 2, 33);
+      g.font = 'bold 8px monospace';
+      const f = Math.floor(tt * 2) % 2;
+      [['ufo', '= ? MYSTERY', '#f87171', 0], ['squid', '= 30 POINTS', '#f0abfc', f], ['crab', '= 20 POINTS', '#67e8f9', f], ['octo', '= 10 POINTS', '#4ade80', f]].forEach(([n, s, col, fr], i) => {
+        const im = sprite(n, n === 'ufo' ? 0 : fr, col); g.drawImage(im, 44 - im.width / 2, 58 + i * 14);
+        g.fillStyle = '#e2e8f0'; g.textAlign = 'left'; g.fillText(s, 58, 58 + i * 14); g.textAlign = 'center';
+      });
+      if (Math.floor(tt * 2.5) % 2) { g.fillStyle = '#facc15'; g.fillText(attract ? 'INSERT COIN' : 'PRESS FIRE TO PLAY', AW / 2, 120); }
+      g.fillStyle = '#4ade80'; g.fillRect(0, 138, AW, 1);
+      return;
+    }
+    // invaders
+    for (const v of G.inv) if (v.alive) g.drawImage(sprite(ROWS[v.r][0], G.frame, ROWS[v.r][2]), Math.round(invX(v)), Math.round(invY(v)));
+    if (G.ufo) g.drawImage(sprite('ufo', 0, '#f87171'), Math.round(G.ufo.x), 14);
+    // shields
+    g.fillStyle = '#4ade80';
+    for (const s of G.shields) for (let j = 0; j < 6; j++) for (let i = 0; i < 8; i++) if (s.cells[j * 8 + i]) g.fillRect(s.x + i * 2, s.y + j * 2, 2, 2);
+    // player
+    if (G.dead > 0) { if (Math.floor(G.dead * 10) % 2) g.drawImage(sprite('boom', 0, '#4ade80'), Math.round(G.px - 4), 121); }
+    else g.drawImage(sprite('ship', 0, '#4ade80'), Math.round(G.px - 6.5), 120);
+    // bullets
+    g.fillStyle = '#ffffff'; if (G.pb) g.fillRect(Math.round(G.pb.x), Math.round(G.pb.y), 1, 4);
+    g.fillStyle = '#fde047';
+    for (const b of G.eb) { const w = (Math.floor(b.y / 3) % 2) ? 1 : -1; g.fillRect(Math.round(b.x), Math.round(b.y), 1, 4); if (b.z) g.fillRect(Math.round(b.x) + w, Math.round(b.y) + 1, 1, 1); }
+    for (const f of G.fx) { if (f.txt) { g.fillStyle = f.col; g.fillText(f.txt, f.x, 13); } else g.drawImage(sprite('boom', 0, f.col), Math.round(f.x - 4.5), Math.round(f.y - 3.5)); }
+    // ground + lives
+    g.fillStyle = '#4ade80'; g.fillRect(0, 134, AW, 1);
+    g.fillStyle = '#e2e8f0'; g.textAlign = 'left'; g.fillText(String(Math.max(0, G.lives)), 4, 135);
+    for (let i = 0; i < Math.max(0, G.lives - 1); i++) g.drawImage(sprite('ship', 0, '#4ade80'), 14 + i * 16, 135);
+    g.textAlign = 'right'; g.fillText(`WAVE ${G.wave}`, AW - 4, 135);
+    if (G.mode === 'over') {
+      g.textAlign = 'center'; g.fillStyle = 'rgba(5,1,13,0.75)'; g.fillRect(20, 52, AW - 40, 40);
+      g.fillStyle = '#f87171'; g.font = 'bold 12px monospace'; g.fillText('GAME OVER', AW / 2, 56);
+      g.font = 'bold 8px monospace'; g.fillStyle = G.newHi ? '#facc15' : '#e2e8f0'; g.fillText(G.newHi ? 'NEW HIGH SCORE!' : `SCORE ${G.score}`, AW / 2, 72);
+      if (G.t > 1.2 && Math.floor(G.t * 2.5) % 2) { g.fillStyle = '#4ade80'; g.fillText('FIRE TO PLAY AGAIN', AW / 2, 82); }
+    }
+  }
+  function drawArcadeFullscreen() {
+    const W = V_WIDTH, H = V_HEIGHT;
+    ctx.fillStyle = '#0b0614'; ctx.fillRect(0, 0, W, H);
+    const sc = Math.min((H - 22) / AH, (W - 20) / AW), dw = Math.round(AW * sc), dh = Math.round(AH * sc), dx = Math.round((W - dw) / 2), dy = 6;
+    ctx.fillStyle = '#581c87'; ctx.fillRect(dx - 6, dy - 4, dw + 12, dh + 8);
+    ctx.fillStyle = '#000'; ctx.fillRect(dx - 2, dy - 1, dw + 4, dh + 2);
+    const sm = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(arcCv, dx, dy, dw, dh);
+    ctx.imageSmoothingEnabled = sm;
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; for (let y = dy; y < dy + dh; y += 3) ctx.fillRect(dx, y, dw, 1);
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#c4b5fd';
+    ctx.fillText('MOVE: STICK / D-PAD   FIRE: ACTION   EXIT: BTN 4 / (B) / ESC', W / 2, H - 5);
+  }
+
+  /* ======================= home state, actions, update ======================= */
+  function enterHome() {
+    cabin = makeCabin({ home: true, x: HX0 + 5, z: 0, eyeY: CAB.eye, dir: 'in', hasHelmet: false, hasLaser: false, lights: 'normal' });
+    playerFoot.yaw = Math.PI / 2; playerFoot.pitch = 0.05;
+    miningLaserState.active = false; touchFire = false; touchJetpack = false;
+    setCabinButtons(true);
+    try { landingFade = 0.35; } catch (e) {}
+    doorSfx();
+  }
+  function leaveHome() {
+    cabin = null;
+    setCabinButtons(false);
+    playerFoot.x = OUT_SPOT.x; playerFoot.y = -10; playerFoot.z = OUT_SPOT.z;
+    playerFoot.yaw = -Math.PI / 2; playerFoot.pitch = 0; playerFoot.vy = 0; playerFoot.isGrounded = true;
+    try { landingFade = 0.35; } catch (e) {}
+    doorSfx();
+    if (btn4) { btn4.style.opacity = ""; }
+  }
+  window.__home = { enter: enterHome, leave: leaveHome, game: G, house: { x0: HX0, x1: HX1, z0: HZ0, z1: HZ1 }, outSpot: OUT_SPOT };
+
+  function aimAt(c, p) {
+    const cyw = Math.cos(playerFoot.yaw), syw = Math.sin(playerFoot.yaw), cp = Math.cos(playerFoot.pitch), sp = Math.sin(playerFoot.pitch);
+    const dx = p[0] - c.x, dy = p[1] - c.eyeY, dz = p[2] - c.z;
+    const x1 = dx * cyw - dz * syw, z1 = dx * syw + dz * cyw, y1 = dy * cp - z1 * sp, z2 = dy * sp + z1 * cp;
+    return z2 > 0.3 ? Math.atan(Math.hypot(x1, y1) / z2) : 9;
+  }
+  function getHomeAction(c) {
+    const T = [
+      { id: 'door', p: [HX0, -8, 0], r: 10 },
+      { id: 'bed', p: [(IN.BED.x0 + IN.BED.x1) / 2, -5, -12], r: 12 },
+      { id: 'lamp', p: LAMP_P, r: 8 },
+      { id: 'trophy', p: [HX1 - 1, -9, (IN.SHELF.z0 + IN.SHELF.z1) / 2], r: 11 },
+      { id: 'arcade', p: [(IN.ARC.x0 + IN.ARC.x1) / 2, -9, IN.ARC.z0 + 2], r: 10.5 }
+    ];
+    let best = null, ba = 0.75;
+    for (const t of T) { if (Math.hypot(c.x - t.p[0], c.z - t.p[2]) > t.r) continue; const a = aimAt(c, t.p); if (a < ba) { ba = a; best = t; } }
+    if (!best) return null;
+    if (best.id === 'door') return { label: "LEAVE HOME", banner: ">> FRONT DOOR: TAP LEAVE HOME <<", enabled: true, run: leaveHome };
+    if (best.id === 'bed') {
+      const max = playerFoot.maxSuitHp || 100;
+      return { label: "SLEEP", banner: `>> BED: TAP SLEEP TO REST UNTIL MORNING (HEALTH ${Math.round(playerFoot.suitHp ?? max)}/${max}) <<`, enabled: true, run: () => {
+        c.sleep = { t: 0, from: playerFoot.suitHp ?? 0 }; c.anim = { lock: true }; playSfx('commChirp');
+      } };
+    }
+    if (best.id === 'lamp') return { label: "LAVA LAMP", banner: `>> LAVA LAMP: TAP TO SWITCH ${lavaLampOn ? 'OFF' : 'ON'} <<`, enabled: true, run: () => {
+      lavaLampOn = !lavaLampOn; playSfx('targetLock'); vibrateGamepad(60, 0.2, 0.2);
+      addPopup(lavaLampOn ? "GROOVY. LAVA LAMP ON" : "LAVA LAMP OFF", lavaLampOn ? "#ff2bd6" : "#94a3b8");
+    } };
+    if (best.id === 'trophy') return { label: "TROPHIES", banner: `>> TROPHY SHELF: ${trophiesEarned.size}/${TROPHIES.length} EARNED - TAP TO INSPECT <<`, enabled: true, run: () => {
+      playSfx('commChirp');
+      const got = TROPHIES.filter(t => trophiesEarned.has(t.id));
+      addPopup(got.length ? `🏆 ${got.map(t => t.name).join(' · ')}` : "NO TROPHIES YET - GET OUT THERE, PILOT", "#facc15");
+      const next = TROPHIES.find(t => !trophiesEarned.has(t.id));
+      addPopup(next ? `NEXT TROPHY: ${next.desc.toUpperCase()}` : "EVERY TROPHY EARNED. LEGEND.", next ? "#38bdf8" : "#f472b6");
+    } };
+    if (best.id === 'arcade') return { label: "PLAY", banner: `>> SPACE RAIDERS: TAP PLAY - HIGH SCORE ${hi} <<`, enabled: true, run: () => {
+      c.arcade = { t: 0, yaw: Math.PI * 0, pitch: 0.05 }; c.anim = { lock: true };
+      c.x = (IN.ARC.x0 + IN.ARC.x1) / 2; c.z = IN.ARC.z0 - 3.2; playerFoot.yaw = 0; playerFoot.pitch = 0.05;
+      G.mode = 'title'; G.t = 0; beep(523, 1046, 0.2, 'square', 0.05);
+    } };
+    return null;
+  }
+
+  const IP = {};   // previous raw input states for edge detection
+  function rawEdge(name, on) { const was = IP[name]; IP[name] = on; return on && !was; }
+  let arcTap = false, btn3Held = false;
+  function exitArcade(c) {
+    c.arcade = null; c.anim = null; G.mode = 'title';
+    if (G.score > hi) { hi = G.score; try { localStorage.setItem('vp3d_arcade_hi', String(hi)); } catch (e) {} }
+    beep(600, 200, 0.2, 'square', 0.04);
+    const nb = document.getElementById("nav-banner"); if (nb) nb.style.display = '';
+  }
+
+  function updateHome(dt, walkX, walkZ, interact) {
+    const c = cabin;
+    c.time += dt;
+    const banner = document.getElementById("nav-banner");
+    const gp = typeof currentGpButtons !== 'undefined' ? currentGpButtons : [];
+    if (c.arcade) {
+      c.arcade.t += dt;
+      playerFoot.yaw = 0; playerFoot.pitch = 0.05;
+      let move = walkX; if (keys['ArrowLeft']) move -= 1; if (keys['ArrowRight']) move += 1;
+      move = Math.max(-1, Math.min(1, move)); if (Math.abs(move) < 0.2) move = 0;
+      const fireHeld = !!(keys['Space'] || keys['KeyE'] || keys['Enter'] || keys[keyBindings.fire] || gp[0] || gp[2] || gp[5] || gp[7] || btn3Held);
+      const fireEdge = rawEdge('fire', fireHeld) || arcTap; arcTap = false;
+      const exitEdge = rawEdge('exit', !!(keys['Escape'] || keys['Backspace'] || keys['KeyQ'] || gp[1]));
+      if (exitEdge && c.arcade.t > 0.3) { exitArcade(c); return; }
+      stepGame(Math.min(dt, 0.05), move, fireHeld && c.arcade.t > 0.4, fireEdge && c.arcade.t > 0.3);
+      if (banner) banner.style.display = 'none';
+      btn3.innerText = "FIRE"; btn3.className = "cockpit-btn action active";
+      if (btn4) { btn4.innerText = "EXIT"; btn4.style.opacity = "1"; }
+      c.action = null;
+      return;
+    }
+    rawEdge('fire', false); rawEdge('exit', false);
+    if (btn4 && btn4.innerText === "EXIT") { btn4.innerText = "—"; btn4.style.opacity = "0.3"; }
+    if (c.sleep) {
+      const s = c.sleep, max = playerFoot.maxSuitHp || 100;
+      s.t += dt;
+      if (s.t > 1.3 && !s.done) {
+        s.done = true; playerFoot.suitHp = max;
+        try { if (window.__homeSky) { window.__homeSky.setTime(0.29); } } catch (e) {}
+        c.x = (IN.BED.x0 + IN.BED.x1) / 2 - 1; c.z = IN.BED.z1 + 3.2; playerFoot.yaw = Math.PI; playerFoot.pitch = -0.05;
+      }
+      if (s.t > 3.6) { c.sleep = null; c.anim = null; playSfx('upgrade'); addPopup("GOOD MORNING! FULLY RESTED - HEALTH 100%", "#4ade80"); }
+      if (banner) { banner.style.display = ''; banner.innerText = s.t < 1.3 ? ">> SWEET DREAMS... <<" : ">> Zzz... <<"; }
+      btn3.innerText = "—"; btn3.className = "cockpit-btn action";
+      c.action = null;
+      return;
+    }
+    // walk
+    const mag = Math.hypot(walkX, walkZ);
+    if (mag > 1) { walkX /= mag; walkZ /= mag; }
+    const speed = 26, sinY = Math.sin(playerFoot.yaw), cosY = Math.cos(playerFoot.yaw);
+    const [nx, nz] = homeCollide(c.x + (sinY * walkZ + cosY * walkX) * speed * dt, c.z + (cosY * walkZ - sinY * walkX) * speed * dt);
+    const moved = Math.hypot(nx - c.x, nz - c.z);
+    c.x = nx; c.z = nz;
+    if (moved > 0.02) { c.bob += moved * 0.32; c.stepT -= dt; if (c.stepT <= 0) { c.stepT = 0.4; cabinSfx('step'); } }
+    c.eyeY = CAB.eye + Math.sin(c.bob) * 0.3;
+    const act = getHomeAction(c);
+    c.action = act;
+    if (banner) { banner.style.display = ''; banner.innerText = act ? act.banner : "HOME SWEET HOME"; }
+    btn3.innerText = act ? act.label : "—";
+    btn3.className = act && act.enabled ? "cockpit-btn action active" : "cockpit-btn action";
+    if (interact && c.time > 0.4) homeInteract();
+  }
+  function homeInteract() {
+    const c = cabin; if (!c) return;
+    if (c.arcade) { arcTap = true; return; }
+    if (c.sleep || c.time < 0.4) return;
+    const act = getHomeAction(c);
+    if (act && act.enabled) act.run();
+  }
+
+  /* ======================= interior render ======================= */
+  function renderHomeView() {
+    const c = cabin;
+    if (c.arcade) { drawGame(false); drawArcadeFullscreen(); return; }
+    // 1) the real Home World outside the windows
+    worldOnlyPass = true;
+    try { renderSurfacePass(landedPlanet, { x: c.x, y: c.eyeY, z: c.z, yaw: playerFoot.yaw, pitch: playerFoot.pitch }, null); }
+    finally { worldOnlyPass = false; }
+    // 2) interior
+    if (!homeFaces) homeFaces = buildHomeStatic();
+    drawGame(true);
+    const cyw = Math.cos(playerFoot.yaw), syw = Math.sin(playerFoot.yaw), cp = Math.cos(playerFoot.pitch), sp = Math.sin(playerFoot.pitch);
+    const fov = V_HEIGHT * 0.9, NEAR = 0.4, now = c.time;
+    const tx = (p) => { const dx = p[0] - c.x, dy = p[1] - c.eyeY, dz = p[2] - c.z, x1 = dx * cyw - dz * syw, z1 = dx * syw + dz * cyw; return [x1, dy * cp - z1 * sp, dy * sp + z1 * cp]; };
+    let night = 0;
+    try { const S = window.__homeSky && window.__homeSky.state; if (S) { const e = Math.sin((S.t - 0.25) * Math.PI * 2); night = Math.max(0, Math.min(1, (0.05 - e) / 0.2)); } } catch (e) {}
+    const amb = 1 - night * 0.22;
+    const drawList = [];
+    for (const f of homeFaces) {
+      const vx = c.x - f.c[0], vy = c.eyeY - f.c[1], vz = c.z - f.c[2];
+      if (f.n && f.n[0] * vx + f.n[1] * vy + f.n[2] * vz <= 0) continue;
+      const cam = f.pts.map(tx), clipped = [];
+      for (let i = 0; i < cam.length; i++) {
+        const a = cam[i], b = cam[(i + 1) % cam.length], ain = a[2] > NEAR, bin = b[2] > NEAR;
+        if (ain) clipped.push(a);
+        if (ain !== bin) { const t = (NEAR - a[2]) / (b[2] - a[2]); clipped.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]); }
+      }
+      if (clipped.length < 3) continue;
+      const ref = f.anchor || f.c;
+      const depth = Math.hypot(c.x - ref[0], c.eyeY - ref[1], c.z - ref[2]) - (f.bias || 0);
+      const layer = f.layer === undefined ? 2 : f.layer;
+      if (f.tex) { drawList.push({ texFace: f, depth, layer }); continue; }
+      let r = f.rgb[0], g = f.rgb[1], b = f.rgb[2];
+      if (!f.emissive) {
+        const n = f.n || [0, 0, 0];
+        let lit = (0.84 - n[1] * 0.26 + n[0] * 0.05 + n[2] * 0.03) * amb;
+        // warm pool from the ceiling lamp
+        const dl = Math.hypot(f.c[0] - 150, f.c[1] + 18, f.c[2]);
+        const warm = Math.max(0, 1 - dl / 38) * 0.18;
+        r = r * (lit + warm * 1.1); g = g * (lit + warm * 0.9); b = b * (lit + warm * 0.5);
+        if (lavaLampOn) {   // a soft green glow right around the lamp
+          const dlv = Math.hypot(f.c[0] - LAMP_P[0], f.c[1] - LAMP_P[1], f.c[2] - LAMP_P[2]);
+          const k = Math.max(0, 1 - dlv / 7) * 0.5;
+          g += 70 * k; r += 10 * k; b += 25 * k;
+        }
+      }
+      const scr = clipped.map(p => [V_WIDTH / 2 + p[0] / p[2] * fov, V_HEIGHT / 2 + p[1] / p[2] * fov]);
+      drawList.push({ scr, depth, layer, alpha: f.alpha, col: `rgb(${Math.round(Math.min(255, r))},${Math.round(Math.min(255, g))},${Math.round(Math.min(255, b))})`, glow: f.emissive, edge: f.edge });
+    }
+    const addSprite = (x, y, z, draw, bias = 0.5) => {
+      const p = tx([x, y, z]); if (p[2] <= NEAR) return;
+      drawList.push({ sprite: { sx: V_WIDTH / 2 + p[0] / p[2] * fov, sy: V_HEIGHT / 2 + p[1] / p[2] * fov, s: fov / p[2], draw }, depth: Math.hypot(c.x - x, c.eyeY - y, c.z - z) - bias, layer: 2 });
+    };
+    TSLOTS.forEach((sl, i) => { const t = TROPHIES[i]; if (t) addSprite(sl.x, sl.y, sl.z, (x, y, s) => drawTrophy(t, trophiesEarned.has(t.id), x, y, s, now, i)); });
+    addSprite(HX1 - 0.6, -15.9, (IN.SHELF.z0 + IN.SHELF.z1) / 2, (x, y, s) => drawTrophySign(x, y, s, now));
+    addSprite(LAMP_P[0], LAMP_P[1], LAMP_P[2], (x, y, s) => drawLavaLamp(x, y, s, now));
+    // arcade joystick + buttons on the control deck
+    const AX = (IN.ARC.x0 + IN.ARC.x1) / 2, AZ = IN.ARC.z0 + 0.7;
+    addSprite(AX - 1.4, -7.2, AZ, (x, y, s) => {
+      const k = s * 0.18; ctx.fillStyle = "#cbd5e1"; ctx.fillRect(Math.round(x - k * 0.15), Math.round(y - k * 0.2), Math.max(1, Math.round(k * 0.3)), Math.round(k * 1.3));
+      ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(x, y - k * 0.3, Math.max(1, k * 0.45), 0, Math.PI * 2); ctx.fill();
+    }, 0.8);
+    for (const [bx, col] of [[AX + 0.6, "#facc15"], [AX + 1.7, "#22d3ee"]]) addSprite(bx, -6.45, AZ, (x, y, s) => { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, Math.max(1, s * 0.3), Math.max(0.6, s * 0.12), 0, 0, Math.PI * 2); ctx.fill(); }, 0.8);
+    drawList.sort((a, b) => (a.layer - b.layer) || (b.depth - a.depth));
+    ctx.save(); ctx.lineJoin = "round";
+    for (const d of drawList) {
+      if (d.sprite) { d.sprite.draw(d.sprite.sx, d.sprite.sy, d.sprite.s); continue; }
+      if (d.texFace) { drawTexturedQuad(d.texFace, tx, NEAR, fov); continue; }
+      if (d.alpha !== undefined) ctx.globalAlpha = d.alpha;
+      ctx.fillStyle = d.col; ctx.strokeStyle = d.col; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(d.scr[0][0], d.scr[0][1]);
+      for (let i = 1; i < d.scr.length; i++) ctx.lineTo(d.scr[i][0], d.scr[i][1]);
+      ctx.closePath(); ctx.fill();
+      if (d.alpha === undefined) ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (d.edge) { ctx.strokeStyle = d.edge; ctx.lineWidth = 1; ctx.stroke(); }
+      if (d.glow) { ctx.globalAlpha = 0.25; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1; }
+    }
+    ctx.restore();
+    // sleep fade
+    if (c.sleep) {
+      const t = c.sleep.t, a = t < 1.3 ? t / 1.3 : (t < 2.4 ? 1 : Math.max(0, 1 - (t - 2.4) / 1.2));
+      ctx.fillStyle = `rgba(2, 4, 12, ${a})`; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      if (t > 1.2 && t < 2.8) {
+        ctx.save(); ctx.font = "bold 14px monospace"; ctx.textAlign = "center"; ctx.fillStyle = `rgba(226,232,240,${Math.min(1, (t - 1.2) * 2) * Math.min(1, (2.8 - t) * 2)})`;
+        const zz = 'Z z z'.slice(0, 1 + Math.floor((t - 1.2) * 4) % 5); ctx.fillText(zz, V_WIDTH / 2, V_HEIGHT / 2); ctx.restore();
+      }
+      return;
+    }
+    ctx.fillStyle = "rgba(250, 204, 21, 0.85)";
+    ctx.fillRect(Math.round(V_WIDTH / 2) - 1, Math.round(V_HEIGHT / 2) - 1, 2, 2);
+  }
+
+  /* ======================= hooks into the cabin plumbing ======================= */
+  const prevUpdateCabin = window.updateCabin;
+  window.updateCabin = function(dt, walkX, walkZ, interact) { if (inHome()) return updateHome(dt, walkX, walkZ, interact); return prevUpdateCabin.apply(this, arguments); };
+  const prevRenderCabinView = window.renderCabinView;
+  window.renderCabinView = function() { if (inHome()) return renderHomeView(); return prevRenderCabinView.apply(this, arguments); };
+  const prevCabinInteract = window.cabinInteract;
+  window.cabinInteract = function() { if (inHome()) return homeInteract(); return prevCabinInteract.apply(this, arguments); };
+
+  // touch buttons: ENTER HOME on btn3 at the front door; btn4 = EXIT while at the arcade; btn3 held = auto-fire
+  try {
+    btn3.addEventListener("pointerdown", e => {
+      if (inHome()) { btn3Held = true; return; }
+      if (gameMode === 'SURFACE' && !cabin && onHomeSurface() && nearDoorOutside()) {
+        e.preventDefault(); e.stopImmediatePropagation(); try { ensureAudio(); } catch (er) {}
+        enterHome();
+      }
+    }, true);
+    const up = () => { btn3Held = false; };
+    btn3.addEventListener("pointerup", up, true); btn3.addEventListener("pointercancel", up, true); btn3.addEventListener("pointerleave", up, true);
+    btn4.addEventListener("pointerdown", e => {
+      if (inHome() && cabin.arcade) { e.preventDefault(); e.stopImmediatePropagation(); exitArcade(cabin); }
+      else if (inHome()) { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, true);
+  } catch (e) {}
+
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    // keyboard / gamepad ENTER HOME at the front door (checked before the normal surface update eats the press)
+    let entered = false;
+    try {
+      const gp = typeof currentGpButtons !== 'undefined' ? currentGpButtons : [];
+      const pressed = !!(keys[keyBindings.board] || keys[keyBindings.action] || gp[0] || gp[1]);
+      const edge = rawEdge('door', pressed);
+      if (edge && gameMode === 'SURFACE' && !cabin && !gameOver && onHomeSurface() && nearDoorOutside() && !(typeof landingSeq !== 'undefined' && landingSeq) && !(typeof takeoffSeq !== 'undefined' && takeoffSeq)) { enterHome(); entered = true; }
+    } catch (e) {}
+    const r = prevUpdate.apply(this, arguments);
+    try {
+      if (gameMode === 'SURFACE' && onHomeSurface() && !cabin && !surfacePassActive) {
+        clearYard();
+        collideOutside();
+        if (nearDoorOutside()) {
+          const nb = document.getElementById("nav-banner");
+          if (nb) nb.innerText = ">> HOME: TAP ENTER HOME <<";
+          btn3.innerText = "ENTER HOME"; btn3.className = "cockpit-btn action active";
+        }
+      }
+    } catch (e) {}
+    return r;
+  };
+
+  /* ======================= the ship's cargo room loses its lava lamp + trophy shelf ======================= */
+  const prevBuildStatic = window.buildCabinStatic;
+  window.buildCabinStatic = function() {
+    const F = prevBuildStatic.apply(this, arguments);
+    const inside = (f, x0, x1, y0, y1, z0, z1) => f.pts.every(p => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1 && p[2] >= z0 && p[2] <= z1);
+    const isWall = f => f.n && f.n[0] > 0.5 && f.pts.every(p => Math.abs(p[0] + CAB_HW) < 0.001);
+    const out = F.filter(f => isWall(f) || !(inside(f, -CAB_HW - 0.01, SHELF.x0 + SHELF.depth + 0.01, -16.5, -2.5, SHELF.z0 - 0.5, SHELF.z1 + 0.5) ||
+                                inside(f, LAVA.x - 2.05, LAVA.x + 2.05, LAVA.tableTop - 0.6, 0.01, LAVA.z - 2.05, LAVA.z + 2.05)));
+    cabBox(out, -CAB_HW, -CAB_HW + 0.5, -14, -15.5, -14, -8, "#475569");   // the wall vent that used to hide behind the shelf
+    return out;
+  };
+  try { cabinStaticFaces = null; } catch (e) {}
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   HOME WORLD: STEP OUT WITHOUT GEAR. At home the airlock opens even without
+   the helmet or a weapon. Whatever you didn't grab stays on the rack: no gun
+   in hand (and no firing), no helmet (no HUD face, no visor drips).
+   ========================================================================== */
+(function() {
+  const isHomeP = p => !!(p && (p.isHomeWorld || p.name === 'Home World'));
+  let gear = null;                       // null = normal (fully geared); else { helmet, weapon }
+  const onFoot = () => gameMode === 'SURFACE' && !cabin && !(typeof surfacePassActive !== 'undefined' && surfacePassActive);
+  const unarmed = () => !!gear && !gear.weapon && onFoot();
+  const bareHead = () => !!gear && !gear.helmet && onFoot();
+  window.__footGear = () => gear;
+  window.__setFootGear = g => { gear = g; };
+
+  // ship cabin: the airlock works without gear on the Home World
+  const prevAction = window.getCabinAction;
+  window.getCabinAction = function() {
+    const a = prevAction.apply(this, arguments);
+    try {
+      const c = cabin;
+      if (a && a.label === 'AIRLOCK' && !a.enabled && c && !c.wreck && !c.inSpace && !c.home && gameMode === 'SURFACE' && isHomeP(landedPlanet)) {
+        const what = !c.hasHelmet && !c.hasLaser ? 'NO GEAR' : (!c.hasHelmet ? 'NO HELMET' : 'NO WEAPON');
+        a.enabled = true;
+        a.banner = `>> AIRLOCK READY (${what} - SAFE AT HOME): TAP AIRLOCK <<`;
+      }
+    } catch (e) {}
+    return a;
+  };
+
+  // remember what you walked out with
+  const prevExit = window.exitCabinToSurface;
+  window.exitCabinToSurface = function() {
+    const c = cabin;
+    const g = c && !c.wreck && !c.inSpace && !c.home && isHomeP(landedPlanet) ? { helmet: !!c.hasHelmet, weapon: !!c.hasLaser } : null;
+    const r = prevExit.apply(this, arguments);
+    gear = g && (!g.helmet || !g.weapon) ? g : null;
+    if (gear) { try { miningLaserState.active = false; touchFire = false; } catch (e) {} }
+    return r;
+  };
+  // back aboard: you only have to rack what you actually took
+  const prevEnter = window.enterCabinFromSurface;
+  window.enterCabinFromSurface = function() {
+    const g = gear;
+    const r = prevEnter.apply(this, arguments);
+    try { if (g && cabin) { cabin.hasHelmet = g.helmet; cabin.hasLaser = g.weapon; } } catch (e) {}
+    gear = null;
+    return r;
+  };
+  const prevLand = window.landOnPlanet;
+  window.landOnPlanet = function() { gear = null; return prevLand.apply(this, arguments); };
+  const prevInit = window.initGame;
+  if (prevInit) window.initGame = function() { gear = null; return prevInit.apply(this, arguments); };
+
+  // no weapon: the fire inputs do nothing on foot
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    if (!unarmed()) {
+      const r = prevUpdate.apply(this, arguments);
+      try { if (gear && gameMode !== 'SURFACE') gear = null; } catch (e) {}
+      return r;
+    }
+    const kf = keyBindings.fire, gf = gpBindings.fire, rb = currentGpButtons[5];
+    keyBindings.fire = '__none'; gpBindings.fire = 'btn_31'; currentGpButtons[5] = false;
+    touchFire = false;
+    let r;
+    try { r = prevUpdate.apply(this, arguments); }
+    finally { keyBindings.fire = kf; gpBindings.fire = gf; currentGpButtons[5] = rb; }
+    try {
+      miningLaserState.active = false;
+      if (btn2) { btn2.innerText = "—"; btn2.style.opacity = "0.3"; }
+    } catch (e) {}
+    try { if (bareHead()) { const box = document.getElementById('face-box'); if (box && box.style.display !== 'none') box.style.display = 'none'; } } catch (e) {}
+    return r;
+  };
+  // helmet-off but armed: still hide the helmet face
+  const prevUpdate2 = window.update;
+  window.update = function(dt) {
+    const r = prevUpdate2.apply(this, arguments);
+    try {
+      if (bareHead()) { const box = document.getElementById('face-box'); if (box && box.style.display !== 'none') box.style.display = 'none'; }
+      if (!unarmed() && btn2 && btn2.style.opacity === "0.3" && gameMode === 'SURFACE' && !cabin) btn2.style.opacity = "";
+    } catch (e) {}
+    return r;
+  };
+
+  const prevBlaster = window.drawHandheldBlaster;
+  window.drawHandheldBlaster = function() {
+    if (unarmed()) {
+      ctx.fillStyle = "rgba(250, 204, 21, 0.85)";
+      ctx.fillRect(Math.round(V_WIDTH / 2) - 1, Math.round(V_HEIGHT / 2) - 1, 2, 2);
+      return;
+    }
+    return prevBlaster.apply(this, arguments);
+  };
+  const prevDrips = window.drawVisorDrips;
+  window.drawVisorDrips = function() { if (bareHead()) return; return prevDrips.apply(this, arguments); };
+})();
+
+</script>
+<script>
+/* ==========================================================================
+   NEW RUNS START AT HOME: launching from the title screen (or restarting
+   after game over) wakes you up in your house on the Home World, with the
+   ship parked on the pad and your gear still on its rack. (Galaxy loops
+   carry straight on in space as before.)
+   ========================================================================== */
+(function() {
+  let pending = true;
+  const prevInit = window.initGame;
+  window.initGame = function() {
+    const r = prevInit.apply(this, arguments);
+    try { pending = (typeof galaxyLoop === 'undefined' || galaxyLoop === 0); } catch (e) {}
+    return r;
+  };
+  function startAtHome() {
+    const home = (typeof activePlanets !== 'undefined' ? activePlanets : []).find(p => p.isHomeWorld || p.name === 'Home World');
+    if (!home || !window.__home) return false;
+    landOnPlanet(home);
+    try { if (window.__setFootGear) window.__setFootGear({ helmet: false, weapon: false }); } catch (e) {}
+    window.__home.enter();
+    const c = cabin;
+    c.x = 160.5; c.z = -2.6; playerFoot.yaw = Math.PI * 0.85; playerFoot.pitch = -0.02;
+    c.sleep = { t: 2.0, done: true, from: playerFoot.suitHp }; c.anim = { lock: true };   // wake up: fade in from black
+    try { if (window.__homeSky) window.__homeSky.setTime(0.29); } catch (e) {}
+    try { popupQueue.length = 0; activePopup = null; } catch (e) {}
+    return true;
+  }
+  const prevUpdate = window.update;
+  window.update = function(dt) {
+    if (pending) {
+      try {
+        const ls = document.getElementById('launch-screen');
+        const launched = !ls || ls.style.display === 'none';
+        if (launched && gameMode === 'SPACE' && !gameOver && !landingSeq && !takeoffSeq && !cabin) { pending = false; startAtHome(); }
+      } catch (e) { pending = false; console.warn('home start', e); }
+    }
+    return prevUpdate.apply(this, arguments);
+  };
+})();
+
 </script>
 </body>
 </html>
