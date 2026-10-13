@@ -20318,7 +20318,7 @@ requestAnimationFrame(gameLoop);
     if (window.surfaceMonoliths.length > 0) {
       // Give a subtle hint that something is out there
       setTimeout(() => {
-        if(typeof addPopup === 'function') addPopup("ANOMALOUS ENERGY SIGNATURE DETECTED IN THE DISTANCE...", "#c084fc");
+        if(typeof addPopup === 'function' && (window.surfaceMonoliths || []).length && gameMode === 'SURFACE') addPopup("ANOMALOUS ENERGY SIGNATURE DETECTED IN THE DISTANCE...", "#c084fc");
       }, 3000);
     }
   };
@@ -24417,6 +24417,7 @@ requestAnimationFrame(gameLoop);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (typeof surfaceOutpost !== 'undefined' && surfaceOutpost && Math.hypot(x - surfaceOutpost.x, z - surfaceOutpost.z) < 70) continue;
       if (typeof surfaceNodes !== 'undefined' && surfaceNodes.some(n => Math.hypot(x - n.x, z - n.z) < 18)) continue;   // never on an ore vein
+      if (home && ((x > 96 && x < 196 && z > -44 && z < 44) || (x > 50 && x < 126 && Math.abs(z) < 9))) continue;   // keep the house yard + front path clear
       const k = r();
       let type;
       if (cryo) type = k < 0.6 ? 'ice' : 'mound';      // cryo worlds: ice and snow only, no stones
@@ -27566,13 +27567,14 @@ requestAnimationFrame(gameLoop);
       list.push({ type: 'custom', proj: { x: X, y: Y, scale: 1, dist: a[2], depth: a[2] - 3 }, draw: () => { ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(X, Y, 0, X, Y, r); g.addColorStop(0, "rgba(186,230,253,0.35)"); g.addColorStop(1, "rgba(186,230,253,0)"); ctx.fillStyle = g; ctx.fillRect(X - r, Y - r, r * 2, r * 2); ctx.restore(); } }); }
   }
   const live = () => gameMode === 'SURFACE' && !cabin && !landingSeq && !takeoffSeq && !(typeof surfacePassActive !== 'undefined' && surfacePassActive) && !(window.__bunker && (window.__bunker.state || window.__bunker.cut));
+  const homeView = () => gameMode === 'SURFACE' && !!cabin && !!cabin.home && typeof surfacePassActive !== 'undefined' && surfacePassActive;   // seen through the house windows
   const prevDraw = window.drawPixelSpaceship;
   window.drawPixelSpaceship = function(proj) {
-    if (proj && proj.dist !== 99999 && live()) return;          // the 3D model takes over on the surface
+    if (proj && proj.dist !== 99999 && (live() || homeView())) return;          // the 3D model takes over on the surface
     return prevDraw.apply(this, arguments);
   };
   const prevExtra = window.surfaceExtraEntities;
-  window.surfaceExtraEntities = function(list) { if (prevExtra) prevExtra(list); try { if (live()) push(list); } catch (e) {} };
+  window.surfaceExtraEntities = function(list) { if (prevExtra) prevExtra(list); try { if (live() || homeView()) push(list); } catch (e) {} };
   // solid hull (you can land on top of it with the jetpack), solid legs, and a ramp you actually walk up
   const LEGS = []; for (const lx of [-36, -16, 12, 32]) for (const s of [-1, 1]) LEGS.push([s * 7 * K, lx * K]);
   const HULLBOX = [  // x0, x1, z0, z1, top (up = negative), bottom
@@ -32942,8 +32944,8 @@ window.drawDashGauges = function(l0, l1, r0, r1, dashTopY, dashH) {
     } catch (e) {}
     const r = prevUpdate.apply(this, arguments);
     try {
+      if (gameMode === 'SURFACE' && onHomeSurface()) clearYard();
       if (gameMode === 'SURFACE' && onHomeSurface() && !cabin && !surfacePassActive) {
-        clearYard();
         collideOutside();
         if (nearDoorOutside()) {
           const nb = document.getElementById("nav-banner");
